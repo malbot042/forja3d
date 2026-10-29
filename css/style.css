@@ -12,10 +12,71 @@
   --sel: rgba(242, 165, 65, .14);
   --danger: #e5614f;
   --ok: #6fbf73;
+  --btn-hover: #2c3138;
+  --btn-hover-line: #4a515c;
+  --primary-hover: #f6b660;
+  --danger-text: #ffb3a8;
+  --viewport: #0f1114;
+  --thumb-bg: #0e1013;
+  --overlay: rgba(24, 27, 31, .88);
+  --backdrop: rgba(5, 6, 8, .65);
+  --shadow: rgba(0, 0, 0, .5);
+  --swatch-ring: rgba(255, 255, 255, .15);
+  --glow: rgba(242, 165, 65, .07);
+  /* lienzos 2D (editor de perfiles, navegador de ejes) */
+  --cv-bg: #0f1114;
+  --cv-grid: #1a1d22;
+  --cv-grid-major: #2a2f36;
+  --cv-point: #e6e8eb;
+  --cv-point-stroke: #0f1114;
+  --cv-mid: #3a4049;
+  --cv-mid-ink: #c9ced6;
+  --cv-ctrl: rgba(255, 255, 255, .18);
+  --cv-nav-bg: rgba(24, 27, 31, .6);
+  --cv-nav-neg: rgba(24, 27, 31, .9);
   --radius: 6px;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
+}
+
+/* ---------- tema claro ---------- */
+:root[data-theme="light"] {
+  --bg: #f3f2ef;
+  --bg-2: #ebe9e4;
+  --panel: #ffffff;
+  --panel-2: #f3f1ed;
+  --line: #dfdcd5;
+  --line-2: #cbc7be;
+  --text: #1d1f23;
+  --muted: #676c75;
+  --accent: #c8740c;
+  --accent-ink: #ffffff;
+  --sel: rgba(200, 116, 12, .12);
+  --danger: #c9452f;
+  --ok: #3f9b48;
+  --btn-hover: #ebe8e2;
+  --btn-hover-line: #b9b4aa;
+  --primary-hover: #b4680a;
+  --danger-text: #c9452f;
+  --viewport: #e7e6e2;
+  --thumb-bg: #e4e2dd;
+  --overlay: rgba(255, 255, 255, .9);
+  --backdrop: rgba(30, 32, 36, .35);
+  --shadow: rgba(0, 0, 0, .18);
+  --swatch-ring: rgba(0, 0, 0, .18);
+  --glow: rgba(200, 116, 12, .08);
+  --cv-bg: #fbfaf8;
+  --cv-grid: #efede9;
+  --cv-grid-major: #d9d6cf;
+  --cv-point: #2a2d33;
+  --cv-point-stroke: #ffffff;
+  --cv-mid: #d6d2ca;
+  --cv-mid-ink: #2a2d33;
+  --cv-ctrl: rgba(0, 0, 0, .22);
+  --cv-nav-bg: rgba(255, 255, 255, .7);
+  --cv-nav-neg: rgba(255, 255, 255, .95);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -39,11 +100,11 @@ button, input, select { font: inherit; color: inherit; }
   white-space: nowrap;
   transition: background .12s, border-color .12s;
 }
-.btn:hover { background: #2c3138; border-color: #4a515c; }
+.btn:hover { background: var(--btn-hover); border-color: var(--btn-hover-line); }
 .btn.sm { padding: 4px 10px; font-size: 12px; }
 .btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-.btn-primary:hover { background: #f6b660; border-color: #f6b660; }
-.btn.danger:hover { border-color: var(--danger); color: #ffb3a8; }
+.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn.danger:hover { border-color: var(--danger); color: var(--danger-text); }
 .btn:disabled { opacity: .4; pointer-events: none; }
 
 .icon-btn {
@@ -80,7 +141,7 @@ button, input, select { font: inherit; color: inherit; }
   overflow: auto;
   padding: 32px clamp(16px, 4vw, 48px) 48px;
   background:
-    radial-gradient(1200px 500px at 85% -10%, rgba(242,165,65,.07), transparent 60%),
+    radial-gradient(1200px 500px at 85% -10%, var(--glow), transparent 60%),
     var(--bg);
 }
 .projects-head {
@@ -110,7 +171,7 @@ button, input, select { font: inherit; color: inherit; }
 .project-card:hover { border-color: var(--line-2); transform: translateY(-2px); }
 .project-thumb {
   aspect-ratio: 16 / 10;
-  background: #0e1013 center / cover no-repeat;
+  background: var(--thumb-bg) center / cover no-repeat;
   border: 0; padding: 0; cursor: pointer; width: 100%;
   display: grid; place-items: center; color: var(--muted);
 }
@@ -181,11 +242,11 @@ button, input, select { font: inherit; color: inherit; }
 .tool-btn:hover { background: var(--panel-2); border-color: var(--line-2); color: var(--accent); }
 .tool-sep { width: 36px; height: 1px; background: var(--line); margin: 4px 0; }
 
-.viewport { grid-area: view; position: relative; overflow: hidden; background: #0f1114; }
+.viewport { grid-area: view; position: relative; overflow: hidden; background: var(--viewport); }
 .viewport canvas { display: block; width: 100%; height: 100%; outline: none; }
 .hint {
   position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%);
-  background: rgba(24,27,31,.85); border: 1px solid var(--line);
+  background: var(--overlay); border: 1px solid var(--line);
   border-radius: 20px; padding: 6px 14px; color: var(--muted); font-size: 12px;
   pointer-events: none; white-space: nowrap; max-width: calc(100% - 24px);
   overflow: hidden; text-overflow: ellipsis;
@@ -214,7 +275,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 .outliner li:hover { background: var(--panel-2); }
 .outliner li.selected { background: var(--sel); color: var(--accent); }
-.outliner .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+.outliner .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; box-shadow: inset 0 0 0 1px var(--swatch-ring); }
 .outliner .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .outliner .type { color: var(--muted); font-size: 11px; }
 .outliner .vis { background: none; border: 0; padding: 0 2px; cursor: pointer; color: var(--muted); display: grid; }
@@ -254,7 +315,7 @@ button, input, select { font: inherit; color: inherit; }
 .range-row input[type=range] { flex: 1; accent-color: var(--accent); }
 .range-row output { font: 11px var(--mono); color: var(--muted); width: 32px; text-align: right; }
 .palette { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; grid-column: 2; }
-.palette button { width: 18px; height: 18px; border-radius: 3px; border: 1px solid rgba(255,255,255,.12); cursor: pointer; padding: 0; }
+.palette button { width: 18px; height: 18px; border-radius: 3px; border: 1px solid var(--swatch-ring); cursor: pointer; padding: 0; }
 .palette button:hover { transform: scale(1.15); }
 
 .statusbar {
@@ -271,7 +332,7 @@ button, input, select { font: inherit; color: inherit; }
 .ops-bar, .view-bar {
   position: absolute; z-index: 2;
   display: flex; align-items: center; gap: 2px;
-  background: rgba(24,27,31,.88); border: 1px solid var(--line); border-radius: 8px;
+  background: var(--overlay); border: 1px solid var(--line); border-radius: 8px;
   padding: 3px; backdrop-filter: blur(6px);
   max-width: calc(100% - 130px); overflow-x: auto; scrollbar-width: none;
 }
@@ -314,12 +375,12 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---------- modal / editor de perfiles ---------- */
 .modal-backdrop {
-  position: fixed; inset: 0; z-index: 50; background: rgba(5,6,8,.65);
+  position: fixed; inset: 0; z-index: 50; background: var(--backdrop);
   display: grid; place-items: center; padding: 16px; backdrop-filter: blur(2px);
 }
 .modal {
   background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.5); width: min(920px, 100%); max-height: 100%;
+  box-shadow: 0 20px 60px var(--shadow); width: min(920px, 100%); max-height: 100%;
   display: flex; flex-direction: column; overflow: hidden;
 }
 .modal-head { padding: 14px 18px 10px; border-bottom: 1px solid var(--line); }
@@ -412,7 +473,7 @@ kbd {
   background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px;
   padding: 8px 16px; opacity: 0; pointer-events: none;
   transition: opacity .2s, transform .2s; z-index: 100;
-  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  box-shadow: 0 8px 24px var(--shadow);
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { border-color: var(--danger); }
@@ -441,3 +502,13 @@ kbd {
   .hint { display: none; }
   .project-name { width: 120px; }
 }
+
+/* ---------- selector de tema ---------- */
+.theme-btn .sun { display: none; }
+:root[data-theme="light"] .theme-btn .sun { display: block; }
+:root[data-theme="light"] .theme-btn .moon { display: none; }
+.theme-btn { color: var(--muted); }
+.theme-btn:hover { color: var(--accent); }
+.projects-actions .theme-btn { width: 34px; height: 34px; border: 1px solid var(--line-2); background: var(--panel-2); }
+:root[data-theme="light"] .tool-btn:hover { background: var(--panel-2); }
+:root[data-theme="light"] .ops-bar svg .fill { opacity: .3; }

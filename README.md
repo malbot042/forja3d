@@ -24,6 +24,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Escena**: lista de objetos, selección, ocultar/mostrar, duplicar, eliminar, renombrar.
 - **Deshacer / rehacer** (hasta 100 pasos).
 - **Snap** a rejilla (0,25 u), rotación (15°) y escala (0,1).
+- **Modo claro y oscuro**: sigue al sistema por defecto y se puede cambiar con el botón de luna/sol; la elección se recuerda.
 - **Gestor de proyectos**: crear, abrir, renombrar, duplicar, eliminar; miniatura automática de cada proyecto.
 - **Guardado automático** en `localStorage`.
 - **Descargar JSON** de un proyecto o de todos, e **importar JSON** (un proyecto o un paquete completo).
@@ -93,6 +94,7 @@ js/storage.js           Persistencia en localStorage, import/export JSON
 js/csg.js               Operaciones booleanas (CSG) y caché de resultados
 js/sketch.js            Editor de perfiles 2D para extrusión y revolución
 js/help.js              Ayuda integrada y proyectos de ejemplo
+js/theme.js             Modo claro / oscuro
 lib/three/              three.js r170 (copia local, licencia MIT) y controles
 lib/three-bvh-csg/      three-bvh-csg 0.0.17 (MIT) · booleanas
 lib/three-mesh-bvh/     three-mesh-bvh 0.8.3 (MIT) · dependencia de la anterior

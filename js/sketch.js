@@ -1,5 +1,6 @@
 // Editor de perfiles 2D para Extrusión (perfil cerrado) y Revolución (perfil abierto alrededor del eje Y).
 import { shapePoints } from './primitives.js';
+import { cssVar } from './theme.js';
 
 const TAU = Math.PI * 2;
 const r3 = v => Math.round(v * 1000) / 1000;
@@ -145,7 +146,12 @@ export function editShape(initial, mode, title, { closedPath = false } = {}) {
     function draw() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = '#0f1114';
+      const C = {
+        bg: cssVar('--cv-bg'), grid: cssVar('--cv-grid'), major: cssVar('--cv-grid-major'), accent: cssVar('--accent'),
+        point: cssVar('--cv-point'), pointStroke: cssVar('--cv-point-stroke'), mid: cssVar('--cv-mid'),
+        midInk: cssVar('--cv-mid-ink'), ctrl: cssVar('--cv-ctrl'), muted: cssVar('--muted'), accentInk: cssVar('--accent-ink'),
+      };
+      ctx.fillStyle = C.bg;
       ctx.fillRect(0, 0, W, H);
       // rejilla
       const s = scale();
@@ -154,13 +160,13 @@ export function editShape(initial, mode, title, { closedPath = false } = {}) {
       ctx.lineWidth = 1;
       for (let gx = Math.floor(x0 / step) * step; gx <= x1; gx += step) {
         const major = Math.abs(gx / 0.5 - Math.round(gx / 0.5)) < 1e-6;
-        ctx.strokeStyle = major ? '#2a2f36' : '#1a1d22';
+        ctx.strokeStyle = major ? C.major : C.grid;
         const [sx] = toScreen([gx, 0]);
         ctx.beginPath(); ctx.moveTo(Math.round(sx) + 0.5, 0); ctx.lineTo(Math.round(sx) + 0.5, H); ctx.stroke();
       }
       for (let gy = Math.floor(y0 / step) * step; gy <= y1; gy += step) {
         const major = Math.abs(gy / 0.5 - Math.round(gy / 0.5)) < 1e-6;
-        ctx.strokeStyle = major ? '#2a2f36' : '#1a1d22';
+        ctx.strokeStyle = major ? C.major : C.grid;
         const [, sy] = toScreen([0, gy]);
         ctx.beginPath(); ctx.moveTo(0, Math.round(sy) + 0.5); ctx.lineTo(W, Math.round(sy) + 0.5); ctx.stroke();
       }
@@ -210,11 +216,11 @@ export function editShape(initial, mode, title, { closedPath = false } = {}) {
           ctx.beginPath();
           curve.forEach((p, i) => { const [sx, sy] = toScreen(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
         }
-        ctx.strokeStyle = '#f2a541'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+        ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
       }
       // polígono de control si es suave
       if (state.smooth && pts.length > 1) {
-        ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = C.ctrl; ctx.setLineDash([3, 3]);
         ctx.beginPath();
         pts.forEach((p, i) => { const [sx, sy] = toScreen(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
         if (closed) ctx.closePath();
@@ -223,23 +229,23 @@ export function editShape(initial, mode, title, { closedPath = false } = {}) {
       // puntos medios (+)
       segs().forEach(([a, b], i) => {
         const [sx, sy] = toScreen([(pts[a][0] + pts[b][0]) / 2, (pts[a][1] + pts[b][1]) / 2]);
-        ctx.fillStyle = i === state.hoverMid ? '#f2a541' : '#3a4049';
+        ctx.fillStyle = i === state.hoverMid ? C.accent : C.mid;
         ctx.beginPath(); ctx.arc(sx, sy, 5, 0, TAU); ctx.fill();
-        ctx.strokeStyle = i === state.hoverMid ? '#1a1307' : '#c9ced6'; ctx.lineWidth = 1.4;
+        ctx.strokeStyle = i === state.hoverMid ? C.accentInk : C.midInk; ctx.lineWidth = 1.4;
         ctx.beginPath(); ctx.moveTo(sx - 2.5, sy); ctx.lineTo(sx + 2.5, sy); ctx.moveTo(sx, sy - 2.5); ctx.lineTo(sx, sy + 2.5); ctx.stroke();
         ctx.lineWidth = 1;
       });
       // vértices
       pts.forEach((p, i) => {
         const [sx, sy] = toScreen(p);
-        ctx.fillStyle = i === state.drag || i === state.hover ? '#f2a541' : '#e6e8eb';
-        ctx.strokeStyle = '#0f1114'; ctx.lineWidth = 2;
+        ctx.fillStyle = i === state.drag || i === state.hover ? C.accent : C.point;
+        ctx.strokeStyle = C.pointStroke; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(sx, sy, i === 0 ? 6 : 5, 0, TAU); ctx.fill(); ctx.stroke();
         ctx.lineWidth = 1;
       });
       if (pts.length) {
         const [sx, sy] = toScreen(pts[0]);
-        ctx.fillStyle = '#8c939d'; ctx.font = '11px ui-monospace, monospace';
+        ctx.fillStyle = C.muted; ctx.font = '11px ui-monospace, monospace';
         ctx.fillText('inicio', sx + 9, sy - 8);
       }
       const minPts = closed ? 3 : 2;

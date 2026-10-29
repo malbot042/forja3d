@@ -6,6 +6,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { PRIMITIVES, DEFAULT_SHAPES, BOOLEAN_OPS, defaultParams, typeLabel, profileFrom2D, profileCenterOffset } from './primitives.js';
 import { geometryFor, evaluateBoolean, cachePut, csgKey, matrixOf } from './csg.js';
 import { uid } from './storage.js';
+import { cssVar, currentTheme } from './theme.js';
 
 const DEG = THREE.MathUtils.DEG2RAD;
 const RAD = THREE.MathUtils.RAD2DEG;
@@ -60,6 +61,7 @@ export class Editor extends EventTarget {
 
     const scene = this.scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0f1114);
+    this.theme = 'dark';
 
     // --- cámaras
     this.perspCam = new THREE.PerspectiveCamera(50, 1, 0.01, 4000);
@@ -80,16 +82,13 @@ export class Editor extends EventTarget {
 
     // ayudas: rejilla + ejes
     this.helpers = new THREE.Group();
-    const grid = new THREE.GridHelper(40, 40, 0x3a4049, 0x23272d);
-    grid.material.transparent = true;
-    grid.material.opacity = 0.9;
-    const fine = new THREE.GridHelper(40, 160, 0x1c1f24, 0x1c1f24);
-    fine.position.y = -0.0005;
     const axes = new THREE.AxesHelper(1.2);
     axes.material.depthTest = false;
     axes.renderOrder = 2;
-    this.helpers.add(fine, grid, axes);
+    this.helpers.add(axes);
     scene.add(this.helpers);
+    this.setTheme(currentTheme());
+    document.addEventListener('themechange', e => { this._navBg = this._navNeg = null; this.setTheme(e.detail); });
 
     // raíz de objetos del usuario
     this.root = new THREE.Group();
@@ -154,6 +153,24 @@ export class Editor extends EventTarget {
       this._raf = requestAnimationFrame(loop);
     };
     loop();
+  }
+
+  /** Colores de la escena según el tema ('dark' | 'light'). */
+  setTheme(theme) {
+    this.theme = theme;
+    const light = theme === 'light';
+    this.scene.background = new THREE.Color(light ? 0xe7e6e2 : 0x0f1114);
+    for (const g of this.grids || []) { this.helpers.remove(g); g.geometry.dispose(); g.material.dispose(); }
+    const grid = new THREE.GridHelper(40, 40, light ? 0xa9a59c : 0x3a4049, light ? 0xc9c6bf : 0x23272d);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.9;
+    const fine = new THREE.GridHelper(40, 160, light ? 0xdcdad5 : 0x1c1f24, light ? 0xdcdad5 : 0x1c1f24);
+    fine.position.y = -0.0005;
+    this.grids = [fine, grid];
+    this.helpers.add(fine, grid);
+    const sel = light ? 0xc8740c : 0xf2a541;
+    this.selectionColor = sel;
+    for (const box of this.selectionBoxes?.values() || []) box.material.color.setHex(sel);
   }
 
   get selectedId() { return this.selection[this.selection.length - 1] ?? null; }
@@ -229,7 +246,7 @@ export class Editor extends EventTarget {
     const ctx = c.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, S, S);
-    ctx.fillStyle = 'rgba(24,27,31,.6)';
+    ctx.fillStyle = this._navBg ??= cssVar('--cv-nav-bg');
     ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2 - 1, 0, Math.PI * 2); ctx.fill();
     const q = this.camera.quaternion.clone().invert();
     const axes = [
@@ -251,7 +268,7 @@ export class Editor extends EventTarget {
         ctx.beginPath(); ctx.moveTo(S / 2, S / 2); ctx.lineTo(a.x, a.y); ctx.stroke();
       }
       const r = pos ? 9 : 7;
-      ctx.fillStyle = pos ? a.color : 'rgba(24,27,31,.9)';
+      ctx.fillStyle = pos ? a.color : (this._navNeg ??= cssVar('--cv-nav-neg'));
       ctx.strokeStyle = a.color; ctx.lineWidth = 1.5;
       ctx.globalAlpha = a.z < -0.2 ? 0.75 : 1;
       ctx.beginPath(); ctx.arc(a.x, a.y, hover ? r + 2 : r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -654,7 +671,7 @@ export class Editor extends EventTarget {
       if (!mesh?.visible) continue;
       let box = this.selectionBoxes.get(id);
       if (!box) {
-        box = new THREE.BoxHelper(mesh, 0xf2a541);
+        box = new THREE.BoxHelper(mesh, this.selectionColor ?? 0xf2a541);
         box.material.depthTest = false;
         box.material.transparent = true;
         box.renderOrder = 3;

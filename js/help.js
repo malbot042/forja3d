@@ -199,11 +199,13 @@ const SECTIONS = [
       <p class="lead">Forja 3D es un editor 3D que funciona en el navegador. Construyes modelos combinando piezas básicas (primitivas), perfiles extruidos o torneados y operaciones booleanas.</p>
       <h4>La pantalla del editor</h4>
       <ul class="areas">
-        <li><span class="tag">Barra superior</span> nombre del proyecto, deshacer/rehacer, herramienta (Mover · Rotar · Escalar), modo de vista (Sólido · Wire), Snap, Rejilla y Descargar JSON.</li>
+        <li><span class="tag">Barra superior</span> nombre del proyecto, deshacer/rehacer, herramienta (Mover · Rotar · Escalar), modo de vista (Sólido · Wire), Snap, Rejilla, Descargar JSON, el botón de <b>modo claro / oscuro</b> (luna o sol) y la ayuda (<b>?</b>).</li>
         <li><span class="tag">Izquierda</span> primitivas: un clic añade la pieza en el centro de la vista, apoyada en el suelo.</li>
         <li><span class="tag">Visor</span> arriba, las <b>operaciones</b> (Unir, Restar…); abajo, las <b>vistas</b> (Alzado, Planta…); arriba a la derecha, el <b>navegador de ejes</b>.</li>
         <li><span class="tag">Derecha</span> la lista de objetos de la escena y las propiedades del seleccionado.</li>
       </ul>
+      <h4>Modo claro u oscuro</h4>
+      <p>El botón con la <b>luna</b> o el <b>sol</b> (en la barra superior del editor y en la pantalla de proyectos) cambia entre el modo oscuro y el claro. La primera vez se usa el modo de tu sistema; cuando eliges uno, se recuerda en este navegador.</p>
       <h4>Tu primer modelo en 1 minuto</h4>
       <ol class="steps">
         <li>Pulsa <b>Cubo</b> en la barra izquierda.</li>

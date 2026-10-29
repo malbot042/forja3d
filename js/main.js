@@ -4,6 +4,7 @@ import { PRIMITIVES, TOOLBAR_ORDER, PALETTE, BOOLEAN_OPS, typeLabel, conversionM
 import { editShape } from './sketch.js';
 import { openHelp, EXAMPLES, createExampleProject } from './help.js';
 import * as store from './storage.js';
+import { toggleTheme } from './theme.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -112,6 +113,9 @@ function showHelp(section) {
   openHelp(section, { onExample: p => { flushSave(); location.hash = `#/p/${p.id}`; toast(`Ejemplo «${p.name.replace('Ejemplo · ', '')}» abierto como proyecto nuevo`); } });
 }
 $('#btn-help-home').onclick = () => showHelp();
+for (const b of document.querySelectorAll('[data-theme-toggle]')) {
+  b.addEventListener('click', () => toast(toggleTheme() === 'light' ? 'Modo claro' : 'Modo oscuro'));
+}
 document.addEventListener('keydown', e => {
   if (document.querySelector('.modal-backdrop') || e.target.closest('input, textarea, select')) return;
   if (e.key === 'F1' || (e.key === '?' && !e.ctrlKey && !e.metaKey)) { e.preventDefault(); showHelp(); }
