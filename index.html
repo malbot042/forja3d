@@ -81,6 +81,8 @@
         <label class="toggle" title="Mostrar rejilla"><input type="checkbox" id="chk-grid" checked><span>Rejilla</span></label>
         <button class="btn" id="btn-import" title="Importar un modelo (.glb, .gltf, .obj, .stl) o un proyecto (.json) a esta escena. También puedes arrastrar el archivo al visor.">Importar</button>
         <button class="btn" id="btn-export" title="Exportar a JSON, glTF, GLB, OBJ o STL">Exportar</button>
+        <button class="icon-btn" id="btn-capture" title="Capturar imagen (PNG/JPG) o imprimir / PDF (Ctrl+P)"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+        <button class="icon-btn" id="btn-side" title="Mostrar u ocultar el panel lateral (N)"><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M15 4.5v15"/></svg></button>
         <button class="icon-btn theme-btn" data-theme-toggle title="Cambiar entre modo claro y oscuro"><svg viewBox="0 0 24 24"><g class="moon"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></g><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg></button>
         <button class="icon-btn help-btn" id="btn-help" title="Ayuda y ejemplos (? o F1)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.2-2.5 3.9M12 17.2v.1"/></svg></button>
       </div>
@@ -110,9 +112,15 @@
           <svg viewBox="0 0 24 24"><rect x="8" y="4" width="8" height="8" rx="1"/><path d="M12 13v4M9.5 15l2.5 2.5 2.5-2.5M3 20h18"/></svg>Al suelo</button>
       </div>
 
-      <div class="cam-label" id="cam-label">Perspectiva</div>
 
       <div class="view-bar" id="view-bar" role="toolbar" aria-label="Vistas">
+        <span class="layout-seg" role="group" aria-label="División de pantalla">
+          <button data-layout="1" title="1 vista"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/></svg></button>
+          <button data-layout="2" title="2 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M10 1v12"/></svg></button>
+          <button data-layout="3" title="3 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M12 1v12M12 7h7"/></svg></button>
+          <button data-layout="4" title="4 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M10 1v12M1 7h18"/></svg></button>
+        </span>
+        <span class="ops-sep"></span>
         <button data-cam="front" title="Alzado / vista frontal (1 · Mayús+1 posterior)">Alzado</button>
         <button data-cam="right" title="Perfil derecho / vista lateral (3)">Perfil D</button>
         <button data-cam="left" title="Perfil izquierdo (Mayús+3)">Perfil I</button>
@@ -128,6 +136,7 @@
     </main>
 
     <aside class="sidebar">
+      <div class="side-resizer" id="side-resizer" title="Arrastra para cambiar el ancho · doble clic: ancho por defecto"></div>
       <div class="panel">
         <div class="panel-head">
           <h2>Escena</h2>
@@ -151,6 +160,7 @@
   <input type="file" id="file-input" accept=".json,.glb,.gltf,.obj,.stl,application/json,model/gltf-binary,model/gltf+json,model/stl" hidden>
   <input type="file" id="model-input" accept=".json,.glb,.gltf,.obj,.mtl,.stl,application/json,model/gltf-binary,model/gltf+json,model/stl" multiple hidden>
   <div class="drop-hint" id="drop-hint" hidden><div>Suelta el archivo para importarlo<small>.glb · .gltf · .obj · .stl · .json</small></div></div>
+  <div id="print-sheet" class="print-sheet" aria-hidden="true"></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="js/main.js"></script>

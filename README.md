@@ -17,6 +17,9 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
   - **Separar**: deshace una operación booleana y devuelve las piezas originales.
 - **Selección múltiple** con Mayús/Ctrl + clic (en el visor o en la lista); el gizmo mueve, gira y escala todo el grupo.
 - **Reflejar** en X/Y/Z y **Apoyar en el suelo**.
+- **Pantalla dividida** en 1, 2, 3 o 4 vistas, cada una con su propia cámara, navegador de ejes y vista (perspectiva, alzado, planta, perfil…); se guarda con el proyecto.
+- **Panel lateral** redimensionable (arrastrando su borde) y ocultable (botón o tecla `N`).
+- **Capturar** lo que se ve en pantalla (todas las vistas) como **PNG** (también con fondo transparente), **JPG**, **PDF** A4 o **imprimir**, con o sin rejilla, a 1×, 2× o 4× de resolución.
 - **Vistas rápidas** con cámara ortográfica: alzado (frontal), perfil derecho e izquierdo (laterales), planta (superior), posterior, inferior y perspectiva; navegador de ejes clicable en la esquina del visor.
 - **Transformaciones** con gizmo (mover / rotar / escalar) o con valores numéricos exactos. Arrastra la etiqueta X/Y/Z de un campo para cambiar el valor deslizando (Mayús = ajuste fino).
 - **Modos de vista**: Sólido y Wire (alámbrico).
@@ -55,6 +58,8 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `Ctrl+Z` / `Ctrl+Y` (o `Ctrl+Mayús+Z`) | Deshacer / Rehacer |
 | `Ctrl+S` | Guardar ahora |
 | `?` / `F1` | Abrir la ayuda |
+| `N` | Mostrar u ocultar el panel lateral |
+| `Ctrl+P` | Capturar imagen, PDF o imprimir |
 | `Esc` | Quitar selección |
 
 Las teclas de vista funcionan tanto en la fila de números como en el teclado numérico (mismo esquema que Blender).
@@ -98,6 +103,8 @@ js/sketch.js            Editor de perfiles 2D para extrusión y revolución
 js/help.js              Ayuda integrada y proyectos de ejemplo
 js/theme.js             Modo claro / oscuro
 js/io.js                Exportar/importar glTF, GLB, OBJ y STL
+js/views.js             Paneles de vista independientes (pantalla dividida)
+js/pdf.js               Generador de PDF mínimo para las capturas
 lib/three/              three.js r170 (copia local, licencia MIT), controles, exportadores y cargadores
 lib/three-bvh-csg/      three-bvh-csg 0.0.17 (MIT) · booleanas
 lib/three-mesh-bvh/     three-mesh-bvh 0.8.3 (MIT) · dependencia de la anterior

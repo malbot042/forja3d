@@ -361,6 +361,19 @@ const SECTIONS = [
       </table>
       <p>Funcionan en la fila de números y en el teclado numérico. También tienes los botones de la barra inferior del visor y el <b>navegador de ejes</b> (arriba a la derecha): haz clic en X, Y, Z o en los círculos opuestos.</p>
       <p>Las vistas predefinidas usan cámara <b>ortográfica</b>: sin deformación por la distancia, ideal para alinear piezas y comprobar medidas. Al orbitar con el ratón la vista pasa a «Libre».</p>
+      <h4>Dividir la pantalla en varias vistas</h4>
+      <p>Los iconos de la izquierda de la barra inferior dividen el visor en <b>1, 2, 3 o 4 vistas</b>. Cada panel tiene su <b>propia cámara</b> (perspectiva u ortográfica), su navegador de ejes y su nombre en la esquina:</p>
+      <ul>
+        <li><b>2 vistas</b>: perspectiva + alzado. <b>3 vistas</b>: perspectiva grande + alzado + planta. <b>4 vistas</b>: perspectiva, planta, alzado y perfil (como en los programas de CAD).</li>
+        <li>Haz clic en un panel para hacerlo <b>activo</b> (borde de color): las teclas de vista (<kbd>1</kbd>, <kbd>3</kbd>, <kbd>7</kbd>, <kbd>5</kbd>, <kbd>0</kbd>, <kbd>F</kbd>) y los botones de la barra inferior actúan sobre él.</li>
+        <li>Puedes seleccionar y mover objetos desde cualquier panel: el gizmo funciona en el panel que está bajo el ratón, y los cambios se ven a la vez en todos.</li>
+        <li>La división y las cámaras de cada panel se guardan con el proyecto.</li>
+      </ul>
+      <h4>Panel lateral</h4>
+      <ul>
+        <li>Arrastra el <b>borde izquierdo</b> del panel de Escena/Propiedades para hacerlo más ancho o más estrecho (doble clic en el borde: ancho por defecto).</li>
+        <li>El botón <b>▯▮</b> de la barra superior o la tecla <kbd>N</kbd> lo ocultan y lo vuelven a mostrar, para ganar espacio para las vistas.</li>
+      </ul>
       <h4>Modos de visualización</h4>
       <ul>
         <li><b>Sólido</b>: superficies con iluminación.</li>
@@ -374,6 +387,26 @@ const SECTIONS = [
         <li>Pulsa ${k('7')} (Planta) para comprobar la alineación desde arriba.</li>
       </ol>
       ${exBtn('tuerca')}`,
+  },
+  {
+    id: 'captura', title: 'Capturar e imprimir',
+    html: `
+      <p>El botón de la <b>cámara de fotos</b> de la barra superior (o ${k('Ctrl', 'P')}) abre «Capturar o imprimir». Se captura <b>lo que ves en pantalla</b>: todas las vistas visibles con su disposición actual, sin el gizmo ni las cajas de selección.</p>
+      <ul>
+        <li><b>Formato</b>: <b>PNG</b> (sin pérdida; admite fondo transparente), <b>JPG</b> (más ligero), <b>PDF</b> (página A4 que se descarga directamente) o <b>Imprimir</b> (abre el diálogo de impresión del navegador; desde ahí también puedes elegir «Guardar como PDF»).</li>
+        <li><b>Fondo</b>: el del tema actual, blanco (ideal para documentos) o transparente (solo PNG, para montar la imagen sobre otro fondo).</li>
+        <li><b>Resolución</b>: 1×, 2× o 4× el tamaño de la pantalla, para imágenes nítidas o carteles.</li>
+        <li><b>Incluir</b>: la <b>rejilla y los ejes</b> (desmárcalo para una imagen limpia), el <b>nombre de cada vista</b> cuando hay varias, y para PDF/impresión un <b>título y la fecha</b>.</li>
+        <li><b>Página A4</b> (PDF e impresión): orientación automática según la forma de la imagen, horizontal o vertical.</li>
+      </ul>
+      <p>La vista previa del diálogo muestra exactamente lo que se va a guardar. Las opciones elegidas se recuerdan para la próxima vez.</p>
+      <h4>Ejemplo: lámina de un diseño en 4 vistas</h4>
+      <ol class="steps">
+        <li>Abre el ejemplo de la casa y elige <b>4 vistas</b> en la barra inferior.</li>
+        <li>Pulsa ${k('N')} para ocultar el panel lateral y ganar espacio.</li>
+        <li>Pulsa ${k('Ctrl', 'P')}, elige <b>PDF</b>, fondo <b>Blanco</b>, desmarca <b>Rejilla y ejes</b> y pulsa <b>Descargar</b>.</li>
+      </ol>
+      ${exBtn('casa')}`,
   },
   {
     id: 'extrusion', title: 'Extrusión',
@@ -472,6 +505,9 @@ const SECTIONS = [
         <tr><td>${k('5')} · ${k('0')}</td><td>Ortográfica ⇄ perspectiva · Perspectiva</td></tr>
         <tr><td>${k('F')}</td><td>Encuadrar selección</td></tr>
         <tr><td>${k('Z')}</td><td>Alternar Sólido ⇄ Wire</td></tr>
+        <tr><td>${k('N')}</td><td>Mostrar u ocultar el panel lateral</td></tr>
+        <tr><th colspan="2">Capturar</th></tr>
+        <tr><td>${k('Ctrl', 'P')}</td><td>Capturar imagen, PDF o imprimir</td></tr>
         <tr><th colspan="2">Ayuda</th></tr>
         <tr><td>${k('?')} · ${k('F1')}</td><td>Abrir esta ayuda</td></tr>
       </table>

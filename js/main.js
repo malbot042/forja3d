@@ -6,6 +6,7 @@ import { openHelp, EXAMPLES, createExampleProject } from './help.js';
 import * as store from './storage.js';
 import { toggleTheme } from './theme.js';
 import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
+import { makePdf } from './pdf.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -261,7 +262,8 @@ function openProject(id) {
   $('#editor-screen').hidden = false;
   if (!editor) initEditor();
 
-  const skipped = editor.load(p.objects, p.camera);
+  const skipped = editor.load(p.objects, p.camera, p.settings?.viewports);
+  refreshLayoutButtons();
   if (skipped.length) toast(`Se ignoraron tipos desconocidos: ${[...new Set(skipped)].join(', ')}`, true);
   editor.select(null);
   editor.resetHistory();
@@ -291,7 +293,7 @@ function openProject(id) {
 function snapshotProject() {
   project.objects = editor.serialize();
   project.camera = editor.getCamera();
-  project.settings = { view: editor.viewMode, grid: $('#chk-grid').checked, snap: $('#chk-snap').checked };
+  project.settings = { view: editor.viewMode, grid: $('#chk-grid').checked, snap: $('#chk-snap').checked, viewports: editor.getViewState() };
 }
 
 function scheduleSave() {
@@ -351,19 +353,8 @@ function initEditor() {
     $('#btn-undo').disabled = !e.detail.canUndo;
     $('#btn-redo').disabled = !e.detail.canRedo;
   });
-  editor.orbit.addEventListener('end', scheduleSave);
-  // al orbitar a mano se abandona la vista predefinida
-  editor.orbit.addEventListener('start', () => {
-    const q = editor.camera.quaternion.clone();
-    const once = () => {
-      if (!q.equals(editor.camera.quaternion) && editor.currentView !== 'free') {
-        editor.currentView = 'free';
-        refreshCamera({ projection: editor.projection, view: 'free' });
-      }
-      editor.orbit.removeEventListener('end', once);
-    };
-    editor.orbit.addEventListener('end', once);
-  });
+  editor.addEventListener('cameraend', scheduleSave);
+  editor.addEventListener('layout', () => { refreshLayoutButtons(); scheduleSave(); });
 
   // barra superior
   $('#btn-back').onclick = () => (location.hash = '');
@@ -407,6 +398,12 @@ function initEditor() {
     if (b) { editor.setView(b.dataset.cam); scheduleSave(); }
   };
   $('#btn-proj').onclick = () => { editor.toggleProjection(); scheduleSave(); };
+  for (const b of document.querySelectorAll('button[data-layout]')) {
+    b.addEventListener('click', () => { editor.setLayout(+b.dataset.layout); editor.frame(true); });
+  }
+  $('#btn-capture').onclick = () => captureDialog();
+  $('#btn-side').onclick = () => toggleSidebar();
+  initSidebarResize();
   $('#ops-bar').onclick = e => {
     const b = e.target.closest('button[data-op]');
     if (b) runOp(b.dataset.op);
@@ -519,7 +516,239 @@ function refreshCamera({ projection, view }) {
   proj.classList.toggle('active', projection === 'ortho');
   proj.textContent = projection === 'ortho' ? 'Orto ✓' : 'Orto';
   const name = view === 'persp' && projection === 'ortho' ? 'Libre' : VIEW_NAMES[view] || 'Libre';
-  $('#cam-label').textContent = projection === 'ortho' ? `${name} · ortográfica` : (name === 'Perspectiva' ? name : `${name} · perspectiva`);
+}
+
+function refreshLayoutButtons() {
+  for (const b of document.querySelectorAll('button[data-layout]')) b.classList.toggle('active', +b.dataset.layout === editor.layout);
+}
+
+// ----------------------------------------------------------- panel lateral
+const SIDE_KEY = 'forja3d:side';
+function sidePrefs() { try { return JSON.parse(localStorage.getItem(SIDE_KEY)) || {}; } catch { return {}; } }
+function saveSidePrefs(p) { try { localStorage.setItem(SIDE_KEY, JSON.stringify({ ...sidePrefs(), ...p })); } catch { /* sin almacenamiento */ } }
+
+function applySidebar() {
+  const p = sidePrefs();
+  const scr = $('#editor-screen');
+  scr.classList.toggle('side-hidden', !!p.hidden);
+  if (p.width) scr.style.setProperty('--side-w', `${p.width}px`);
+  else scr.style.removeProperty('--side-w');
+  $('#btn-side').classList.toggle('active', !p.hidden);
+}
+
+function toggleSidebar(force) {
+  const hidden = force ?? !sidePrefs().hidden;
+  saveSidePrefs({ hidden });
+  applySidebar();
+}
+
+function initSidebarResize() {
+  applySidebar();
+  const handle = $('#side-resizer');
+  handle.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add('resizing');
+    const scr = $('#editor-screen');
+    const max = Math.max(260, Math.min(720, scr.clientWidth - 360));
+    const move = ev => {
+      const w = Math.round(Math.min(max, Math.max(220, scr.getBoundingClientRect().right - ev.clientX)));
+      scr.style.setProperty('--side-w', `${w}px`);
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      document.body.classList.remove('resizing');
+      const w = parseInt(getComputedStyle(scr).getPropertyValue('--side-w'), 10);
+      if (w) saveSidePrefs({ width: w });
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
+  handle.addEventListener('dblclick', () => { saveSidePrefs({ width: null }); applySidebar(); });
+}
+
+// ------------------------------------------------------ capturar / imprimir
+const CAPTURE_KEY = 'forja3d:capture';
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise(res => canvas.toBlob(res, type, quality));
+}
+
+function flattenOn(canvas, color) {
+  const c = document.createElement('canvas');
+  c.width = canvas.width; c.height = canvas.height;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(canvas, 0, 0);
+  return c;
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+const stamp = () => new Date().toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' });
+
+function captureDialog(initialFormat) {
+  if (document.querySelector('.modal-backdrop')) return;
+  let prefs = {};
+  try { prefs = JSON.parse(localStorage.getItem(CAPTURE_KEY)) || {}; } catch { /* nada */ }
+  const st = {
+    format: initialFormat || prefs.format || 'png',
+    grid: prefs.grid ?? $('#chk-grid').checked,
+    labels: prefs.labels ?? true,
+    background: prefs.background || 'theme',
+    scale: prefs.scale || 2,
+    orientation: prefs.orientation || 'auto',
+    header: prefs.header ?? true,
+  };
+  const wrap = h('div', { class: 'modal-backdrop' });
+  const preview = h('img', { class: 'cap-preview', alt: 'Vista previa de la captura' });
+  const info = h('span', { class: 'muted' });
+  const seg = (key, options) => h('div', { class: 'seg cap-seg', 'data-key': key }, options.map(([v, l]) =>
+    h('button', { type: 'button', 'data-v': v, class: String(st[key]) === String(v) ? 'active' : '' }, l)));
+  const chk = (key, label) => {
+    const c = h('input', { type: 'checkbox' });
+    c.checked = !!st[key];
+    c.onchange = () => { st[key] = c.checked; update(); };
+    return h('label', { class: 'toggle' }, c, h('span', {}, label));
+  };
+  const rowsEl = {
+    format: h('div', { class: 'cap-row' }, h('span', { class: 'cap-label' }, 'Formato'),
+      seg('format', [['png', 'PNG'], ['jpg', 'JPG'], ['pdf', 'PDF'], ['print', 'Imprimir']])),
+    background: h('div', { class: 'cap-row' }, h('span', { class: 'cap-label' }, 'Fondo'),
+      seg('background', [['theme', 'Del tema'], ['white', 'Blanco'], ['transparent', 'Transparente']])),
+    scale: h('div', { class: 'cap-row' }, h('span', { class: 'cap-label' }, 'Resolución'),
+      seg('scale', [[1, '1×'], [2, '2×'], [4, '4×']])),
+    orientation: h('div', { class: 'cap-row' }, h('span', { class: 'cap-label' }, 'Página A4'),
+      seg('orientation', [['auto', 'Automática'], ['landscape', 'Horizontal'], ['portrait', 'Vertical']])),
+    options: h('div', { class: 'cap-row cap-checks' }, h('span', { class: 'cap-label' }, 'Incluir'),
+      h('div', { class: 'cap-checks-list' },
+        chk('grid', 'Rejilla y ejes'),
+        chk('labels', 'Nombre de cada vista'),
+        chk('header', 'Título y fecha (PDF / impresión)'))),
+  };
+  const actionBtn = h('button', { class: 'btn btn-primary' }, 'Descargar');
+  let current = null;
+  let timer = null;
+
+  function update() {
+    for (const segEl of wrap.querySelectorAll('.cap-seg')) {
+      for (const b of segEl.children) b.classList.toggle('active', String(st[segEl.dataset.key]) === b.dataset.v);
+    }
+    const isDoc = st.format === 'pdf' || st.format === 'print';
+    if (st.background === 'transparent' && st.format !== 'png') st.background = 'theme';
+    rowsEl.background.querySelector('[data-v="transparent"]').disabled = st.format !== 'png';
+    rowsEl.orientation.hidden = !isDoc;
+    rowsEl.options.querySelectorAll('.toggle')[1].hidden = editor.views.length < 2;
+    rowsEl.options.querySelectorAll('.toggle')[2].hidden = !isDoc;
+    actionBtn.textContent = st.format === 'print' ? 'Imprimir…' : 'Descargar';
+    clearTimeout(timer);
+    timer = setTimeout(render, 60);
+  }
+
+  function render() {
+    current = editor.capture({ scale: st.scale, grid: st.grid, labels: st.labels, background: st.background });
+    const pv = document.createElement('canvas');
+    const k = Math.min(1, 560 / current.width);
+    pv.width = Math.round(current.width * k); pv.height = Math.round(current.height * k);
+    const ctx = pv.getContext('2d');
+    if (st.background === 'transparent') {
+      // damero para que se vea la transparencia
+      for (let y = 0; y < pv.height; y += 10) for (let x = 0; x < pv.width; x += 10) {
+        ctx.fillStyle = ((x + y) / 10) % 2 ? '#d8d8d8' : '#f4f4f4'; ctx.fillRect(x, y, 10, 10);
+      }
+    }
+    ctx.drawImage(current, 0, 0, pv.width, pv.height);
+    preview.src = pv.toDataURL('image/png');
+    info.textContent = `${current.width} × ${current.height} px · ${editor.views.length} vista${editor.views.length > 1 ? 's' : ''}`;
+  }
+
+  wrap.addEventListener('click', e => {
+    const b = e.target.closest('.cap-seg button');
+    if (!b || b.disabled) return;
+    const key = b.parentElement.dataset.key;
+    st[key] = key === 'scale' ? +b.dataset.v : b.dataset.v;
+    update();
+  });
+
+  const close = () => {
+    clearTimeout(timer);
+    document.removeEventListener('keydown', onKey, true);
+    wrap.remove();
+    try { localStorage.setItem(CAPTURE_KEY, JSON.stringify(st)); } catch { /* nada */ }
+  };
+  const base = `${store.slug(project.name)}-${new Date().toISOString().slice(0, 10)}`;
+  const go = async () => {
+    if (!current) render();
+    const img = current;
+    const title = st.header ? project.name : '';
+    const sub = st.header ? `Forja 3D · ${stamp()} · ${editor.views.map(v => v.labelText()).join(' / ')}` : '';
+    close();
+    try {
+      if (st.format === 'png') {
+        downloadBlob(await canvasToBlob(img, 'image/png'), `${base}.png`);
+      } else if (st.format === 'jpg') {
+        const flat = st.background === 'theme' ? img : flattenOn(img, '#ffffff');
+        downloadBlob(await canvasToBlob(flat, 'image/jpeg', 0.92), `${base}.jpg`);
+      } else if (st.format === 'pdf') {
+        const flat = flattenOn(img, '#ffffff');
+        const jpeg = new Uint8Array(await (await canvasToBlob(flat, 'image/jpeg', 0.92)).arrayBuffer());
+        const pdf = makePdf({ jpeg, width: flat.width, height: flat.height, orientation: st.orientation, title, subtitle: sub });
+        downloadBlob(new Blob([pdf], { type: 'application/pdf' }), `${base}.pdf`);
+      } else {
+        printImage(img, { title, subtitle: sub, orientation: st.orientation });
+        return;
+      }
+      toast(`Captura guardada (${img.width} × ${img.height} px)`);
+    } catch (err) {
+      console.error(err);
+      toast(`No se pudo capturar: ${err.message}`, true);
+    }
+  };
+  actionBtn.onclick = go;
+  const onKey = e => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); go(); }
+    else e.stopPropagation();
+  };
+  document.addEventListener('keydown', onKey, true);
+  wrap.append(h('div', { class: 'modal capture', role: 'dialog', 'aria-modal': 'true' },
+    h('header', { class: 'modal-head' }, h('h2', {}, 'Capturar o imprimir'),
+      h('span', { class: 'muted' }, 'Se capturan las vistas tal como están en pantalla, sin el gizmo ni las cajas de selección.')),
+    h('div', { class: 'capture-body' },
+      h('div', { class: 'cap-preview-wrap' }, preview, info),
+      h('div', { class: 'cap-opts' }, rowsEl.format, rowsEl.background, rowsEl.scale, rowsEl.orientation, rowsEl.options)),
+    h('footer', { class: 'modal-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'), actionBtn)));
+  wrap.addEventListener('pointerdown', e => { if (e.target === wrap) close(); });
+  document.body.append(wrap);
+  update();
+}
+
+/** Imprime una imagen (el usuario puede elegir «Guardar como PDF» en el diálogo del navegador). */
+function printImage(canvas, { title, subtitle, orientation }) {
+  const sheet = $('#print-sheet');
+  const landscape = orientation === 'landscape' || (orientation === 'auto' && canvas.width >= canvas.height);
+  const flat = flattenOn(canvas, '#ffffff');
+  sheet.replaceChildren(
+    title ? h('h1', {}, title) : null,
+    subtitle ? h('p', {}, subtitle) : null,
+    h('img', { src: flat.toDataURL('image/jpeg', 0.95), alt: title || 'Captura', style: `max-height:${landscape ? 165 : 235}mm` }));
+  let style = document.getElementById('print-page-style');
+  if (!style) { style = h('style', { id: 'print-page-style' }); document.head.append(style); }
+  style.textContent = `@page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 12mm; }`;
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); sheet.replaceChildren(); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  const img = sheet.querySelector('img');
+  const fire = () => setTimeout(() => window.print(), 50);
+  img.complete ? fire() : img.addEventListener('load', fire, { once: true });
 }
 
 function setTransform(mode) {
@@ -542,6 +771,7 @@ function onKey(e) {
   const typing = e.target.closest('input, textarea, select');
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveNow(); toast('Guardado'); return; }
+  if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); captureDialog('print'); return; }
   if (typing) return;
   const k = e.key.toLowerCase();
   const digit = (e.code.match(/^(?:Digit|Numpad)(\d)$/) || [])[1];
@@ -554,6 +784,7 @@ function onKey(e) {
   else if (digit === '5') { editor.toggleProjection(); scheduleSave(); }
   else if (digit === '0') { editor.setView('persp'); scheduleSave(); }
   else if (e.code === 'NumpadDecimal' || k === 'f') editor.frame();
+  else if (k === 'n') toggleSidebar();
   else if (k === 'w') setTransform('translate');
   else if (k === 'e') setTransform('rotate');
   else if (k === 'r') setTransform('scale');

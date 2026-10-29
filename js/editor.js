@@ -1,13 +1,13 @@
 // Núcleo del editor: escena Three.js, selección (simple y múltiple), gizmos, cámaras
 // perspectiva/ortográfica, modos de vista, operaciones booleanas, serialización e historial.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { PRIMITIVES, DEFAULT_SHAPES, BOOLEAN_OPS, defaultParams, typeLabel, profileFrom2D, profileCenterOffset } from './primitives.js';
 import { geometryFor, evaluateBoolean, cachePut, csgKey, matrixOf } from './csg.js';
 import { uid } from './storage.js';
 import { encodeGeometry, meshDataSize } from './io.js';
 import { cssVar, currentTheme } from './theme.js';
+import { View, LAYOUTS } from './views.js';
 
 const DEG = THREE.MathUtils.DEG2RAD;
 const RAD = THREE.MathUtils.RAD2DEG;
@@ -18,16 +18,7 @@ const HALF_SPACE = 1000;
 
 export const DEFAULT_MATERIAL = { color: '#d9d4c7', metalness: 0.05, roughness: 0.6, opacity: 1, flatShading: false };
 
-// Vistas predefinidas: dirección desde el objetivo hacia la cámara
-export const VIEWS = {
-  front:  { label: 'Alzado (frontal)', dir: [0, 0, 1] },
-  back:   { label: 'Posterior', dir: [0, 0, -1] },
-  right:  { label: 'Perfil derecho', dir: [1, 0, 0] },
-  left:   { label: 'Perfil izquierdo', dir: [-1, 0, 0] },
-  top:    { label: 'Planta (superior)', dir: [0, 1, 0.0001] },
-  bottom: { label: 'Inferior', dir: [0, -1, 0.0001] },
-  persp:  { label: 'Perspectiva', dir: [1, 0.8, 1.2] },
-};
+export { VIEWS, LAYOUTS } from './views.js';
 
 function decompose(m) {
   const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
@@ -47,30 +38,27 @@ export class Editor extends EventTarget {
     this.objects = new Map();       // id -> Mesh
     this.selection = [];            // ids; el último es el principal (lleva el gizmo)
     this.viewMode = 'solid';
-    this.projection = 'persp';
-    this.currentView = 'persp';
     this.history = [];
     this.historyIndex = -1;
+    this.views = [];
+    this.layout = 1;
 
-    // --- renderer / escena
-    const renderer = this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // --- renderer / escena (un solo lienzo; cada panel se dibuja con viewport + scissor)
+    const renderer = this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
+    renderer.domElement.classList.add('gl-canvas');
     container.appendChild(renderer.domElement);
-    renderer.domElement.tabIndex = 0;
+    this.layoutEl = document.createElement('div');
+    this.layoutEl.className = 'vp-layout';
+    container.appendChild(this.layoutEl);
 
     const scene = this.scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0f1114);
     this.theme = 'dark';
 
-    // --- cámaras
-    this.perspCam = new THREE.PerspectiveCamera(50, 1, 0.01, 4000);
-    this.perspCam.position.set(5, 4, 6);
-    this.orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 4000);
-    this.camera = this.perspCam;
-
-    // luces (con la cámara para que las vistas ortográficas también queden iluminadas)
+    // luces (más una que acompaña a la cámara de cada panel)
     scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2420, 1.2));
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(6, 10, 7);
@@ -99,14 +87,8 @@ export class Editor extends EventTarget {
     // cajas de selección
     this.selectionBoxes = new Map();
 
-    // controles de órbita
-    this.orbit = new OrbitControls(this.camera, renderer.domElement);
-    this.orbit.enableDamping = true;
-    this.orbit.dampingFactor = 0.12;
-    this.orbit.screenSpacePanning = true;
-
-    // gizmo de transformación (mueve también el resto de la selección)
-    this.gizmo = new TransformControls(this.camera, renderer.domElement);
+    // gizmo de transformación (mueve también el resto de la selección); sigue al panel bajo el ratón
+    this.gizmo = new TransformControls(new THREE.PerspectiveCamera(), null);
     this.gizmo.setSize(0.9);
     let start = null;
     this.gizmo.addEventListener('mouseDown', () => {
@@ -121,7 +103,7 @@ export class Editor extends EventTarget {
       };
     });
     this.gizmo.addEventListener('dragging-changed', e => {
-      this.orbit.enabled = !e.value;
+      if (this.gizmoView) this.gizmoView.orbit.enabled = !e.value;
       if (!e.value) { start = null; this._commit(); }
     });
     this.gizmo.addEventListener('objectChange', () => {
@@ -139,26 +121,113 @@ export class Editor extends EventTarget {
     this.gizmoHelper = this.gizmo.getHelper ? this.gizmo.getHelper() : this.gizmo;
     scene.add(this.gizmoHelper);
 
-    this._initPicking();
-    this._initNavigator();
+    this.setLayout(1);
     this._resize = this._resize.bind(this);
     new ResizeObserver(this._resize).observe(container);
     this._resize();
 
     const loop = () => {
-      this.orbit.update();
-      this.headLight.position.copy(this.camera.position);
-      this.headLight.target.position.copy(this.orbit.target);
-      renderer.render(scene, this.camera);
-      this._drawNavigator();
+      this.renderViews();
       this._raf = requestAnimationFrame(loop);
     };
     loop();
   }
 
-  /** Colores de la escena según el tema ('dark' | 'light'). */
+  // -------------------------------------------------------------- paneles
+  get camera() { return this.active.camera; }
+  get orbit() { return this.active.orbit; }
+  get projection() { return this.active.projection; }
+  get currentView() { return this.active.currentView; }
+  set currentView(v) { this.active.currentView = v; this.active.updateLabel(); }
+
+  /** Divide el visor en 1, 2, 3 o 4 paneles, cada uno con su propia cámara. */
+  setLayout(n, states) {
+    n = LAYOUTS[n] ? +n : 1;
+    const defaults = LAYOUTS[n].views;
+    const prevTarget = this.views[0]?.target.clone();
+    while (this.views.length > n) {
+      const v = this.views.pop();
+      if (this.gizmoView === v) this._hoverView(this.views[0]);
+      v.dispose();
+    }
+    while (this.views.length < n) {
+      const v = new View(this, this.views.length);
+      this.layoutEl.append(v.el);
+      this.views.push(v);
+      if (prevTarget) v.target.copy(prevTarget);
+      v.persp.position.copy(v.target).add(new THREE.Vector3(5, 4, 6));
+      v._isNew = true;
+    }
+    this.layout = n;
+    this.layoutEl.dataset.layout = n;
+    this.layoutEl.classList.toggle('multi', n > 1);
+    this._resize();
+    this.views.forEach((v, i) => {
+      if (states?.[i]) v.setState(states[i]);
+      else if (v._isNew && (defaults[i] !== 'persp' || i > 0)) v.setView(defaults[i]);
+      v._isNew = false;
+    });
+    if (!this.views.includes(this.active)) this.setActiveView(this.views[0]);
+    if (!this.gizmoView || !this.views.includes(this.gizmoView)) this._hoverView(this.views[0]);
+    this.dispatchEvent(new CustomEvent('layout', { detail: n }));
+  }
+
+  setActiveView(view) {
+    if (this.active === view) return;
+    this.active = view;
+    for (const v of this.views) v.el.classList.toggle('active', v === view);
+    this._emitCamera(view);
+  }
+
+  _emitCamera(view) {
+    if (view !== this.active) return;
+    this.dispatchEvent(new CustomEvent('camera', { detail: { projection: view.projection, view: view.currentView } }));
+  }
+
+  /** El gizmo trabaja en el panel que está bajo el ratón. */
+  _hoverView(view) {
+    if (!view || this.gizmo.dragging || this.gizmoView === view) return;
+    if (this.gizmo.domElement) this.gizmo.disconnect();
+    this.gizmo.domElement = view.el;
+    this.gizmo.connect();
+    this.gizmo.camera = view.camera;
+    this.gizmoView = view;
+  }
+
+  _cameraChanged(view) {
+    if (this.gizmoView === view) this.gizmo.camera = view.camera;
+  }
+
+  /** Dibuja todos los paneles. `opts.only` limita a una vista; `opts.size` fuerza el tamaño total. */
+  renderViews(opts = {}) {
+    const r = this.renderer;
+    const W = this.container.clientWidth, H = this.container.clientHeight;
+    if (!W || !H) return;
+    r.setScissorTest(false);
+    r.setClearColor(opts.sepColor ?? (this._sepColor ??= new THREE.Color(cssVar('--line') || '#2e333a')), opts.sepAlpha ?? 1);
+    r.clear();
+    for (const v of opts.only ? [opts.only] : this.views) {
+      const rc = opts.only ? { x: 0, y: 0, w: W, h: H } : v.rect();
+      if (rc.w < 2 || rc.h < 2) continue;
+      if (!opts.only) v.setAspect(rc.w / rc.h);
+      v.orbit.update();
+      r.setViewport(rc.x, H - rc.y - rc.h, rc.w, rc.h);
+      r.setScissor(rc.x, H - rc.y - rc.h, rc.w, rc.h);
+      r.setScissorTest(true);
+      this.headLight.position.copy(v.camera.position);
+      this.headLight.target.position.copy(v.target);
+      this.gizmo.camera = v.camera;
+      r.render(this.scene, v.camera);
+      if (!opts.noNav) v.drawNav(this.layout > 1);
+    }
+    r.setScissorTest(false);
+    if (this.gizmoView) this.gizmo.camera = this.gizmoView.camera;
+  }
+
+    /** Colores de la escena según el tema ('dark' | 'light'). */
   setTheme(theme) {
     this.theme = theme;
+    this._sepColor = null;
     const light = theme === 'light';
     this.scene.background = new THREE.Color(light ? 0xe7e6e2 : 0x0f1114);
     for (const g of this.grids || []) { this.helpers.remove(g); g.geometry.dispose(); g.material.dispose(); }
@@ -181,107 +250,27 @@ export class Editor extends EventTarget {
   }
 
   // ---------------------------------------------------------------- picking
-  _initPicking() {
+  _pick(view, e) {
+    if (this.gizmo.dragging || this.gizmo.axis) return;
+    const r = view.el.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
-    const ndc = new THREE.Vector2();
-    let down = null;
-    const el = this.renderer.domElement;
-    el.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
-    el.addEventListener('pointerup', e => {
-      if (!down || e.button !== 0) return;
-      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-      down = null;
-      if (moved > 4 || this.gizmo.dragging || this.gizmo.axis) return;
-      const r = el.getBoundingClientRect();
-      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-      ray.setFromCamera(ndc, this.camera);
-      const meshes = [...this.objects.values()].filter(m => m.visible);
-      const hit = ray.intersectObjects(meshes, false)[0];
-      const id = hit ? hit.object.userData.id : null;
-      if (e.shiftKey || e.ctrlKey || e.metaKey) { if (id) this.toggleSelect(id); }
-      else this.select(id);
-    });
+    ray.setFromCamera(ndc, view.camera);
+    const meshes = [...this.objects.values()].filter(m => m.visible);
+    const hit = ray.intersectObjects(meshes, false)[0];
+    const id = hit ? hit.object.userData.id : null;
+    if (e.shiftKey || e.ctrlKey || e.metaKey) { if (id) this.toggleSelect(id); }
+    else this.select(id);
   }
 
   _resize() {
     const w = this.container.clientWidth, h = this.container.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
-    this.perspCam.aspect = w / h;
-    this.perspCam.updateProjectionMatrix();
-    this._updateOrthoFrustum();
-  }
-
-  _updateOrthoFrustum(halfH = this.orthoCam.top) {
-    const aspect = this.perspCam.aspect || 1;
-    Object.assign(this.orthoCam, { top: halfH, bottom: -halfH, left: -halfH * aspect, right: halfH * aspect });
-    this.orthoCam.updateProjectionMatrix();
-  }
-
-  // ---------------------------------------------------- navegador de ejes
-  _initNavigator() {
-    const c = this.navCanvas = document.createElement('canvas');
-    c.className = 'nav-gizmo';
-    c.title = 'Clic en un eje para ver desde él';
-    this.container.appendChild(c);
-    this._navHits = [];
-    c.addEventListener('pointermove', e => {
-      const r = c.getBoundingClientRect();
-      const x = e.clientX - r.left, y = e.clientY - r.top;
-      const h = this._navHits.find(p => Math.hypot(p.x - x, p.y - y) < p.r + 2);
-      this._navHover = h?.view || null;
-      c.style.cursor = h ? 'pointer' : 'default';
-    });
-    c.addEventListener('pointerleave', () => { this._navHover = null; });
-    c.addEventListener('click', e => {
-      const r = c.getBoundingClientRect();
-      const x = e.clientX - r.left, y = e.clientY - r.top;
-      const h = this._navHits.find(p => Math.hypot(p.x - x, p.y - y) < p.r + 2);
-      if (h) this.setView(h.view);
-    });
-  }
-
-  _drawNavigator() {
-    const c = this.navCanvas, S = 96, dpr = Math.min(window.devicePixelRatio || 1, 2);
-    if (c.width !== S * dpr) { c.width = c.height = S * dpr; c.style.width = c.style.height = `${S}px`; }
-    const ctx = c.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, S, S);
-    ctx.fillStyle = this._navBg ??= cssVar('--cv-nav-bg');
-    ctx.beginPath(); ctx.arc(S / 2, S / 2, S / 2 - 1, 0, Math.PI * 2); ctx.fill();
-    const q = this.camera.quaternion.clone().invert();
-    const axes = [
-      { v: [1, 0, 0], color: '#e5614f', label: 'X', view: 'right' },
-      { v: [0, 1, 0], color: '#6fbf73', label: 'Y', view: 'top' },
-      { v: [0, 0, 1], color: '#5b9bea', label: 'Z', view: 'front' },
-      { v: [-1, 0, 0], color: '#e5614f', view: 'left' },
-      { v: [0, -1, 0], color: '#6fbf73', view: 'bottom' },
-      { v: [0, 0, -1], color: '#5b9bea', view: 'back' },
-    ].map(a => {
-      const p = new THREE.Vector3(...a.v).applyQuaternion(q);
-      return { ...a, x: S / 2 + p.x * 32, y: S / 2 - p.y * 32, z: p.z };
-    }).sort((a, b) => a.z - b.z);
-    this._navHits = [];
-    for (const a of axes) {
-      const pos = !!a.label, hover = this._navHover === a.view;
-      if (pos) {
-        ctx.strokeStyle = a.color; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(S / 2, S / 2); ctx.lineTo(a.x, a.y); ctx.stroke();
-      }
-      const r = pos ? 9 : 7;
-      ctx.fillStyle = pos ? a.color : (this._navNeg ??= cssVar('--cv-nav-neg'));
-      ctx.strokeStyle = a.color; ctx.lineWidth = 1.5;
-      ctx.globalAlpha = a.z < -0.2 ? 0.75 : 1;
-      ctx.beginPath(); ctx.arc(a.x, a.y, hover ? r + 2 : r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.globalAlpha = 1;
-      if (pos) {
-        ctx.fillStyle = '#121417'; ctx.font = 'bold 10px system-ui, sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(a.label, a.x, a.y + 0.5);
-      }
-      this._navHits.push({ x: a.x, y: a.y, r, view: a.view, z: a.z });
+    for (const v of this.views) {
+      const rc = v.rect();
+      if (rc.w && rc.h) v.setAspect(rc.w / rc.h);
     }
-    this._navHits.sort((a, b) => b.z - a.z);
   }
 
   // -------------------------------------------------------------- creación
@@ -800,77 +789,32 @@ export class Editor extends EventTarget {
 
   setGrid(on) { this.helpers.visible = on; }
 
-  /** Cambia entre cámara en perspectiva y ortográfica conservando el encuadre. */
-  setProjection(mode) {
-    if (mode === this.projection) return;
-    const t = this.orbit.target;
-    const from = this.camera;
-    const tanHalf = Math.tan((this.perspCam.fov * DEG) / 2);
-    if (mode === 'ortho') {
-      const dist = from.position.distanceTo(t);
-      const cam = this.orthoCam;
-      cam.position.copy(from.position);
-      cam.quaternion.copy(from.quaternion);
-      cam.zoom = 1;
-      this._updateOrthoFrustum(Math.max(dist * tanHalf, 0.05));
-      this.camera = cam;
-    } else {
-      const ortho = this.orthoCam;
-      const halfH = ortho.top / ortho.zoom;
-      const dir = ortho.position.clone().sub(t).normalize();
-      const cam = this.perspCam;
-      cam.position.copy(t).add(dir.multiplyScalar(halfH / tanHalf));
-      cam.quaternion.copy(ortho.quaternion);
-      this.camera = cam;
-    }
-    this.projection = mode;
-    this.orbit.object = this.camera;
-    this.gizmo.camera = this.camera;
-    this.camera.lookAt(t);
-    this.orbit.update();
-    this.dispatchEvent(new CustomEvent('camera', { detail: { projection: mode, view: this.currentView } }));
-  }
+  /** Proyección del panel activo. */
+  setProjection(mode) { this.active.setProjection(mode); }
+  toggleProjection() { this.active.toggleProjection(); }
 
-  toggleProjection() { this.setProjection(this.projection === 'persp' ? 'ortho' : 'persp'); }
-
-  /** Vistas rápidas: front (alzado), back, right/left (perfiles), top (planta), bottom, persp. */
+  /** Vistas rápidas del panel activo: front (alzado), back, right/left (perfiles), top (planta), bottom, persp. */
   setView(name) {
     if (name === 'focus') return this.frame();
-    const v = VIEWS[name];
-    if (!v) return;
-    this.setProjection(name === 'persp' ? 'persp' : 'ortho');
-    const t = this.orbit.target;
-    const dist = Math.max(this.camera.position.distanceTo(t), 2);
-    this.camera.position.copy(t).add(new THREE.Vector3(...v.dir).normalize().multiplyScalar(dist));
-    this.camera.lookAt(t);
-    this.currentView = name;
-    this.orbit.update();
-    this.dispatchEvent(new CustomEvent('camera', { detail: { projection: this.projection, view: name } }));
+    this.active.setView(name);
   }
 
   /** Compatibilidad con versiones anteriores. */
   cameraPreset(name) { this.setView(name); }
 
-  /** Encuadra la selección (o toda la escena). */
-  frame() {
+  _frameSphere() {
     const box = new THREE.Box3();
     const sel = this.selection.map(id => this.objects.get(id)).filter(m => m?.visible);
     const list = sel.length ? sel : [...this.objects.values()].filter(m => m.visible);
     for (const m of list) box.expandByObject(m, true);
     if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 1, 1));
-    const sphere = box.getBoundingSphere(new THREE.Sphere());
-    const r = Math.max(sphere.radius, 0.3);
-    const dir = this.camera.position.clone().sub(this.orbit.target).normalize();
-    this.orbit.target.copy(sphere.center);
-    if (this.projection === 'ortho') {
-      const halfH = this.orthoCam.top;
-      this.orthoCam.zoom = halfH / (r * 1.2);
-      this.orthoCam.updateProjectionMatrix();
-      this.camera.position.copy(sphere.center).add(dir.multiplyScalar(Math.max(r * 4, 10)));
-    } else {
-      const dist = r / Math.sin((this.perspCam.fov * DEG) / 2) * 1.15;
-      this.camera.position.copy(sphere.center).add(dir.multiplyScalar(dist));
-    }
+    return box.getBoundingSphere(new THREE.Sphere());
+  }
+
+  /** Encuadra la selección (o toda la escena) en el panel activo, o en todos con `all`. */
+  frame(all = false) {
+    const sphere = this._frameSphere();
+    for (const v of all ? this.views : [this.active]) v.frameSphere(sphere);
   }
 
   // -------------------------------------------------------- serialización
@@ -897,19 +841,15 @@ export class Editor extends EventTarget {
     return [...this.root.children].filter(m => m.userData.id).map(m => this._serializeMesh(m));
   }
 
-  getCamera() {
-    return {
-      position: this.camera.position.toArray().map(v => round(v, 3)),
-      target: this.orbit.target.toArray().map(v => round(v, 3)),
-      projection: this.projection,
-      zoom: round(this.orthoCam.zoom, 4),
-      halfHeight: round(this.orthoCam.top, 4),
-      view: this.currentView,
-    };
+  getCamera() { return this.views[0].getState(); }
+
+  /** Estado de los paneles para guardarlo en el proyecto. */
+  getViewState() {
+    return { layout: this.layout, views: this.views.map(v => v.getState()), active: this.views.indexOf(this.active) };
   }
 
-  /** Carga una lista de objetos (y cámara opcional). */
-  load(objects, camera) {
+  /** Carga una lista de objetos y el estado de cámara(s). */
+  load(objects, camera, viewState) {
     this.clear();
     const skipped = [];
     for (const d of objects || []) {
@@ -917,22 +857,14 @@ export class Editor extends EventTarget {
       const data = { ...d, id: d.id || uid(), name: d.name || typeLabel(d) };
       this._insert(data);
     }
-    if (camera) {
-      this.setProjection('persp');
-      this.perspCam.position.fromArray(camera.position);
-      this.orbit.target.fromArray(camera.target);
-      this.perspCam.lookAt(this.orbit.target);
-      this.currentView = camera.view || 'persp';
-      if (camera.projection === 'ortho') {
-        this.setProjection('ortho');
-        this.orthoCam.position.fromArray(camera.position);
-        if (camera.halfHeight) this._updateOrthoFrustum(camera.halfHeight);
-        this.orthoCam.zoom = camera.zoom || 1;
-        this.orthoCam.lookAt(this.orbit.target);
-        this.orthoCam.updateProjectionMatrix();
-      }
-      this.dispatchEvent(new CustomEvent('camera', { detail: { projection: this.projection, view: this.currentView } }));
-    }
+    // reiniciar paneles con el estado guardado
+    while (this.views.length > 1) this.setLayout(1);
+    const states = viewState?.views?.length ? viewState.views : camera ? [camera] : [];
+    this.views[0].setState(states[0] || { position: [5, 4, 6], target: [0, 0, 0], projection: 'persp', view: 'persp' });
+    this.setLayout(viewState?.layout || 1, states);
+    const act = this.views[viewState?.active ?? 0] || this.views[0];
+    this.active = null;
+    this.setActiveView(act);
     this.dispatchEvent(new CustomEvent('objects'));
     return skipped;
   }
@@ -1007,22 +939,91 @@ export class Editor extends EventTarget {
     return { objects: this.objects.size, tris: Math.round(tris), verts };
   }
 
-  /** Miniatura JPEG del estado actual (sin ayudas ni gizmo). */
-  thumbnail(w = 320, h = 200) {
-    if (!this.objects.size) return null;
+  /** Oculta ayudas (rejilla, gizmo, cajas) mientras se ejecuta `fn`. */
+  _withCleanScene(fn, { grid = false } = {}) {
     const boxes = [...this.selectionBoxes.values()];
-    const hidden = [this.helpers, this.gizmoHelper, ...boxes];
+    const hidden = [this.gizmoHelper, ...boxes];
+    if (!grid) hidden.push(this.helpers);
     const prev = hidden.map(o => o.visible);
     hidden.forEach(o => (o.visible = false));
-    this.renderer.render(this.scene, this.camera);
-    const src = this.renderer.domElement;
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const ctx = c.getContext('2d');
-    const scale = Math.max(w / src.width, h / src.height);
-    const sw = w / scale, sh = h / scale;
-    ctx.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, w, h);
-    hidden.forEach((o, i) => (o.visible = prev[i]));
-    return c.toDataURL('image/jpeg', 0.72);
+    try { return fn(); } finally { hidden.forEach((o, i) => (o.visible = prev[i])); }
+  }
+
+  /** Miniatura JPEG del primer panel (sin ayudas ni gizmo). */
+  thumbnail(w = 320, h = 200) {
+    if (!this.objects.size) return null;
+    const v = this.views[0];
+    const rc = v.rect();
+    return this._withCleanScene(() => {
+      this.renderViews({ only: v, noNav: true });
+      const src = this.renderer.domElement;
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      const scale = Math.max(w / src.width, h / src.height);
+      const sw = w / scale, sh = h / scale;
+      ctx.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, w, h);
+      v.setAspect(rc.w / rc.h);
+      return c.toDataURL('image/jpeg', 0.72);
+    });
+  }
+
+  /**
+   * Captura las vistas tal como se ven en pantalla.
+   * opts: { scale, grid, labels, background: 'theme'|'white'|'transparent' }
+   * Devuelve un <canvas> 2D.
+   */
+  capture({ scale = 1, grid = true, labels = true, background = 'theme' } = {}) {
+    const r = this.renderer;
+    const W = this.container.clientWidth, H = this.container.clientHeight;
+    const basePR = r.getPixelRatio();
+    // limitar a ~40 megapíxeles
+    const maxScale = Math.sqrt(40e6 / (W * H)) / basePR;
+    const pr = basePR * Math.max(0.25, Math.min(scale, maxScale));
+    const prevBg = this.scene.background;
+    if (background === 'white') this.scene.background = new THREE.Color(0xffffff);
+    if (background === 'transparent') this.scene.background = null;
+    r.setPixelRatio(pr);
+    r.setSize(W, H, false);
+    let out;
+    try {
+      out = this._withCleanScene(() => {
+        this.renderViews({
+          noNav: true,
+          sepColor: background === 'white' ? new THREE.Color(0xdddddd) : undefined,
+          sepAlpha: background === 'transparent' ? 0 : 1,
+        });
+        if (background === 'transparent') {
+          // en modo transparente, cada panel limpia con alfa 0
+        }
+        const src = r.domElement;
+        const c = document.createElement('canvas');
+        c.width = src.width; c.height = src.height;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(src, 0, 0);
+        if (labels && this.views.length > 1) {
+          const k = c.width / W;
+          ctx.font = `${Math.round(12 * k)}px system-ui, sans-serif`;
+          ctx.textBaseline = 'top';
+          for (const v of this.views) {
+            const rc = v.rect();
+            const text = v.labelText();
+            const x = (rc.x + 10) * k, y = (rc.y + 8) * k;
+            const tw = ctx.measureText(text).width;
+            ctx.fillStyle = background === 'white' || this.theme === 'light' ? 'rgba(255,255,255,.85)' : 'rgba(20,22,26,.75)';
+            ctx.fillRect(x - 5 * k, y - 3 * k, tw + 10 * k, 20 * k);
+            ctx.fillStyle = background === 'white' || this.theme === 'light' ? '#1d1f23' : '#e6e8eb';
+            ctx.fillText(text, x, y + 1 * k);
+          }
+        }
+        return c;
+      }, { grid });
+    } finally {
+      this.scene.background = prevBg;
+      r.setPixelRatio(basePR);
+      r.setSize(W, H, false);
+      this.renderViews();
+    }
+    return out;
   }
 }
