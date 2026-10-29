@@ -258,7 +258,9 @@ export class Editor extends EventTarget {
   setCadActive(panel) {
     if (!panel || this.cadActive === panel) return;
     this.cadActive = panel;
+    this.cad.focusView = panel.cadView;
     for (const p of this.cadPanels) p.el.classList.toggle('active', p === panel);
+    this.dispatchEvent(new CustomEvent('cadactive'));
   }
 
   _emitCamera(view) {
@@ -1227,6 +1229,13 @@ export class Editor extends EventTarget {
     this.setCadLayout(cad?.layout || 1, cad?.views);
     this.cadActive = null;
     this.setCadActive(this.cadPanels[cad?.active ?? 0] || this.cadPanels[0]);
+    // planos guardados cuando el modo isométrico era de todo el plano: pasa al primer panel
+    const D = this.cad.drawing;
+    if (D.isoGrid !== undefined || D.isoPlane !== undefined) {
+      if (D.isoGrid) { this.cadPanels[0].cadView.iso = true; this.cadPanels[0].cadView.isoPlane = D.isoPlane || 'top'; }
+      delete D.isoGrid; delete D.isoPlane;
+    }
+    this.cadPanels.forEach(p => p.updateLabel());
     this.setWorkspace(ws || '3d', true);
     this.dispatchEvent(new CustomEvent('objects'));
     return skipped;

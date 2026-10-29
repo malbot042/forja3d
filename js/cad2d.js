@@ -203,7 +203,7 @@ export function sketchStrokes(strokes, seed, { amp, step, over, bowMax = 0 }) {
 }
 
 export const TYPE_LABELS = { line: 'Línea', pline: 'Polilínea', circle: 'Círculo', arc: 'Arco', ellipse: 'Elipse', text: 'Texto', dim: 'Cota' };
-export const DIM_LABELS = { horizontal: 'Cota horizontal', vertical: 'Cota vertical', aligned: 'Cota alineada', radius: 'Cota de radio', diameter: 'Cota de diámetro', angle: 'Cota angular' };
+export const DIM_LABELS = { iso: 'Cota isométrica', horizontal: 'Cota horizontal', vertical: 'Cota vertical', aligned: 'Cota alineada', radius: 'Cota de radio', diameter: 'Cota de diámetro', angle: 'Cota angular' };
 
 const LAYER_COLORS = ['#e5614f', '#f2a541', '#6fbf73', '#3fa7a0', '#5b9bea', '#7b6fd6', '#c56bd1'];
 
@@ -304,7 +304,7 @@ export const ISO_PLANES = {
   right: { label: 'Derecha', axes: [30, 90] },
   left: { label: 'Izquierda', axes: [150, 90] },
 };
-export const isoAxes = D => (ISO_PLANES[D.isoPlane] || ISO_PLANES.top).axes.map(a => [Math.cos(a * Math.PI / 180), Math.sin(a * Math.PI / 180)]);
+export const isoAxes = V => (ISO_PLANES[V?.isoPlane] || ISO_PLANES.top).axes.map(a => [Math.cos(a * Math.PI / 180), Math.sin(a * Math.PI / 180)]);
 
 function prims(e) {
   switch (e.type) {
@@ -452,6 +452,26 @@ export function dimGeom(e, D) {
     rot = signedA(rot);
     const up = [-Math.sin(rot), Math.cos(rot)];
     g.text = { p: add(lerp(a2, b2, 0.5), mul(up, gap * 0.6)), rot, str: label(g.value), h, align: 'center' };
+  } else if (e.kind === 'iso') {
+    // cota isométrica: mide a lo largo de un eje isométrico (u); las líneas de referencia van por otro eje (w)
+    const { a, b, p, u, w } = e;
+    const [s1, t1] = inBasis(sub(b, a), u, w);
+    const beta = inBasis(sub(p, a), u, w)[1];
+    const a2 = add(a, mul(w, beta)), b2 = add(b, mul(w, beta - t1));
+    g.value = Math.abs(s1);
+    for (const [P0, P1] of [[a, a2], [b, b2]]) {
+      const v = sub(P1, P0), L = len(v);
+      if (L > gap) { const k = mul(v, 1 / L); g.lines.push([add(P0, mul(k, gap)), add(P1, mul(k, ext))]); }
+    }
+    g.lines.push([a2, b2]);
+    if (dist(a2, b2) > 1e-9) { const k = norm(sub(b2, a2)); g.arrows.push({ tip: a2, dir: mul(k, -1) }, { tip: b2, dir: k }); }
+    // texto apoyado en la cara: su base sigue u y sus verticales siguen w (texto oblicuo)
+    let e1 = [...u];
+    if (e1[0] < -1e-9 || (Math.abs(e1[0]) <= 1e-9 && e1[1] < 0)) e1 = mul(e1, -1);
+    let e2 = [...w];
+    if (cross2(e1, e2) < 0) e2 = mul(e2, -1);
+    const str = (e.pre || '') + label(g.value);
+    g.text = { p: add(lerp(a2, b2, 0.5), mul(e2, gap * 0.7)), rot: Math.atan2(e1[1], e1[0]), str, h, align: 'center', basis: [e1, e2] };
   } else if (e.kind === 'radius' || e.kind === 'diameter') {
     const { c, r, p } = e;
     const diam = e.kind === 'diameter';
@@ -636,6 +656,7 @@ function xform(e, f, o = {}) {
     }
     case 'dim': {
       for (const k of ['a', 'b', 'p', 'c']) if (e[k]) n[k] = P(f(e[k]));
+      if (e.u && e.w) { const f0 = f(e.a); n.u = P(norm(sub(f(add(e.a, e.u)), f0))); n.w = P(norm(sub(f(add(e.a, e.w)), f0))); }
       if (e.r) n.r = rnd(e.r * s);
       if (e.kind === 'angle') {
         const A1 = mapAng(e.c, e.a1), A2 = mapAng(e.c, e.a2);
@@ -918,9 +939,11 @@ export function toDXF(D) {
   w(0, 'SECTION'); w(2, 'ENTITIES');
   const line = (l, a, b) => { w(0, 'LINE'); w(8, l); w(10, num(a[0])); w(20, num(a[1])); w(30, 0); w(11, num(b[0])); w(21, num(b[1])); w(31, 0); };
   const arc = (l, c, r, a0, a1) => { w(0, 'ARC'); w(8, l); w(10, num(c[0])); w(20, num(c[1])); w(30, 0); w(40, num(r)); w(50, num(normA(a0) * DEG)); w(51, num(normA(a1) * DEG)); };
-  const text = (l, p, str, h, rot, center) => {
+  const text = (l, p, str, h, rot, center, basis) => {
     w(0, 'TEXT'); w(8, l); w(10, num(p[0])); w(20, num(p[1])); w(30, 0); w(40, num(h)); w(1, dxfText(str));
     if (rot) w(50, num(rot * DEG));
+    // texto isométrico: ángulo oblicuo = 90° − ángulo entre la base y las verticales de las letras
+    if (basis) { const th = Math.atan2(cross2(basis[0], basis[1]), dot(basis[0], basis[1])); w(51, num(90 - th * DEG)); }
     if (center) { w(72, 1); w(11, num(p[0])); w(21, num(p[1])); w(31, 0); }
   };
   const lyr = new Map(D.layers.map(L => [L.name, L]));
@@ -957,7 +980,7 @@ export function toDXF(D) {
           w(12, num(p2[0])); w(22, num(p2[1])); w(32, 0);
           w(13, num(p2[0])); w(23, num(p2[1])); w(33, 0);
         }
-        if (g.text) text(l, g.text.p, g.text.str, g.text.h, g.text.rot, true);
+        if (g.text) text(l, g.text.p, g.text.str, g.text.h, g.text.rot, true, g.text.basis);
         break;
       }
     }
@@ -1144,8 +1167,9 @@ export function toSVG(D, entities = D.entities) {
     const s = polar(c, r, a0), e = polar(c, r, a1);
     return `<path d="M${X(s[0])} ${Y(s[1])} A${rnd(r)} ${rnd(r)} 0 ${sw > Math.PI ? 1 : 0} 0 ${X(e[0])} ${Y(e[1])}"`;
   };
-  const txt = (p, str, h, rot, anchor, col) =>
-    `<text x="${X(p[0])}" y="${Y(p[1])}" font-size="${rnd(h * FS)}" font-family="Inter, Arial, sans-serif" fill="${col}" stroke="none" text-anchor="${anchor}"${rot ? ` transform="rotate(${rnd(-rot * DEG)} ${X(p[0])} ${Y(p[1])})"` : ''}>${esc(str)}</text>`;
+  const txt = (p, str, h, rot, anchor, col, basis) => basis
+    ? `<text x="0" y="0" font-size="${rnd(h * FS)}" font-family="Inter, Arial, sans-serif" fill="${col}" stroke="none" text-anchor="${anchor}" transform="matrix(${[basis[0][0], -basis[0][1], -basis[1][0], basis[1][1]].map(rnd).join(' ')} ${X(p[0])} ${Y(p[1])})">${esc(str)}</text>`
+    : `<text x="${X(p[0])}" y="${Y(p[1])}" font-size="${rnd(h * FS)}" font-family="Inter, Arial, sans-serif" fill="${col}" stroke="none" text-anchor="${anchor}"${rot ? ` transform="rotate(${rnd(-rot * DEG)} ${X(p[0])} ${Y(p[1])})"` : ''}>${esc(str)}</text>`;
   for (const e of ents) {
     const L = layers.get(e.layer) || {};
     const col = !L.color || L.color === 'auto' ? '#000000' : L.color;
@@ -1180,7 +1204,7 @@ export function toSVG(D, entities = D.entities) {
           const pts = [ar.tip, add(base, n), sub(base, n)];
           out.push(`<polygon points="${pts.map(p => `${X(p[0])},${Y(p[1])}`).join(' ')}" fill="${col}" stroke="none"/>`);
         }
-        if (g.text) out.push(txt(g.text.p, g.text.str, g.text.h, g.text.rot, 'middle', col));
+        if (g.text) out.push(txt(g.text.p, g.text.str, g.text.h, g.text.rot, 'middle', col, g.text.basis));
         break;
       }
     }
@@ -1228,14 +1252,16 @@ export function toPDF(D, { title = '' } = {}) {
     const n = Math.max(16, Math.ceil(Math.abs(sw) / (2 * Math.PI / 180)));
     return Array.from({ length: n + 1 }, (_, i) => polar(c, r, a0 + sw * i / n));
   };
-  const text = (p, str, h, rot, center, col) => {
+  const text = (p, str, h, rot, center, col, basis) => {
     const size = h * FS / S.k * PT;
     if (size < 0.5) return;
     const [r, g, b] = hexRGB(col);
     const c = Math.cos(rot || 0), sn = Math.sin(rot || 0);
+    // matriz del texto: base (e1) y verticales (e2); en isométrico e2 no es perpendicular (texto oblicuo)
+    const [e1, e2] = basis || [[c, sn], [-sn, c]];
     let x = X(p[0]), y = Y(p[1]);
-    if (center) { const w = helvWidth(str, size) / 2; x -= c * w; y -= sn * w; }
-    out.push(`${f(r)} ${f(g)} ${f(b)} rg BT /F1 ${f(size)} Tf ${f(c)} ${f(sn)} ${f(-sn)} ${f(c)} ${f(x)} ${f(y)} Tm (${pdfText(str)}) Tj ET`);
+    if (center) { const w = helvWidth(str, size) / 2; x -= e1[0] * w; y -= e1[1] * w; }
+    out.push(`${f(r)} ${f(g)} ${f(b)} rg BT /F1 ${f(size)} Tf ${f(e1[0])} ${f(e1[1])} ${f(e2[0])} ${f(e2[1])} ${f(x)} ${f(y)} Tm (${pdfText(str)}) Tj ET`);
   };
   const entity = (e, col, wmm, LT) => {
     if (LT?.sketch && ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type)) {
@@ -1267,7 +1293,7 @@ export function toPDF(D, { title = '' } = {}) {
           const t = [ar.tip, add(base, n), sub(base, n)];
           out.push(t.map((q, i) => `${f(X(q[0]))} ${f(Y(q[1]))} ${i ? 'l' : 'm'}`).join(' ') + ' h f');
         }
-        if (g.text) text(g.text.p, g.text.str, g.text.h, g.text.rot, true, col);
+        if (g.text) text(g.text.p, g.text.str, g.text.h, g.text.rot, true, col, g.text.basis);
         break;
       }
     }
@@ -1365,9 +1391,27 @@ const modify = (title, impl) => cad => {
   return T;
 };
 
+/** Ejes de una cota isométrica: u (por donde mide, el eje más parecido a a→b) y w (el de las líneas de referencia, hacia donde se lleva la cota). */
+function isoDimAxes(a, b, p) {
+  const d = sub(b, a);
+  if (len(d) < 1e-12) return null;
+  const axes = [30, 90, 150].map(g => [Math.cos(g * Math.PI / 180), Math.sin(g * Math.PI / 180)]);
+  let u = axes.reduce((best, ax) => (Math.abs(dot(norm(d), ax)) > Math.abs(dot(norm(d), best)) ? ax : best));
+  if (dot(d, u) < 0) u = mul(u, -1);
+  const q = sub(p, lerp(a, b, 0.5));
+  let w = null, bestAl = Infinity;
+  for (const ax of axes) {
+    if (ax === u || Math.abs(Math.abs(dot(ax, u)) - 1) < 1e-9) continue;
+    const al = Math.abs(inBasis(q, u, ax)[0]);
+    if (al < bestAl) { bestAl = al; w = ax; }
+  }
+  return { u: P(u), w: P(w) };
+}
+
 const dimLinear = (kind0, title) => cad => {
   const pts = [];
   const kindAt = p => {
+    if (cad.isIso()) return 'iso';
     if (kind0 === 'aligned') return 'aligned';
     const [a, b] = pts;
     const dx = Math.abs(b[0] - a[0]), dy = Math.abs(b[1] - a[1]);
@@ -1380,40 +1424,63 @@ const dimLinear = (kind0, title) => cad => {
     const m = lerp(a, b, 0.5);
     return Math.abs(p[1] - m[1]) - dy / 2 >= Math.abs(p[0] - m[0]) - dx / 2 ? 'horizontal' : 'vertical';
   };
-  const make = (p, kind) => ({ type: 'dim', kind, a: P(pts[0]), b: P(pts[1]), p: P(p) });
+  const make = (p, kind) => {
+    const e = { type: 'dim', kind, a: P(pts[0]), b: P(pts[1]), p: P(p) };
+    if (kind === 'iso') { const ax = isoDimAxes(pts[0], pts[1], p); if (!ax) return null; Object.assign(e, ax); }
+    return e;
+  };
+  const T = () => (cad.isIso() ? 'COTA ISOMÉTRICA' : title);
   return {
-    prompt: () => [`${title} · Origen de la primera línea de referencia`, `${title} · Origen de la segunda línea de referencia`, `${title} · Posición de la línea de cota`][pts.length],
+    prompt: () => [`${T()} · Origen de la primera línea de referencia`, `${T()} · Origen de la segunda línea de referencia`, `${T()} · Posición de la línea de cota${cad.isIso() ? ' (llévala en la dirección de un eje isométrico)' : ''}`][pts.length],
     last: () => (pts.length === 1 ? pts[0] : null),
     point(p) {
       if (pts.length < 2) { if (pts.length === 1 && dist(p, pts[0]) < 1e-9) return; pts.push(p); return; }
-      cad.add(make(p, kindAt(p)));
+      const e = make(p, kindAt(p));
+      if (!e) return;
+      cad.add(e);
       cad.commit();
       cad.setTool('select');
     },
     preview() {
       if (!cad.cur) return null;
       if (pts.length === 1) return { guides: [[pts[0], cad.cur]] };
-      if (pts.length === 2) return { ents: [make(cad.cur, kindAt(cad.cur))] };
+      if (pts.length === 2) { const e = make(cad.cur, kindAt(cad.cur)); return e ? { ents: [e] } : null; }
       return null;
     },
   };
 };
 
+/** Cota de radio o diámetro de un círculo isométrico: va por uno de sus dos ejes, con líneas de referencia por el otro. */
+function isoCircDim(ent, kind, p) {
+  const r = Math.hypot(...ent.U);
+  const cands = [[ent.U, ent.V], [ent.V, ent.U]].map(([A, B]) => {
+    const u = norm(A), w = norm(B), [al, be] = inBasis(sub(p, ent.c), u, w);
+    return { u, w, al, be };
+  });
+  const k = Math.abs(cands[0].al) <= Math.abs(cands[1].al) ? cands[0] : cands[1];
+  // diámetro: de lado a lado; radio: del centro hacia donde está el cursor
+  const sgn = k.al >= 0 ? 1 : -1;
+  const a = kind === 'diameter' ? sub(ent.c, mul(k.u, r)) : [...ent.c];
+  const b = add(ent.c, mul(k.u, kind === 'diameter' ? r : r * sgn));
+  return { type: 'dim', kind: 'iso', a: P(a), b: P(b), p: P(p), u: P(kind === 'diameter' ? k.u : mul(k.u, sgn)), w: P(k.w), pre: kind === 'diameter' ? 'Ø' : 'R' };
+}
+
 const dimCirc = kind => cad => {
   let ent = null;
   return {
     get pickMode() { return !ent; },
-    pickFilter: e => e.type === 'circle' || e.type === 'arc',
-    prompt: () => (ent ? 'COTA · Posición del texto' : `COTA DE ${kind === 'radius' ? 'RADIO' : 'DIÁMETRO'} · Designa un círculo o un arco`),
+    pickFilter: e => e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse',
+    prompt: () => (ent ? (ent.type === 'ellipse' ? 'COTA ISOMÉTRICA · Lleva la cota hacia donde quieras ponerla (va por uno de los ejes del círculo isométrico)' : 'COTA · Posición del texto')
+      : `COTA DE ${kind === 'radius' ? 'RADIO' : 'DIÁMETRO'} · Designa un círculo, un arco o un círculo isométrico`),
     last: () => null,
     pick(e) { if (!e) { cad.message('Designa un círculo o un arco'); return; } ent = e; },
     point(p) {
       if (!ent) return;
-      cad.add({ type: 'dim', kind, c: P(ent.c), r: ent.r, p: P(p) });
+      cad.add(ent.type === 'ellipse' ? isoCircDim(ent, kind, p) : { type: 'dim', kind, c: P(ent.c), r: ent.r, p: P(p) });
       cad.commit();
       cad.setTool('select');
     },
-    preview: () => (ent && cad.cur ? { ents: [{ type: 'dim', kind, c: ent.c, r: ent.r, p: cad.cur }] } : null),
+    preview: () => (ent && cad.cur ? { ents: [ent.type === 'ellipse' ? isoCircDim(ent, kind, cad.cur) : { type: 'dim', kind, c: ent.c, r: ent.r, p: cad.cur }] } : null),
   };
 };
 
@@ -1474,10 +1541,10 @@ const TOOLS = {
   rect: cad => {
     let a = null;
     // en modo isométrico el «rectángulo» es el paralelogramo de la cara activa (lados por sus dos ejes)
-    const iso = () => !!cad.drawing.isoGrid;
+    const iso = () => cad.isIso();
     const corners = b => {
       if (!iso()) return [a, [b[0], a[1]], b, [a[0], b[1]]];
-      const [u, v] = isoAxes(cad.drawing);
+      const [u, v] = isoAxes(cad.isoV());
       const [s1, t1] = inBasis(sub(b, a), u, v);
       return [a, add(a, mul(u, s1)), b, add(a, mul(v, t1))];
     };
@@ -1488,7 +1555,7 @@ const TOOLS = {
       cad.commit();
       cad.setTool('select');
     };
-    const title = () => (iso() ? `RECTÁNGULO ISOMÉTRICO (cara ${ISO_PLANES[cad.drawing.isoPlane || 'top'].label.toLowerCase()}, F5 cambia)` : 'RECTÁNGULO');
+    const title = () => (iso() ? `RECTÁNGULO ISOMÉTRICO (cara ${ISO_PLANES[cad.isoV()?.isoPlane || 'top'].label.toLowerCase()}, Tab cambia)` : 'RECTÁNGULO');
     return {
       prompt: () => (a ? `${title()} · Esquina opuesta (o ancho x alto, p. ej. 80x40${iso() ? ', medidos sobre los ejes isométricos' : ', o @80,40'})` : `${title()} · Primera esquina`),
       last: () => a,
@@ -1498,7 +1565,7 @@ const TOOLS = {
         if (m && a) {
           const w = parseNum(m[1]), h = parseNum(m[2]);
           if (w !== null && h !== null) {
-            if (iso()) { const [u, v] = isoAxes(cad.drawing); make(add(a, add(mul(u, w), mul(v, h)))); } else make(add(a, [w, h]));
+            if (iso()) { const [u, v] = isoAxes(cad.isoV()); make(add(a, add(mul(u, w), mul(v, h)))); } else make(add(a, [w, h]));
             return true;
           }
         }
@@ -1510,20 +1577,20 @@ const TOOLS = {
   circle: cad => {
     let c = null;
     // en modo isométrico, el círculo de la cara activa se ve como una elipse (círculo isométrico)
-    const iso = () => !!cad.drawing.isoGrid;
+    const iso = () => cad.isIso();
     const ent = r => {
       if (!iso()) return { type: 'circle', c: P(c), r: rnd(r) };
-      const [u, v] = isoAxes(cad.drawing);
+      const [u, v] = isoAxes(cad.isoV());
       return { type: 'ellipse', c: P(c), U: P(mul(u, r)), V: P(mul(v, r)) };
     };
-    const radiusTo = p => (iso() ? Math.hypot(...inBasis(sub(p, c), ...isoAxes(cad.drawing))) : dist(c, p));
+    const radiusTo = p => (iso() ? Math.hypot(...inBasis(sub(p, c), ...isoAxes(cad.isoV()))) : dist(c, p));
     const make = r => {
       if (!(r > 0)) { cad.message('El radio debe ser mayor que 0'); return; }
       cad.add(ent(r));
       cad.commit();
       cad.setTool('select');
     };
-    const title = () => (iso() ? `CÍRCULO ISOMÉTRICO (cara ${ISO_PLANES[cad.drawing.isoPlane || 'top'].label.toLowerCase()}, F5 cambia)` : 'CÍRCULO');
+    const title = () => (iso() ? `CÍRCULO ISOMÉTRICO (cara ${ISO_PLANES[cad.isoV()?.isoPlane || 'top'].label.toLowerCase()}, Tab cambia)` : 'CÍRCULO');
     return {
       prompt: () => (c ? `${title()} · Radio (número) o D y el diámetro (p. ej. D30)` : `${title()} · Centro`),
       last: () => c,
@@ -1832,6 +1899,10 @@ export class Cad extends EventTarget {
   }
 
   emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
+
+  /** Panel cuyo modo (normal / isométrico) manda: donde está el ratón o, si no, el panel activo. */
+  isoV() { return this.activeView || this.focusView || [...this.views].find(v => v.visible) || null; }
+  isIso() { return !!this.isoV()?.iso; }
 
   savePrefs() {
     try { localStorage.setItem('forja3d:cad', JSON.stringify({ osnap: this.osnap, osnapOn: this.osnapOn, ortho: this.ortho, gridSnap: this.gridSnap })); } catch { /* nada */ }
@@ -2152,7 +2223,11 @@ export class Cad extends EventTarget {
     if (k === 'F8') { e.preventDefault(); this.toggle('ortho'); return true; }
     if (k === 'F9') { e.preventDefault(); this.toggle('gridSnap'); return true; }
     if (k === 'F7') { e.preventDefault(); this.toggle('grid'); return true; }
-    if (k === 'F5') { e.preventDefault(); this.toggle('isoplane'); return true; }
+    // cambiar de cara isométrica: Tab (o Ctrl+E, como en AutoCAD); solo si el panel está en isométrico
+    if ((k === 'Tab' && !e.shiftKey && !mod) || (mod && k.toLowerCase() === 'e')) {
+      if (this.isIso()) { e.preventDefault(); this.toggle('isoplane'); return true; }
+      if (mod) { e.preventDefault(); this.message('Ctrl+E / Tab cambian de cara isométrica: activa antes «Isométrica» en este panel'); return true; }
+    }
     if (mod) {
       const l = k.toLowerCase();
       if (l === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); return true; }
@@ -2199,25 +2274,29 @@ export class Cad extends EventTarget {
 
   toggle(key) {
     if (key === 'grid') { this.drawing.grid = !this.drawing.grid; this.commit(); this.message(`Rejilla ${this.drawing.grid ? 'visible' : 'oculta'}`); }
-    else if (key === 'iso') {
-      this.drawing.isoGrid = !this.drawing.isoGrid;
-      if (this.drawing.isoGrid) {
-        // como el modo isométrico de los programas de CAD: rejilla visible, forzado a sus nodos y orto por sus ejes
-        this.drawing.grid = true;
-        this.gridSnap = true;
-        this.ortho = true;
-        this.savePrefs();
+    else if (key === 'iso' || key === 'isoplane') {
+      // el modo isométrico es de cada panel: así uno puede estar en alzado y otro en isométrica
+      const v = this.focusView || this.isoV();   // el panel activo (resaltado)
+      if (!v) return;
+      if (key === 'iso') {
+        v.iso = !v.iso;
+        if (v.iso) {
+          // como el modo isométrico de los programas de CAD: rejilla visible, forzado a sus nodos y orto por sus ejes
+          this.drawing.grid = true;
+          this.gridSnap = true;
+          this.ortho = true;
+          this.savePrefs();
+        }
+      } else {
+        const order = ['top', 'right', 'left'];
+        v.isoPlane = order[(order.indexOf(v.isoPlane || 'top') + 1) % 3];
+        v.iso = true;
       }
-      this.commit();
-      this.emitPrompt();
-      this.message(this.drawing.isoGrid ? `Modo isométrico · cara ${ISO_PLANES[this.drawing.isoPlane || 'top'].label.toLowerCase()} (F5 cambia de cara): los círculos salen como elipses isométricas y los rectángulos como paralelogramos de esa cara. Forzar y Orto activados (F8 para trazar libre).` : 'Modo isométrico desactivado: rejilla normal');
-    }
-    else if (key === 'isoplane') {
-      const order = ['top', 'right', 'left'];
-      this.drawing.isoPlane = order[(order.indexOf(this.drawing.isoPlane || 'top') + 1) % 3];
-      if (!this.drawing.isoGrid) this.drawing.isoGrid = true;
-      this.commit();
-      this.message(`Cara isométrica: ${ISO_PLANES[this.drawing.isoPlane].label} (ejes a ${ISO_PLANES[this.drawing.isoPlane].axes.join('° y ')}°). Los círculos y rectángulos se dibujan en esa cara.`);
+      const P = ISO_PLANES[v.isoPlane || 'top'];
+      this.message(!v.iso ? 'Este panel vuelve a la rejilla normal (los demás paneles conservan su modo)'
+        : key === 'iso' ? `Este panel pasa a isométrico · cara ${P.label.toLowerCase()} (Tab cambia de cara). Círculos → elipses isométricas, rectángulos → paralelogramos y cotas sobre los ejes isométricos. Forzar y Orto activados (F8 para trazar libre).`
+          : `Cara isométrica: ${P.label} (ejes a ${P.axes.join('° y ')}°). Los círculos, rectángulos y cotas se dibujan en esa cara.`);
+      this.emit('viewchange');
       this.emitPrompt();
     }
     else if (key === 'pencil') {
@@ -2264,7 +2343,7 @@ export class Cad extends EventTarget {
     }
     if (best) return best;
     let p = raw;
-    const iso = !!this.drawing.isoGrid;
+    const iso = !!view.iso;
     if (this.gridSnap) {
       const st = view.gridStep();
       p = iso ? isoSnap(p, st) : [Math.round(p[0] / st) * st, Math.round(p[1] / st) * st].map(rnd);
@@ -2698,10 +2777,10 @@ export class Cad extends EventTarget {
       const [sx, sy] = view.screenCursor;
       ctx.strokeStyle = C.fg; ctx.globalAlpha = 0.45; ctx.lineWidth = 1;
       ctx.beginPath();
-      if (D.isoGrid) {
+      if (view.iso) {
         // cursor isométrico: sus dos brazos siguen los ejes de la cara activa
         const L = W + H;
-        for (const [ux, uy] of isoAxes(D)) { ctx.moveTo(sx - ux * L, sy + uy * L); ctx.lineTo(sx + ux * L, sy - uy * L); }
+        for (const [ux, uy] of isoAxes(view)) { ctx.moveTo(sx - ux * L, sy + uy * L); ctx.lineTo(sx + ux * L, sy - uy * L); }
       } else { ctx.moveTo(0, Math.round(sy) + 0.5); ctx.lineTo(W, Math.round(sy) + 0.5); ctx.moveTo(Math.round(sx) + 0.5, 0); ctx.lineTo(Math.round(sx) + 0.5, H); }
       ctx.stroke();
       ctx.globalAlpha = 0.9;
@@ -2728,7 +2807,7 @@ export class Cad extends EventTarget {
   }
 
   _grid(v, ctx, W, H, C) {
-    if (this.drawing.isoGrid) { this._isoGrid(v, ctx, W, H, C); return; }
+    if (v.iso) { this._isoGrid(v, ctx, W, H, C); return; }
     const st = v.gridStep();
     const [x0, y1] = v.toWorld(0, 0), [x1, y0] = v.toWorld(W, H);
     if ((x1 - x0) / st > 700 || (y1 - y0) / st > 700) return;
@@ -2859,7 +2938,7 @@ function drawEnt(ctx, v, e, D, st) {
         const p = S(ar.tip), q = S(add(base, n)), r = S(sub(base, n));
         ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.lineTo(r[0], r[1]); ctx.closePath(); ctx.fill();
       }
-      if (g.text) drawText(ctx, v, g.text.p, g.text.str, g.text.h, g.text.rot, 'center');
+      if (g.text) drawText(ctx, v, g.text.p, g.text.str, g.text.h, g.text.rot, 'center', g.text.basis);
       break;
     }
   }
@@ -2882,13 +2961,14 @@ function drawSketch(ctx, v, e, st) {
   ctx.globalAlpha = a0;
 }
 
-function drawText(ctx, v, p, str, h, rot, align) {
+function drawText(ctx, v, p, str, h, rot, align, basis) {
   const px = h * FS * v.zoom;
   if (px < 1.5) return;
   const s = v.toScreen(p);
   ctx.save();
   ctx.translate(s[0], s[1]);
-  ctx.rotate(-rot);
+  if (basis) { const [e1, e2] = basis; ctx.transform(e1[0], -e1[1], -e2[0], e2[1], 0, 0); }   // texto isométrico (oblicuo)
+  else ctx.rotate(-rot);
   ctx.font = `${px}px ${FONT}`;
   ctx.textAlign = align;
   ctx.textBaseline = 'alphabetic';
@@ -2907,6 +2987,8 @@ export class CadView {
     this.cx = 50; this.cy = 30; this.zoom = 3;
     this.W = 1; this.H = 1; this.dpr = 1;
     this.fitted = false;
+    this.iso = false;          // modo isométrico de este panel
+    this.isoPlane = 'top';
     this.screenCursor = null;
     this.pan = null;
     this._lastMiddle = 0;
@@ -3018,8 +3100,13 @@ export class CadView {
     this.cad.render(this, ctx, this.W, this.H, {});
   }
 
-  getState() { return { cx: rnd(this.cx), cy: rnd(this.cy), zoom: rnd(this.zoom) }; }
-  setState(s) { if (s && Number.isFinite(s.zoom)) { this.cx = s.cx; this.cy = s.cy; this.zoom = s.zoom; this.fitted = true; } }
+  getState() { return { cx: rnd(this.cx), cy: rnd(this.cy), zoom: rnd(this.zoom), iso: this.iso || undefined, isoPlane: this.iso ? this.isoPlane : undefined }; }
+  setState(s) {
+    if (!s) return;
+    if (Number.isFinite(s.zoom)) { this.cx = s.cx; this.cy = s.cy; this.zoom = s.zoom; this.fitted = true; }
+    this.iso = !!s.iso;
+    this.isoPlane = ISO_PLANES[s.isoPlane] ? s.isoPlane : 'top';
+  }
 
   dispose() { this.cad.views.delete(this); this.canvas.remove(); }
 }

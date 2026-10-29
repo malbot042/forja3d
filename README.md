@@ -22,7 +22,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Editor 2D de planos** al estilo AutoCAD: línea de órdenes con alias (`L`, `PL`, `REC`, `C`, `A`, `T`, `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`…), coordenadas absolutas, relativas (`@dx,dy`), polares (`d<ángulo`) y distancia directa; referencias a objetos (final, medio, centro, cuadrante, intersección), Orto, forzar a rejilla, pinzamientos, selección por ventana/captura, rótulos junto al cursor que explican cada acción, copiar/pegar/duplicar y desplazamiento con flechas.
   - **Cotas** lineales, alineadas, de radio, diámetro y ángulo, y herramienta **Medir** (distancia, ΔX, ΔY, ángulo); longitudes, perímetros y áreas en Propiedades.
   - **Hoja** A5, A4, A3, A2, A1 o A0, horizontal o vertical, a escala (10:1 … 1:1000), con recuadro y cajetín; **PDF vectorial a escala real** para imprimir.
-  - **Modo isométrico** en el plano: rejilla a 30°/90°/150°, forzado a sus nodos y orto isométrico; caras superior/derecha/izquierda (`F5`) en las que el círculo se dibuja como **círculo isométrico** (elipse) y el rectángulo como paralelogramo. **Mano** (pan) para moverse libremente por la hoja.
+  - **Modo isométrico** en el plano: rejilla a 30°/90°/150°, forzado a sus nodos y orto isométrico; caras superior/derecha/izquierda (`Tab` o `Ctrl+E`) en las que el círculo se dibuja como **círculo isométrico** (elipse), el rectángulo como paralelogramo y las **cotas** sobre los ejes isométricos con texto oblicuo. Cada panel 2D tiene su propio modo (normal o isométrico). **Mano** (pan) para moverse libremente por la hoja.
   - **Tipos de línea** continua, trazos, oculta, eje, puntos y **lápiz** (trazo a mano alzada con la geometría exacta, sobre la rejilla), por capa o por objeto; botón *✎ Lápiz* para dibujar en ese estilo.
   - **Capas** con color, tipo de línea y grosor; unidades (mm, cm, m, pulgadas…) y estilo de cota configurables.
   - **Espacio de trabajo 2D independiente del 3D**: el selector 3D | 2D cambia toda la pantalla; cada espacio tiene sus herramientas, su deshacer/rehacer y su propia pantalla dividida (en 2D, 1-4 paneles del plano con zoom independiente). Ambos se guardan con el proyecto.
@@ -76,7 +76,7 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `H` | Mano: desplazar la vista con el botón izquierdo (en 2D, orden `P`) |
 | `Esc` | Quitar selección |
 | `F3` / `F7` / `F8` / `F9` | (Editor 2D) Referencias / Rejilla / Orto / Forzar a rejilla |
-| `F5` | (Editor 2D, modo isométrico) Cambiar de cara: superior, derecha, izquierda |
+| `Tab` / `Ctrl+E` | (Editor 2D, panel isométrico) Cambiar de cara: superior, derecha, izquierda |
 
 En el editor 2D basta con teclear: lo escrito va a la línea de órdenes y se confirma con `Intro`, `Espacio` o clic derecho.
 

@@ -753,12 +753,13 @@ function refreshCadToggles() {
   const c = editor.cad;
   for (const b of document.querySelectorAll('[data-cadt]')) {
     const k = b.dataset.cadt;
+    const v = editor.cadActive?.cadView;
     if (k === 'isoplane') {
-      b.style.display = c.drawing.isoGrid ? '' : 'none';
-      b.textContent = `Cara: ${ISO_PLANES[c.drawing.isoPlane || 'top'].label}`;
+      b.style.display = v?.iso ? '' : 'none';
+      b.textContent = `Cara: ${ISO_PLANES[v?.isoPlane || 'top'].label}`;
       continue;
     }
-    const on = k === 'grid' ? !!c.drawing.grid : k === 'pencil' ? c.drawing.curLt === 'pencil' : k === 'iso' ? !!c.drawing.isoGrid : !!c[k];
+    const on = k === 'grid' ? !!c.drawing.grid : k === 'pencil' ? c.drawing.curLt === 'pencil' : k === 'iso' ? !!v?.iso : !!c[k];
     b.classList.toggle(b.closest('#view-bar') ? 'active' : 'on', on);
   }
 }
@@ -810,7 +811,8 @@ function initCadUI() {
     if (e.detail) $('#cmd-coords').textContent = `X ${fmtNum(e.detail[0], cad.drawing)}   Y ${fmtNum(e.detail[1], cad.drawing)}`;
   });
   cad.addEventListener('history', () => { if (is2D()) refreshHistoryButtons(); });
-  cad.addEventListener('settings', refreshCadToggles);
+  cad.addEventListener('settings', () => { refreshCadToggles(); editor.cadPanels.forEach(p => p.updateLabel()); });
+  editor.addEventListener('cadactive', () => { if (is2D()) refreshCadToggles(); });
   cad.addEventListener('handrequest', e => editor.setHand(e.detail ?? !editor.hand));
   cad.addEventListener('viewchange', scheduleSave);
   cad.addEventListener('editrequest', () => setTimeout(() => $('#props .cad-text')?.focus(), 40));

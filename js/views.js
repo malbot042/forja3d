@@ -306,7 +306,11 @@ export class CadPanel {
   get showing() { return this.editor.workspace === '2d'; }
 
   rect() { return { x: this.el.offsetLeft, y: this.el.offsetTop, w: this.el.offsetWidth, h: this.el.offsetHeight }; }
-  labelText() { return this.editor.cadPanels.length > 1 ? `Plano 2D · ${this.index + 1}` : 'Plano 2D'; }
+  labelText() {
+    const base = this.editor.cadPanels.length > 1 ? `Plano 2D · ${this.index + 1}` : 'Plano 2D';
+    const v = this.cadView;
+    return v?.iso ? `${base} · iso ${{ top: 'superior', right: 'derecha', left: 'izquierda' }[v.isoPlane] || 'superior'}` : base;
+  }
   updateLabel() { this.label.textContent = this.labelText(); }
   getState() { return this.cadView.getState(); }
   setState(s) { this.cadView.setState(s); }
