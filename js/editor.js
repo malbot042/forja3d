@@ -6,13 +6,14 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { PRIMITIVES, DEFAULT_SHAPES, BOOLEAN_OPS, defaultParams, typeLabel, profileFrom2D, profileCenterOffset } from './primitives.js';
 import { geometryFor, evaluateBoolean, cachePut, csgKey, matrixOf } from './csg.js';
 import { uid } from './storage.js';
+import { encodeGeometry, meshDataSize } from './io.js';
 import { cssVar, currentTheme } from './theme.js';
 
 const DEG = THREE.MathUtils.DEG2RAD;
 const RAD = THREE.MathUtils.RAD2DEG;
 const round = (v, d = 4) => Math.round(v * 10 ** d) / 10 ** d;
 const FLAT_TYPES = new Set(['plane', 'ring', 'circle2d', 'line2d']);
-const DOUBLE_SIDED = new Set(['plane', 'ring', 'lathe', 'circle2d', 'line2d']);
+const DOUBLE_SIDED = new Set(['plane', 'ring', 'lathe', 'circle2d', 'line2d', 'mesh']);
 const HALF_SPACE = 1000;
 
 export const DEFAULT_MATERIAL = { color: '#d9d4c7', metalness: 0.05, roughness: 0.6, opacity: 1, flatShading: false };
@@ -302,6 +303,7 @@ export class Editor extends EventTarget {
     };
     if (data.shape) mesh.userData.shape = structuredClone(data.shape);
     if (data.operands) mesh.userData.operands = structuredClone(data.operands);
+    if (data.mesh) mesh.userData.mesh = { ...data.mesh };
     this._applyTransform(mesh, data);
     this._applyMaterial(mesh);
     mesh.visible = data.visible !== false;
@@ -580,6 +582,66 @@ export class Editor extends EventTarget {
   }
 
   /**
+   * Añade mallas importadas (de loadModelFile). Se centran en el punto de la vista,
+   * se apoyan en el suelo y, si son enormes o diminutas, se reescalan a ~2 unidades.
+   */
+  importParts(parts, source, { autoScale = true } = {}) {
+    const box = new THREE.Box3();
+    for (const p of parts) {
+      p.geometry.applyMatrix4(p.matrix);
+      p.geometry.computeBoundingBox();
+      box.union(p.geometry.boundingBox);
+    }
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    let s = 1;
+    if (autoScale && (maxDim > 200 || maxDim < 0.02)) s = 2 / maxDim;
+    const c = box.getCenter(new THREE.Vector3());
+    const t = this.orbit.target.clone();
+    // si ya hay objetos, colocar el modelo a su derecha para que no se solapen
+    const scene = new THREE.Box3();
+    for (const m of this.objects.values()) if (m.visible) scene.expandByObject(m);
+    if (!scene.isEmpty()) t.set(scene.max.x + 0.5 + (size.x * s) / 2, 0, (scene.min.z + scene.max.z) / 2);
+    const T = new THREE.Matrix4().makeTranslation(t.x - c.x * s, -box.min.y * s, t.z - c.z * s)
+      .multiply(new THREE.Matrix4().makeScale(s, s, s));
+    const ids = [];
+    let bytes = 0;
+    for (const p of parts) {
+      const g = p.geometry;
+      const pc = g.boundingBox.getCenter(new THREE.Vector3());
+      g.translate(-pc.x, -pc.y, -pc.z);
+      const pos = pc.clone().applyMatrix4(T);
+      const mesh = encodeGeometry(g, source);
+      bytes += meshDataSize(mesh);
+      g.dispose();
+      const data = {
+        id: uid(), type: 'mesh', name: this._uniqueName(p.name || 'Malla'), params: {}, mesh,
+        position: pos.toArray().map(v => round(v)), rotation: [0, 0, 0], scale: [s, s, s].map(v => round(v, 6)),
+        material: { ...DEFAULT_MATERIAL, ...p.material }, visible: true,
+      };
+      this._insert(data);
+      ids.push(data.id);
+    }
+    this.setSelection(ids);
+    this._commit();
+    return { ids, scaled: s !== 1, scale: s, size: maxDim, bytes };
+  }
+
+  /** Añade a la escena los objetos de otro proyecto (con ids y nombres nuevos). */
+  mergeObjects(objects) {
+    const ids = [];
+    for (const d of objects || []) {
+      if (d.type !== 'boolean' && d.type !== 'mesh' && !PRIMITIVES[d.type]) continue;
+      const data = { ...d, id: uid(), name: this._uniqueName(d.name || typeLabel(d)) };
+      this._insert(data);
+      ids.push(data.id);
+    }
+    this.setSelection(ids);
+    this._commit();
+    return ids;
+  }
+
+  /**
    * Convierte un Círculo 2D o una Línea 2D en una Extrusión o una Revolución.
    * opts: { mode, thickness, depth, angle, segments, keep }
    */
@@ -827,6 +889,7 @@ export class Editor extends EventTarget {
     };
     if (ud.shape) out.shape = structuredClone(ud.shape);
     if (ud.operands) out.operands = structuredClone(ud.operands);
+    if (ud.mesh) out.mesh = ud.mesh;
     return out;
   }
 
@@ -850,7 +913,7 @@ export class Editor extends EventTarget {
     this.clear();
     const skipped = [];
     for (const d of objects || []) {
-      if (d.type !== 'boolean' && !PRIMITIVES[d.type]) { skipped.push(d.type); continue; }
+      if (d.type !== 'boolean' && d.type !== 'mesh' && !PRIMITIVES[d.type]) { skipped.push(d.type); continue; }
       const data = { ...d, id: d.id || uid(), name: d.name || typeLabel(d) };
       this._insert(data);
     }
@@ -875,14 +938,30 @@ export class Editor extends EventTarget {
   }
 
   // ------------------------------------------------------------ historial
+  _snapshot() {
+    this._meshRefs ??= new Map();
+    return JSON.stringify(this.serialize(), (k, v) => {
+      if (k === 'mesh' && v && v.positions) {
+        const ref = `${v.vertices}:${v.positions.length}:${v.positions.slice(0, 40)}:${v.positions.slice(-40)}`;
+        this._meshRefs.set(ref, v);
+        return { $ref: ref };
+      }
+      return v;
+    });
+  }
+
+  _unsnapshot(str) {
+    return JSON.parse(str, (k, v) => (k === 'mesh' && v && v.$ref ? this._meshRefs.get(v.$ref) : v));
+  }
+
   resetHistory() {
-    this.history = [JSON.stringify(this.serialize())];
+    this.history = [this._snapshot()];
     this.historyIndex = 0;
     this._emitHistory();
   }
 
   _commit() {
-    const snap = JSON.stringify(this.serialize());
+    const snap = this._snapshot();
     if (snap !== this.history[this.historyIndex]) {
       this.history.length = this.historyIndex + 1;
       this.history.push(snap);
@@ -897,7 +976,7 @@ export class Editor extends EventTarget {
   _restore(i) {
     const sel = [...this.selection];
     this.historyIndex = i;
-    const objects = JSON.parse(this.history[i]);
+    const objects = this._unsnapshot(this.history[i]);
     this.clear();
     for (const d of objects) this._insert(d);
     this.setSelection(sel);

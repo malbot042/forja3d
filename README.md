@@ -27,7 +27,9 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Modo claro y oscuro**: sigue al sistema por defecto y se puede cambiar con el botón de luna/sol; la elección se recuerda.
 - **Gestor de proyectos**: crear, abrir, renombrar, duplicar, eliminar; miniatura automática de cada proyecto.
 - **Guardado automático** en `localStorage`.
-- **Descargar JSON** de un proyecto o de todos, e **importar JSON** (un proyecto o un paquete completo).
+- **Exportar** a **GLB / glTF** (recomendado para Blender, Unity, Godot y visores web), **OBJ + MTL** y **STL** (impresión 3D), además del JSON propio editable.
+- **Importar** modelos **.glb, .gltf, .obj (+ .mtl) y .stl** (botón o arrastrar y soltar) como «Mallas importadas» que se pueden transformar, recolorear y usar en booleanas; y proyectos `.json` (uno o un paquete completo).
+- **Blender**: el formato `.blend` no se puede generar en el navegador; usa GLB en ambos sentidos (Archivo → Importar/Exportar → glTF 2.0).
 
 ## Ayuda integrada y ejemplos
 
@@ -95,7 +97,8 @@ js/csg.js               Operaciones booleanas (CSG) y caché de resultados
 js/sketch.js            Editor de perfiles 2D para extrusión y revolución
 js/help.js              Ayuda integrada y proyectos de ejemplo
 js/theme.js             Modo claro / oscuro
-lib/three/              three.js r170 (copia local, licencia MIT) y controles
+js/io.js                Exportar/importar glTF, GLB, OBJ y STL
+lib/three/              three.js r170 (copia local, licencia MIT), controles, exportadores y cargadores
 lib/three-bvh-csg/      three-bvh-csg 0.0.17 (MIT) · booleanas
 lib/three-mesh-bvh/     three-mesh-bvh 0.8.3 (MIT) · dependencia de la anterior
 ```

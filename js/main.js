@@ -5,6 +5,7 @@ import { editShape } from './sketch.js';
 import { openHelp, EXAMPLES, createExampleProject } from './help.js';
 import * as store from './storage.js';
 import { toggleTheme } from './theme.js';
+import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -134,6 +135,14 @@ $('#file-input').onchange = async e => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (IMPORT_EXTENSIONS.includes(ext)) {
+    // modelo 3D: proyecto nuevo con el nombre del archivo y el modelo dentro
+    const p = store.createProject(file.name.replace(/\.[^.]+$/, ''));
+    pendingImport = [file];
+    location.hash = `#/p/${p.id}`;
+    return;
+  }
   try {
     const data = JSON.parse(await file.text());
     const items = data.format === 'forja3d-bundle' ? data.projects : [data];
@@ -146,6 +155,97 @@ $('#file-input').onchange = async e => {
     toast(`No se pudo importar: ${err.message}`, true);
   }
 };
+
+// ============================================================== importar / exportar
+let pendingImport = null;   // archivos a importar al abrir el siguiente proyecto
+
+const fmtBytes = b => b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
+
+/** Importa archivos (modelos o proyectos .json) en la escena abierta. */
+async function importFiles(files) {
+  // un .mtl que acompañe a un .obj aporta los colores
+  const mtl = files.find(f => f.name.toLowerCase().endsWith('.mtl'));
+  const mtlText = mtl ? await mtl.text() : null;
+  files = files.filter(f => f !== mtl);
+  if (!files.length && mtl) return toast('Un .mtl solo contiene colores: impórtalo junto con su .obj (selecciona los dos archivos).', true);
+  for (const file of files) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    try {
+      if (ext === 'json') {
+        const data = JSON.parse(await file.text());
+        const objects = data.format === 'forja3d-bundle' ? data.projects.flatMap(p => p.objects || []) : data.objects;
+        if (!Array.isArray(objects)) throw new Error('no es un proyecto de Forja 3D');
+        const ids = editor.mergeObjects(objects);
+        toast(`${ids.length} objetos añadidos desde «${file.name}»`);
+      } else if (IMPORT_EXTENSIONS.includes(ext)) {
+        toast(`Importando «${file.name}»…`);
+        const parts = await loadModelFile(file, { mtlText: ext === 'obj' ? mtlText : null });
+        const r = editor.importParts(parts, file.name);
+        $('#hint').hidden = true;
+        let msg = `«${file.name}» importado: ${r.ids.length} pieza${r.ids.length === 1 ? '' : 's'}`;
+        if (r.scaled) msg += ` · escalado ×${+r.scale.toPrecision(3)} (medía ${+r.size.toPrecision(3)} unidades)`;
+        toast(msg);
+        if (r.bytes > 2.5 * 1024 * 1024) {
+          setTimeout(() => toast(`Modelo grande (${fmtBytes(r.bytes)}): puede no caber en el almacenamiento del navegador. Descarga el proyecto en JSON.`, true), 2600);
+        }
+        editor.frame();
+      } else {
+        throw new Error(`formato no soportado (.${ext})`);
+      }
+    } catch (err) {
+      console.error(err);
+      toast(`No se pudo importar «${file.name}»: ${err.message}`, true);
+    }
+  }
+}
+
+function exportDialog() {
+  const nSel = editor.selection.filter(id => editor.objects.get(id)?.visible).length;
+  const formats = [['json', { label: 'Proyecto Forja 3D', ext: 'json', desc: 'Todo el proyecto, editable: primitivas, perfiles y booleanas con sus parámetros. Para copias de seguridad o compartir con otro usuario de Forja 3D.' }],
+    ...Object.entries(EXPORT_FORMATS)];
+  const wrap = h('div', { class: 'modal-backdrop' });
+  const choices = formats.map(([key, f], i) => h('label', { class: 'format-card' },
+    h('input', { type: 'radio', name: 'fmt', value: key, checked: i === 1 }),
+    h('div', {}, h('b', {}, `${f.label} `, h('code', {}, `.${f.ext}`)), h('span', {}, f.desc))));
+  const selOnly = h('input', { type: 'checkbox', disabled: !nSel });
+  const mtl = h('input', { type: 'checkbox', checked: true });
+  const mtlRow = h('label', { class: 'toggle' }, mtl, h('span', {}, 'Descargar también el .mtl con los colores'));
+  const selRow = h('label', { class: 'toggle' }, selOnly, h('span', {}, nSel ? `Solo la selección (${nSel} objeto${nSel === 1 ? '' : 's'})` : 'Solo la selección (no hay nada seleccionado)'));
+  const fmt = () => wrap.querySelector('input[name=fmt]:checked').value;
+  const sync = () => { mtlRow.hidden = fmt() !== 'obj'; selRow.hidden = fmt() === 'json'; };
+  const close = () => { document.removeEventListener('keydown', onKey, true); wrap.remove(); };
+  const go = async () => {
+    const f = fmt();
+    close();
+    if (f === 'json') { snapshotProject(); saveNow(); exportProject(project); return; }
+    try {
+      const n = await exportModel(editor, f, { name: project.name, selectionOnly: selOnly.checked, withMtl: mtl.checked });
+      toast(`${EXPORT_FORMATS[f].label} exportado (${n} objeto${n === 1 ? '' : 's'})`);
+    } catch (err) {
+      console.error(err);
+      toast(`No se pudo exportar: ${err.message}`, true);
+    }
+  };
+  const onKey = e => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); go(); }
+    else e.stopPropagation();
+  };
+  document.addEventListener('keydown', onKey, true);
+  wrap.append(h('div', { class: 'modal export', role: 'dialog', 'aria-modal': 'true' },
+    h('header', { class: 'modal-head' }, h('h2', {}, 'Exportar'),
+      h('span', { class: 'muted' }, 'Elige el formato. Los objetos ocultos no se exportan.')),
+    h('div', { class: 'export-body', onchange: sync }, choices,
+      h('div', { class: 'export-opts' }, selRow, mtlRow),
+      h('p', { class: 'note' }, h('b', {}, 'Blender: '), 'Archivo → Importar → glTF 2.0 (.glb/.gltf), Wavefront (.obj) o STL. ',
+        'Para traer modelos de Blender, expórtalos como glTF 2.0 (.glb) y usa «Importar». El formato .blend no se puede generar desde el navegador.')),
+    h('footer', { class: 'modal-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn btn-primary', onclick: go }, 'Descargar'))));
+  wrap.addEventListener('pointerdown', e => { if (e.target === wrap) close(); });
+  document.body.append(wrap);
+  sync();
+}
 
 // ============================================================== editor: abrir
 function openProject(id) {
@@ -180,6 +280,11 @@ function openProject(id) {
   refreshOutliner();
   refreshStatus();
   requestAnimationFrame(() => editor._resize());
+  if (pendingImport) {
+    const files = pendingImport;
+    pendingImport = null;
+    importFiles(files).then(() => { editor.resetHistory(); $('#hint').hidden = true; });
+  }
 }
 
 // ============================================================ editor: guardado
@@ -265,7 +370,22 @@ function initEditor() {
   $('#btn-help').onclick = () => showHelp();
   $('#btn-undo').onclick = () => editor.undo();
   $('#btn-redo').onclick = () => editor.redo();
-  $('#btn-export').onclick = () => { snapshotProject(); saveNow(); exportProject(project); };
+  $('#btn-export').onclick = () => exportDialog();
+  $('#btn-import').onclick = () => $('#model-input').click();
+  $('#model-input').onchange = e => { const files = [...e.target.files]; e.target.value = ''; importFiles(files); };
+  // arrastrar y soltar archivos sobre el editor
+  const screen = $('#editor-screen');
+  let dragDepth = 0;
+  screen.addEventListener('dragenter', e => { if (e.dataTransfer?.types?.includes('Files')) { dragDepth++; $('#drop-hint').hidden = false; } });
+  screen.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#drop-hint').hidden = true; } });
+  screen.addEventListener('dragover', e => e.preventDefault());
+  screen.addEventListener('drop', e => {
+    e.preventDefault();
+    dragDepth = 0;
+    $('#drop-hint').hidden = true;
+    const files = [...(e.dataTransfer?.files || [])];
+    if (files.length) importFiles(files);
+  });
   $('#btn-duplicate').onclick = () => editor.duplicate();
   $('#btn-delete').onclick = () => editor.remove();
   $('#project-name').addEventListener('change', e => {
@@ -588,7 +708,14 @@ function renderProps() {
 
   // geometría
   let geo;
-  if (sel.type === 'boolean') {
+  if (sel.type === 'mesh') {
+    const tris = editor.objects.get(id)?.geometry;
+    const n = tris ? Math.round((tris.index ? tris.index.count : tris.attributes.position.count) / 3) : 0;
+    geo = [
+      h('p', { class: 'note' }, `Malla importada${sel.mesh?.source ? ` de «${sel.mesh.source}»` : ''} · ${n.toLocaleString('es-ES')} triángulos.`),
+      h('p', { class: 'note' }, 'No tiene parámetros editables, pero puedes moverla, escalarla, cambiar su material y usarla en operaciones booleanas (mejor si es una malla cerrada).'),
+    ];
+  } else if (sel.type === 'boolean') {
     const isPiece = sel.operands.some(o => o.helper);
     const opSel = h('select', { class: 'select-input' },
       ['union', 'subtract', 'intersect'].map(k => {

@@ -411,6 +411,30 @@ button, input, select { font: inherit; color: inherit; }
 .convert-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
 .convert-body .field small { font-size: 11px; }
 
+/* ---------- exportar / importar ---------- */
+.modal.export { width: min(560px, 100%); }
+.export-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.format-card {
+  display: flex; gap: 10px; align-items: flex-start; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; background: var(--bg-2);
+}
+.format-card:hover { border-color: var(--line-2); }
+.format-card:has(input:checked) { border-color: var(--accent); background: var(--sel); }
+.format-card input { accent-color: var(--accent); margin-top: 3px; }
+.format-card b { display: block; }
+.format-card code { font: 11px var(--mono); color: var(--muted); font-weight: 400; }
+.format-card span { color: var(--muted); font-size: 12px; }
+.export-opts { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; }
+.drop-hint {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; pointer-events: none;
+  background: var(--backdrop);
+}
+.drop-hint > div {
+  border: 2px dashed var(--accent); border-radius: 16px; padding: 36px 48px; text-align: center;
+  background: var(--panel); font-size: 16px; font-weight: 600;
+}
+.drop-hint small { display: block; margin-top: 6px; color: var(--muted); font: 12px var(--mono); }
+
 /* ---------- ayuda ---------- */
 .help-btn { color: var(--muted); }
 .help-btn:hover { color: var(--accent); }

@@ -199,7 +199,7 @@ const SECTIONS = [
       <p class="lead">Forja 3D es un editor 3D que funciona en el navegador. Construyes modelos combinando piezas básicas (primitivas), perfiles extruidos o torneados y operaciones booleanas.</p>
       <h4>La pantalla del editor</h4>
       <ul class="areas">
-        <li><span class="tag">Barra superior</span> nombre del proyecto, deshacer/rehacer, herramienta (Mover · Rotar · Escalar), modo de vista (Sólido · Wire), Snap, Rejilla, Descargar JSON, el botón de <b>modo claro / oscuro</b> (luna o sol) y la ayuda (<b>?</b>).</li>
+        <li><span class="tag">Barra superior</span> nombre del proyecto, deshacer/rehacer, herramienta (Mover · Rotar · Escalar), modo de vista (Sólido · Wire), Snap, Rejilla, <b>Importar</b> y <b>Exportar</b> (JSON, GLB, glTF, OBJ, STL), el botón de <b>modo claro / oscuro</b> (luna o sol) y la ayuda (<b>?</b>).</li>
         <li><span class="tag">Izquierda</span> primitivas: un clic añade la pieza en el centro de la vista, apoyada en el suelo.</li>
         <li><span class="tag">Visor</span> arriba, las <b>operaciones</b> (Unir, Restar…); abajo, las <b>vistas</b> (Alzado, Planta…); arriba a la derecha, el <b>navegador de ejes</b>.</li>
         <li><span class="tag">Derecha</span> la lista de objetos de la escena y las propiedades del seleccionado.</li>
@@ -230,10 +230,40 @@ const SECTIONS = [
       <div class="callout">Los proyectos viven en <b>este navegador</b>: otro navegador, otro equipo o una ventana privada no los verán. Descarga copias en JSON de lo que te importe; el espacio suele limitarse a unos 5 MB.</div>
       <h4>Exportar e importar</h4>
       <ul>
-        <li><b>Descargar JSON</b> (editor) o <b>JSON</b> (tarjeta): un archivo <code>.forja3d.json</code> con el proyecto.</li>
+        <li><b>Exportar → Proyecto Forja 3D</b> (editor) o <b>JSON</b> (tarjeta): un archivo <code>.forja3d.json</code> con el proyecto. Para otros programas mira <a href="#" data-goto="formatos">Exportar e importar 3D</a>.</li>
         <li><b>Exportar todo</b>: un único archivo con todos los proyectos (copia de seguridad).</li>
-        <li><b>Importar JSON</b>: acepta tanto un proyecto como el archivo de «Exportar todo». Lo importado se añade como proyecto nuevo, nunca sobrescribe.</li>
+        <li><b>Importar</b>: acepta un proyecto, el archivo de «Exportar todo» o un modelo 3D (.glb, .gltf, .obj, .stl). Lo importado se añade como proyecto nuevo, nunca sobrescribe.</li>
       </ul>`,
+  },
+  {
+    id: 'formatos', title: 'Exportar e importar 3D',
+    html: `
+      <p>Además del JSON propio, Forja 3D intercambia modelos con otros programas (Blender, impresoras 3D, motores de juego, visores web).</p>
+      <h4>Exportar</h4>
+      <p>Pulsa <b>Exportar</b> en la barra superior del editor y elige el formato:</p>
+      <ul>
+        <li><b>GLB</b> (<code>.glb</code>): glTF 2.0 binario en un solo archivo. <b>El más recomendable</b> para Blender, Unity, Godot, visores web y realidad aumentada. Conserva nombres, posiciones y colores/materiales.</li>
+        <li><b>glTF</b> (<code>.gltf</code>): lo mismo en texto JSON, con los datos incrustados.</li>
+        <li><b>OBJ</b> (<code>.obj</code> + <code>.mtl</code>): formato clásico; el <code>.mtl</code> guarda los colores.</li>
+        <li><b>STL</b> (<code>.stl</code>): para impresión 3D. Sin colores; la mayoría de laminadores interpretan 1 unidad = 1 mm, así que escala la pieza en el laminador o antes de exportar.</li>
+        <li><b>Proyecto Forja 3D</b> (<code>.json</code>): el único que conserva la edición (parámetros, perfiles, booleanas).</li>
+      </ul>
+      <p>Marca <b>Solo la selección</b> para exportar únicamente los objetos seleccionados. Los objetos ocultos nunca se exportan.</p>
+      <h4>Importar</h4>
+      <ul>
+        <li>En el editor: botón <b>Importar</b> o <b>arrastra el archivo</b> sobre la ventana. El modelo se añade a la escena, apoyado en el suelo y al lado de lo que ya haya.</li>
+        <li>En la pantalla de proyectos: <b>Importar</b> crea un proyecto nuevo con el modelo.</li>
+        <li>Formatos: <code>.glb</code>, <code>.gltf</code> (con los datos incrustados), <code>.obj</code> (selecciona también su <code>.mtl</code> para traer los colores), <code>.stl</code> y <code>.json</code> de Forja 3D (sus objetos se añaden a la escena).</li>
+        <li>Cada malla del archivo se convierte en un objeto <b>Malla importada</b>: se puede mover, girar, escalar, recolorear y usar en <a href="#" data-goto="booleanas">operaciones booleanas</a>, pero no tiene parámetros editables.</li>
+        <li>Si el modelo es enorme o diminuto (por ejemplo, en milímetros), se reescala automáticamente a unas 2 unidades y se avisa del factor.</li>
+      </ul>
+      <div class="callout">No se importan texturas, animaciones ni glTF con compresión Draco/Meshopt. Los modelos muy detallados ocupan mucho: el almacenamiento del navegador ronda los 5 MB, así que descarga el proyecto en JSON si avisa de que es grande.</div>
+      <h4>Con Blender</h4>
+      <ol class="steps">
+        <li><b>De Forja 3D a Blender</b>: Exportar → GLB. En Blender: <i>Archivo → Importar → glTF 2.0 (.glb/.gltf)</i>. Blender convierte automáticamente el eje vertical (Y arriba → Z arriba).</li>
+        <li><b>De Blender a Forja 3D</b>: en Blender, <i>Archivo → Exportar → glTF 2.0</i>, formato <i>glTF Binary (.glb)</i> y sin compresión. Después, <b>Importar</b> en Forja 3D.</li>
+        <li>El formato <code>.blend</code> es interno de Blender y no se puede leer ni escribir desde el navegador: usa GLB como puente.</li>
+      </ol>`,
   },
   {
     id: 'primitivas', title: 'Primitivas y propiedades',

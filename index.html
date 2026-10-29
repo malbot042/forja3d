@@ -42,7 +42,7 @@
       <div class="projects-actions">
         <button class="icon-btn theme-btn" data-theme-toggle title="Cambiar entre modo claro y oscuro"><svg viewBox="0 0 24 24"><g class="moon"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></g><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg></button>
         <button class="btn" id="btn-help-home" title="Guía de uso y ejemplos (?)">Ayuda y ejemplos</button>
-        <button class="btn" id="btn-import-project" title="Importar un proyecto desde un archivo .json">Importar JSON</button>
+        <button class="btn" id="btn-import-project" title="Importar un proyecto (.json) o un modelo 3D (.glb, .gltf, .obj, .stl) como proyecto nuevo">Importar</button>
         <button class="btn" id="btn-export-all" title="Descargar todos los proyectos en un único .json">Exportar todo</button>
         <button class="btn btn-primary" id="btn-new-project">+ Nuevo proyecto</button>
       </div>
@@ -79,7 +79,8 @@
       <div class="topbar-group right">
         <label class="toggle" title="Ajuste a rejilla (G)"><input type="checkbox" id="chk-snap"><span>Snap</span></label>
         <label class="toggle" title="Mostrar rejilla"><input type="checkbox" id="chk-grid" checked><span>Rejilla</span></label>
-        <button class="btn" id="btn-export" title="Descargar el proyecto como .json">Descargar JSON</button>
+        <button class="btn" id="btn-import" title="Importar un modelo (.glb, .gltf, .obj, .stl) o un proyecto (.json) a esta escena. También puedes arrastrar el archivo al visor.">Importar</button>
+        <button class="btn" id="btn-export" title="Exportar a JSON, glTF, GLB, OBJ o STL">Exportar</button>
         <button class="icon-btn theme-btn" data-theme-toggle title="Cambiar entre modo claro y oscuro"><svg viewBox="0 0 24 24"><g class="moon"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></g><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg></button>
         <button class="icon-btn help-btn" id="btn-help" title="Ayuda y ejemplos (? o F1)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.2-2.5 3.9M12 17.2v.1"/></svg></button>
       </div>
@@ -147,7 +148,9 @@
     <footer class="statusbar" id="statusbar"></footer>
   </section>
 
-  <input type="file" id="file-input" accept=".json,application/json" hidden>
+  <input type="file" id="file-input" accept=".json,.glb,.gltf,.obj,.stl,application/json,model/gltf-binary,model/gltf+json,model/stl" hidden>
+  <input type="file" id="model-input" accept=".json,.glb,.gltf,.obj,.mtl,.stl,application/json,model/gltf-binary,model/gltf+json,model/stl" multiple hidden>
+  <div class="drop-hint" id="drop-hint" hidden><div>Suelta el archivo para importarlo<small>.glb · .gltf · .obj · .stl · .json</small></div></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="js/main.js"></script>
