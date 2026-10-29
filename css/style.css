@@ -345,6 +345,11 @@ button, input, select { font: inherit; color: inherit; }
   .ops-bar { max-width: calc(100% - 20px); }
 }
 
+/* ---------- diálogo de conversión 2D → 3D ---------- */
+.modal.convert { width: min(460px, 100%); }
+.convert-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.convert-body .field small { font-size: 11px; }
+
 /* ---------- ayuda ---------- */
 .help-btn { color: var(--muted); }
 .help-btn:hover { color: var(--accent); }

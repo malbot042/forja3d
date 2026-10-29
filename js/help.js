@@ -238,13 +238,34 @@ const SECTIONS = [
     html: `
       <p>Hay 14 piezas 3D: <b>Cubo, Esfera, Cilindro, Cono, Pirámide, Toro, Cápsula, Plano, Anillo, Tetraedro, Octaedro, Dodecaedro, Icosaedro</b> y <b>Nudo</b>, y 2 primitivas 2D: <b>Círculo 2D</b> y <b>Línea 2D</b>. Además, <a href="#" data-goto="extrusion">Extrusión</a> y <a href="#" data-goto="revolucion">Revolución</a> crean piezas a partir de un perfil dibujado.</p>
       <h4>Primitivas 2D</h4>
-      <p>Se dibujan planas sobre el suelo (vistas desde arriba, en <b>Planta</b> con <kbd>7</kbd>). Sirven para bocetos, contornos, marcas, caminos o como guía para colocar piezas 3D.</p>
+      <p>Se dibujan planas sobre el suelo (vistas desde arriba, en <b>Planta</b> con <kbd>7</kbd>). Sirven para bocetos, contornos, marcas, caminos, como guía para colocar piezas 3D o como base para <b>extruir</b> o <b>revolucionar</b>.</p>
       <ul>
         <li><b>Círculo 2D</b>: por defecto es un contorno con <b>Grosor línea</b> ajustable. Activa <b>Relleno</b> para un disco. Con <b>Ángulo</b> menor de 360° obtienes un arco (o un sector, si está relleno); pocos <b>Segmentos</b> dan polígonos (6 = hexágono).</li>
         <li><b>Línea 2D</b>: al añadirla se abre el editor de trazado. Haz clic para ir añadiendo puntos (polilínea), activa <b>Curva suave</b> para trazos curvos o elige una plantilla: recta, L, zigzag, onda, arco, espiral, escalera… En Propiedades ajusta el <b>Grosor</b> y marca <b>Cerrada</b> para unir el último punto con el primero. <b>Editar trazado…</b> lo vuelve a abrir.</li>
       </ul>
       <p>Ejemplos: un <b>reloj</b> = Círculo 2D (radio 1) + 12 Líneas 2D cortas giradas de 30° en 30°; un <b>camino de jardín</b> = Línea 2D con plantilla <i>Onda</i> y grosor 0,3; una <b>señal de prohibido</b> = Círculo 2D con grosor 0,15 + Línea 2D recta girada 45°.</p>
-      <p class="muted">Al ser superficies sin grosor, las primitivas 2D no son adecuadas para operaciones booleanas; para convertir un contorno en sólido usa <a href="#" data-goto="extrusion">Extrusión</a>.</p>
+      <h4>De 2D a 3D: Extruir y Revolución</h4>
+      <p>Selecciona una Línea 2D o un Círculo 2D y pulsa <b>Extruir</b> o <b>Revolución</b> en la barra de operaciones (o los botones del panel de propiedades). Se abre un diálogo para elegir la forma:</p>
+      <ul>
+        <li><b>Extruir una línea abierta</b> → <b>pared</b> con el grosor de la línea (ideal para muros a partir de un plano en planta).</li>
+        <li><b>Extruir una línea cerrada</b> → <b>sólido relleno</b> (el contorno se rellena) o <b>pared</b> (solo el contorno, hueco por dentro: una habitación, una caja sin tapa).</li>
+        <li><b>Extruir un círculo</b> → <b>cilindro</b> o <b>tubo</b>; si es un arco, un sector o una pared curva.</li>
+        <li><b>Revolución de una línea</b> → gira alrededor de su eje vertical (la línea x = 0 del editor de trazados). Abierta: superficie o pieza con grosor; cerrada: sólido (un trazado separado del eje da un anillo o toro).</li>
+        <li><b>Revolución de un círculo</b> → esfera maciza o hueca.</li>
+      </ul>
+      <p>El resultado es una Extrusión o una Revolución normal: sigues pudiendo cambiar la altura, el bisel, el ángulo o el perfil con <b>Editar perfil…</b>. Marca <i>Conservar el elemento 2D</i> si quieres reutilizar el dibujo (quedará oculto en la lista).</p>
+      <h4>Ejemplo: muros de una casa desde la planta</h4>
+      <ol class="steps">
+        <li>Pulsa ${k('7')} (Planta) y añade una <b>Línea 2D</b>; elige la plantilla <b>Rectángulo</b> y aplica.</li>
+        <li>En Propiedades marca <b>Cerrada</b> y pon Grosor 0,15.</li>
+        <li>Pulsa <b>Extruir</b>, elige <b>Pared</b>, Altura 1,2 y acepta: tienes los cuatro muros.</li>
+        <li>Resta cubos para abrir puertas y ventanas (ver <a href="#" data-goto="booleanas">Operaciones booleanas</a>).</li>
+      </ol>
+      <h4>Ejemplo: un anillo con revolución</h4>
+      <ol class="steps">
+        <li>Añade una <b>Línea 2D</b>, plantilla <b>Rectángulo</b>, y en el editor arrastra los cuatro puntos a la derecha del eje (por ejemplo entre x = 0,4 y x = 0,6).</li>
+        <li>Marca <b>Cerrada</b> y pulsa <b>Revolución</b>: obtienes un anillo de sección rectangular.</li>
+      </ol>
       <h4>Panel de propiedades</h4>
       <ul>
         <li><b>Objeto</b>: nombre y tipo.</li>

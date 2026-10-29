@@ -182,7 +182,24 @@ export function editShape(initial, mode, title, { closedPath = false } = {}) {
         curve.forEach((p, i) => { const [sx, sy] = toScreen(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
         if (closed) {
           ctx.closePath();
-          if (filled) { ctx.fillStyle = 'rgba(242,165,65,.12)'; ctx.fill(); }
+          if (filled) {
+            // huecos (se conservan al editar el contorno exterior)
+            for (const hole of initial?.holes || []) {
+              hole.forEach((p, i) => { const [sx, sy] = toScreen(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
+              ctx.closePath();
+            }
+            ctx.fillStyle = 'rgba(242,165,65,.12)'; ctx.fill('evenodd');
+            ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = 'rgba(242,165,65,.7)';
+            for (const hole of initial?.holes || []) {
+              ctx.beginPath();
+              hole.forEach((p, i) => { const [sx, sy] = toScreen(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
+              ctx.closePath(); ctx.stroke();
+            }
+            ctx.restore();
+            ctx.beginPath();
+            curve.forEach((p, i) => { const [sx, sy] = toScreen(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
+            ctx.closePath();
+          }
         } else if (lathe) {
           // simetría (fantasma) para la revolución
           ctx.save();

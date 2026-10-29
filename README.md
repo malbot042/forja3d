@@ -6,6 +6,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 
 - **14 primitivas**: cubo, esfera, cilindro, cono, pirámide, toro, cápsula, plano, anillo, tetraedro, octaedro, dodecaedro, icosaedro y nudo toroidal. Todos sus parámetros (radios, alturas, segmentos…) son editables.
 - **Primitivas 2D** planas sobre el suelo: **Círculo 2D** (contorno o relleno, arco con ángulo parcial) y **Línea 2D** (polilínea abierta o cerrada, recta o curva, dibujada con el editor de trazados y con grosor ajustable).
+- **De 2D a 3D**: selecciona una Línea 2D o un Círculo 2D y pulsa **Extruir** (sólido relleno o pared con grosor, cilindro o tubo) o **Revolución** (gira el trazado alrededor de su eje vertical; un círculo da una esfera maciza o hueca).
 - **Extrusión**: dibuja un perfil cerrado en planta (o elige una plantilla: rectángulo, círculo, estrella, perfiles L/T/U/I, engranaje, flecha…) y se extruye hacia arriba, con altura y bisel ajustables.
 - **Revolución (torno)**: dibuja medio perfil y gíralo alrededor del eje vertical para hacer jarrones, copas, botellas, peones… con ángulo parcial opcional.
 - **Operaciones booleanas** (no destructivas, recuperables con *Separar*):
@@ -134,7 +135,7 @@ three.js se incluye en el repositorio (`lib/three`) para que el editor no depend
 
 - `rotation` va en **grados** (orden XYZ).
 - `type` es uno de: `box`, `sphere`, `cylinder`, `cone`, `pyramid`, `torus`, `capsule`, `plane`, `ring`, `tetrahedron`, `octahedron`, `dodecahedron`, `icosahedron`, `torusKnot`, `circle2d`, `line2d`, `extrude`, `lathe` o `boolean`.
-- `extrude`, `lathe` y `line2d` añaden `"shape": { "points": [[x, y], …], "smooth": false }`.
+- `extrude`, `lathe` y `line2d` añaden `"shape": { "points": [[x, y], …], "smooth": false }`; una extrusión puede incluir además `"holes": [[[x, y], …], …]` (huecos interiores).
 - `boolean` guarda la operación en `params.op` (`union`, `subtract`, `intersect`) y los objetos originales en `operands` (con sus transformaciones relativas al resultado). La malla se recalcula al abrir el proyecto, así que el JSON sigue siendo pequeño y editable.
 - “Exportar todo” genera `{ "format": "forja3d-bundle", "projects": [ … ] }`, que también se puede importar.
 

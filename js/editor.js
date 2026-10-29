@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { PRIMITIVES, DEFAULT_SHAPES, BOOLEAN_OPS, defaultParams, typeLabel } from './primitives.js';
+import { PRIMITIVES, DEFAULT_SHAPES, BOOLEAN_OPS, defaultParams, typeLabel, profileFrom2D, profileCenterOffset } from './primitives.js';
 import { geometryFor, evaluateBoolean, cachePut, csgKey, matrixOf } from './csg.js';
 import { uid } from './storage.js';
 
@@ -560,6 +560,55 @@ export class Editor extends EventTarget {
     this._removeSilently(booleans.map(m => m.userData.id));
     this.setSelection(newIds);
     this._commit();
+  }
+
+  /**
+   * Convierte un Círculo 2D o una Línea 2D en una Extrusión o una Revolución.
+   * opts: { mode, thickness, depth, angle, segments, keep }
+   */
+  convert2D(id, kind, opts = {}) {
+    const mesh = this.objects.get(id);
+    if (!mesh || !['circle2d', 'line2d'].includes(mesh.userData.type)) {
+      this.notice('Selecciona un Círculo 2D o una Línea 2D.', true);
+      return null;
+    }
+    const src = this._serializeMesh(mesh);
+    let shape;
+    try {
+      shape = profileFrom2D(src, kind, opts.mode, opts.thickness);
+    } catch (err) {
+      this.notice(err.message, true);
+      return null;
+    }
+    const type = kind === 'extrude' ? 'extrude' : 'lathe';
+    const params = type === 'extrude'
+      ? { ...defaultParams('extrude'), depth: opts.depth ?? 0.5 }
+      : { ...defaultParams('lathe'), angle: opts.angle ?? 360, segments: opts.segments ?? 48 };
+    const c = profileCenterOffset(type, params, shape);
+    mesh.updateMatrixWorld(true);
+    let m;
+    if (type === 'extrude') {
+      // el perfil queda exactamente sobre el dibujo 2D y se extruye según su normal
+      m = mesh.matrixWorld.clone()
+        .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
+        .multiply(new THREE.Matrix4().makeTranslation(c.x, c.y, c.z));
+    } else {
+      // revolución: eje vertical del mundo que pasa por el origen del elemento 2D
+      const p = new THREE.Vector3().setFromMatrixPosition(mesh.matrixWorld);
+      m = new THREE.Matrix4().makeTranslation(p.x + c.x, p.y + c.y, p.z + c.z);
+    }
+    const data = {
+      id: uid(), type, params, shape,
+      name: this._nextName(PRIMITIVES[type].label),
+      ...decompose(m), material: { ...src.material }, visible: true,
+    };
+    const created = this._insert(data);
+    if (type === 'lathe') this._dropMesh(created);
+    if (!opts.keep) this._removeSilently([id]);
+    else mesh.visible = false;
+    this.setSelection([data.id]);
+    this._commit();
+    return data.id;
   }
 
   _removeSilently(ids) {

@@ -128,37 +128,134 @@ export const PRIMITIVES = {
     icon: '<path d="M4 15.5 8 19h12l-4-3.5z"/><path d="M4 15.5V7l4 3.5V19M4 7h12l4 3.5H8M20 10.5V19M16 7v8.5"/>',
     params: [P('depth', 'Altura', 0.5, 0.001, 100, 0.05), P('bevel', 'Bisel', 0, 0, 2, 0.01),
              SEG('bevelSegments', 'Seg. bisel', 3, 1, 12), SEG('curveSegments', 'Seg. curva', 12, 1, 64)],
-    geometry: (p, shape) => {
-      const pts = shapePoints(shape, true).map(([x, y]) => new THREE.Vector2(x, y));
-      if (pts.length < 3) return new THREE.BoxGeometry(0.01, 0.01, 0.01);
-      const s = new THREE.Shape(pts);
-      const g = new THREE.ExtrudeGeometry(s, {
-        depth: p.depth, curveSegments: p.curveSegments,
-        bevelEnabled: p.bevel > 0, bevelThickness: p.bevel, bevelSize: p.bevel * 0.7, bevelSegments: p.bevelSegments,
-      });
-      // perfil dibujado en planta (XZ) y extruido hacia arriba (+Y)
-      g.rotateX(-Math.PI / 2);
-      g.center();
-      return g;
-    },
+    geometry: (p, shape) => centered(rawExtrude(p, shape)),
   },
   lathe: {
     label: 'Revolución',
     usesShape: 'open',
     icon: '<path d="M12 2.5v19" stroke-dasharray="2 2"/><path d="M8 3.5c-2 3 2 5 0 8s-3 6-1 9h10c2-3 1-6-1-9s2-5 0-8"/>',
     params: [SEG('segments', 'Segmentos', 40, 3, 256), P('angle', 'Ángulo °', 360, 1, 360, 5)],
-    geometry: (p, shape) => {
-      const pts = shapePoints(shape, false).map(([x, y]) => new THREE.Vector2(Math.max(0, x), y));
-      if (pts.length < 2) return new THREE.BoxGeometry(0.01, 0.01, 0.01);
-      const g = new THREE.LatheGeometry(pts, p.segments, 0, p.angle * Math.PI / 180);
-      g.center();
-      return g;
-    },
+    geometry: (p, shape) => centered(rawLathe(p, shape)),
   },
 };
 
-/** Cinta plana (en XY) de grosor `width` que sigue una polilínea, con uniones en inglete. */
-export function ribbonGeometry(points, width, closed) {
+const centered = g => { g.center(); return g; };
+const toV2 = pts => pts.map(([x, y]) => new THREE.Vector2(x, y));
+
+/** Extrusión sin centrar: perfil en planta (XZ) extruido hacia arriba (+Y) desde y = 0. */
+function rawExtrude(p, shape) {
+  const pts = shapePoints(shape, true);
+  if (pts.length < 3) return new THREE.BoxGeometry(0.01, 0.01, 0.01);
+  const s = new THREE.Shape(toV2(pts));
+  for (const h of shape?.holes || []) if (h.length >= 3) s.holes.push(new THREE.Path(toV2(h)));
+  const g = new THREE.ExtrudeGeometry(s, {
+    depth: p.depth, curveSegments: p.curveSegments,
+    bevelEnabled: p.bevel > 0, bevelThickness: p.bevel, bevelSize: p.bevel * 0.7, bevelSegments: p.bevelSegments,
+  });
+  g.rotateX(-Math.PI / 2);
+  return g;
+}
+
+/** Revolución sin centrar alrededor del eje Y (x = radio). */
+function rawLathe(p, shape) {
+  const pts = shapePoints(shape, false).map(([x, y]) => [Math.max(0, x), y]);
+  if (pts.length < 2) return new THREE.BoxGeometry(0.01, 0.01, 0.01);
+  return new THREE.LatheGeometry(toV2(pts), p.segments, 0, p.angle * Math.PI / 180);
+}
+
+/** Desplazamiento que aplica `center()` a la geometría de una extrusión/revolución. */
+export function profileCenterOffset(type, params, shape) {
+  const p = { ...defaultParams(type), ...params };
+  const g = type === 'extrude' ? rawExtrude(p, shape) : rawLathe(p, shape);
+  g.computeBoundingBox();
+  const c = g.boundingBox.getCenter(new THREE.Vector3());
+  g.dispose();
+  return c;
+}
+
+// ---------------------------------------------------- 2D → perfil para 3D
+const area = pts => pts.reduce((a, p, i) => { const q = pts[(i + 1) % pts.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
+const rnd = v => Math.round(v * 10000) / 10000;
+const R = pts => pts.map(([x, y]) => [rnd(x), rnd(y)]);
+
+function arcPoints(r, fromDeg, toDeg, segs) {
+  const out = [];
+  for (let i = 0; i <= segs; i++) {
+    const a = (fromDeg + (toDeg - fromDeg) * (i / segs)) * Math.PI / 180;
+    out.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  return out;
+}
+
+/**
+ * Opciones de conversión disponibles para un elemento 2D.
+ * @returns {{extrude: [string,string][], lathe: [string,string][]}}
+ */
+export function conversionModes(data) {
+  if (data.type === 'line2d') {
+    return data.params.closed
+      ? { extrude: [['solid', 'Sólido relleno'], ['wall', 'Pared (contorno con grosor)']],
+          lathe: [['surface', 'Sólido (gira el contorno cerrado)']] }
+      : { extrude: [['wall', 'Pared con grosor']],
+          lathe: [['surface', 'Superficie (la línea tal cual)'], ['wall', 'Con grosor']] };
+  }
+  if (data.type === 'circle2d') {
+    const solidFirst = !!data.params.filled;
+    const ex = [['solid', 'Sólido (cilindro / sector)'], ['wall', 'Pared (tubo)']];
+    const la = [['solid', 'Esfera maciza'], ['wall', 'Esfera hueca (con grosor)']];
+    return solidFirst ? { extrude: ex, lathe: la } : { extrude: ex.reverse(), lathe: la.reverse() };
+  }
+  return { extrude: [], lathe: [] };
+}
+
+/** Perfil (formato `shape`) para extruir o revolucionar un Círculo 2D o una Línea 2D. */
+export function profileFrom2D(data, kind, mode, thickness) {
+  const t = Math.max(thickness || 0.001, 0.001);
+  if (data.type === 'line2d') {
+    const closed = !!data.params.closed;
+    const base = shapePoints(data.shape, closed);
+    if (kind === 'extrude') {
+      if (mode === 'solid' && closed) return { smooth: false, points: R(base) };
+      const { left, right } = ribbonSides(base, t, closed);
+      if (!closed) return { smooth: false, points: R([...left, ...right.reverse()]) };
+      const [outer, inner] = Math.abs(area(left)) >= Math.abs(area(right)) ? [left, right] : [right, left];
+      return { smooth: false, points: R(outer), holes: [R(inner)] };
+    }
+    // revolución: eje = eje Y del trazado; si todo está a la izquierda se refleja
+    let pts = base;
+    if (mode === 'wall' && !closed) {
+      const { left, right } = ribbonSides(base, t, false);
+      pts = [...left, ...right.reverse()];
+      pts.push(pts[0]);
+    } else if (closed) pts = [...base, base[0]];
+    if (Math.max(...pts.map(p => p[0])) <= 1e-9) pts = pts.map(([x, y]) => [-x, y]);
+    return { smooth: false, points: R(pts) };
+  }
+  if (data.type === 'circle2d') {
+    const { radius: r, angle, segments } = data.params;
+    const segs = Math.max(3, Math.round(segments * angle / 360));
+    if (kind === 'extrude') {
+      if (mode === 'solid') {
+        if (angle >= 360) return { smooth: false, points: R(arcPoints(r, 0, 360, segments).slice(0, -1)) };
+        return { smooth: false, points: R([[0, 0], ...arcPoints(r, 0, angle, segs)]) };
+      }
+      const ro = r + t / 2, ri = Math.max(0.0005, r - t / 2);
+      if (angle >= 360) {
+        return { smooth: false, points: R(arcPoints(ro, 0, 360, segments).slice(0, -1)),
+                 holes: [R(arcPoints(ri, 0, 360, segments).slice(0, -1))] };
+      }
+      return { smooth: false, points: R([...arcPoints(ro, 0, angle, segs), ...arcPoints(ri, angle, 0, segs)]) };
+    }
+    const half = Math.max(8, Math.round(segments / 2));
+    if (mode === 'solid') return { smooth: false, points: R(arcPoints(r, -90, 90, half)) };
+    const ro = r + t / 2, ri = Math.max(0.0005, r - t / 2);
+    return { smooth: false, points: R([...arcPoints(ro, -90, 90, half), ...arcPoints(ri, 90, -90, half), [0, -ro]]) };
+  }
+  throw new Error('Solo se pueden convertir Círculos 2D y Líneas 2D');
+}
+
+/** Bordes izquierdo y derecho de una cinta de grosor `width` (uniones en inglete). */
+export function ribbonSides(points, width, closed) {
   const pts = [];
   for (const p of points) {
     const last = pts[pts.length - 1];
@@ -169,33 +266,42 @@ export function ribbonGeometry(points, width, closed) {
     if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6) pts.pop();
   }
   const n = pts.length;
-  const g = new THREE.BufferGeometry();
-  if (n < 2) return new THREE.PlaneGeometry(0.001, 0.001);
   const loop = closed && n > 2;
   const half = width / 2;
   const segNormal = (a, b) => {
     const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
     return [-dy / l, dx / l];
   };
-  const pos = [], idx = [];
+  const left = [], right = [];
   for (let i = 0; i < n; i++) {
     const prev = i > 0 ? pts[i - 1] : loop ? pts[n - 1] : null;
     const next = i < n - 1 ? pts[i + 1] : loop ? pts[0] : null;
     const n1 = prev ? segNormal(prev, pts[i]) : null;
     const n2 = next ? segNormal(pts[i], next) : null;
-    let m = n1 && n2 ? [n1[0] + n2[0], n1[1] + n2[1]] : (n1 || n2);
+    let m = n1 && n2 ? [n1[0] + n2[0], n1[1] + n2[1]] : (n1 || n2 || [0, 1]);
     const ml = Math.hypot(m[0], m[1]) || 1;
     m = [m[0] / ml, m[1] / ml];
-    const ref = n1 || n2;
+    const ref = n1 || n2 || [0, 1];
     const len = half / Math.max(m[0] * ref[0] + m[1] * ref[1], 0.25);
     const [x, y] = pts[i];
-    pos.push(x + m[0] * len, y + m[1] * len, 0, x - m[0] * len, y - m[1] * len, 0);
+    left.push([x + m[0] * len, y + m[1] * len]);
+    right.push([x - m[0] * len, y - m[1] * len]);
   }
+  return { left, right, loop, n };
+}
+
+/** Cinta plana (en XY) de grosor `width` que sigue una polilínea, con uniones en inglete. */
+export function ribbonGeometry(points, width, closed) {
+  const { left, right, loop, n } = ribbonSides(points, width, closed);
+  if (n < 2) return new THREE.PlaneGeometry(0.001, 0.001);
+  const pos = [], idx = [];
+  for (let i = 0; i < n; i++) pos.push(left[i][0], left[i][1], 0, right[i][0], right[i][1], 0);
   const segs = loop ? n : n - 1;
   for (let i = 0; i < segs; i++) {
     const a = i * 2, b = ((i + 1) % n) * 2;
     idx.push(a, a + 1, b + 1, a, b + 1, b);
   }
+  const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length / 3).fill([0, 0, 1]).flat(), 3));
   g.setIndex(idx);

@@ -1,6 +1,6 @@
 // Punto de entrada: navegación entre pantallas, gestor de proyectos y paneles del editor.
 import { Editor } from './editor.js';
-import { PRIMITIVES, TOOLBAR_ORDER, PALETTE, BOOLEAN_OPS, typeLabel } from './primitives.js';
+import { PRIMITIVES, TOOLBAR_ORDER, PALETTE, BOOLEAN_OPS, typeLabel, conversionModes } from './primitives.js';
 import { editShape } from './sketch.js';
 import { openHelp, EXAMPLES, createExampleProject } from './help.js';
 import * as store from './storage.js';
@@ -296,6 +296,65 @@ function runOp(op) {
   else if (op === 'split') editor.split();
   else if (op === 'explode') editor.explode();
   else if (op === 'drop') editor.dropToFloor();
+  else if (op === 'extrude2d') convert2DDialog('extrude');
+  else if (op === 'lathe2d') convert2DDialog('lathe');
+}
+
+/** Diálogo para extruir o revolucionar el elemento 2D seleccionado. */
+function convert2DDialog(kind) {
+  const sel = editor.getSelected();
+  if (!sel || !['line2d', 'circle2d'].includes(sel.type) || editor.selection.length !== 1) {
+    toast('Selecciona una sola Línea 2D o un Círculo 2D', true);
+    return;
+  }
+  const modes = conversionModes(sel)[kind];
+  const isExtrude = kind === 'extrude';
+  const thick = sel.params.thickness ?? 0.03;
+  const wrap = h('div', { class: 'modal-backdrop' });
+  const field = (label, input, hint) => h('label', { class: 'field' }, h('span', {}, label), input, hint ? h('small', { class: 'muted' }, hint) : null);
+  const num = (value, step, min, max) => h('input', { type: 'number', class: 'text-input', value, step, min, max });
+  const modeSel = h('select', { class: 'select-input' }, modes.map(([v, l]) => h('option', { value: v }, l)));
+  const depth = num(0.5, 0.05, 0.001, 100);
+  const angle = num(360, 15, 1, 360);
+  const segs = num(48, 1, 3, 256);
+  const thickness = num(Math.max(thick, 0.01), 0.01, 0.001, 10);
+  const keep = h('input', { type: 'checkbox' });
+  const thickField = field('Grosor de pared', thickness, 'Por defecto, el grosor de la línea 2D.');
+  const syncMode = () => { thickField.hidden = modeSel.value !== 'wall'; };
+  modeSel.onchange = syncMode;
+  syncMode();
+  const close = () => { document.removeEventListener('keydown', onKey, true); wrap.remove(); };
+  const apply = () => {
+    const opts = {
+      mode: modeSel.value, thickness: +thickness.value || thick, keep: keep.checked,
+      depth: +depth.value || 0.5, angle: Math.min(360, Math.max(1, +angle.value || 360)), segments: Math.round(+segs.value || 48),
+    };
+    close();
+    if (editor.convert2D(sel.id, kind, opts)) toast(`«${sel.name}» ${isExtrude ? 'extruido' : 'revolucionado'}. Puedes cambiar el perfil con «Editar perfil…»`);
+  };
+  const onKey = e => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); apply(); }
+    else e.stopPropagation();
+  };
+  document.addEventListener('keydown', onKey, true);
+  wrap.append(h('div', { class: 'modal convert', role: 'dialog', 'aria-modal': 'true' },
+    h('header', { class: 'modal-head' },
+      h('h2', {}, `${isExtrude ? 'Extruir' : 'Revolución de'} «${sel.name}»`),
+      h('span', { class: 'muted' }, isExtrude
+        ? 'Levanta el dibujo 2D en la dirección de su normal (hacia arriba si está en el suelo).'
+        : 'Gira el trazado alrededor de su eje vertical (x = 0 en el editor de trazados), que pasa por el origen del elemento.')),
+    h('div', { class: 'convert-body' },
+      field('Forma', modeSel),
+      isExtrude ? field('Altura', depth) : [field('Ángulo de giro (°)', angle), field('Segmentos', segs)],
+      thickField,
+      h('label', { class: 'toggle' }, keep, h('span', {}, 'Conservar el elemento 2D (quedará oculto)'))),
+    h('footer', { class: 'modal-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn btn-primary', onclick: apply }, isExtrude ? 'Extruir' : 'Crear revolución'))));
+  wrap.addEventListener('pointerdown', e => { if (e.target === wrap) close(); });
+  document.body.append(wrap);
+  modeSel.focus();
 }
 
 async function editProfile(id) {
@@ -306,7 +365,7 @@ async function editProfile(id) {
   const title = def.usesShape === 'path' ? `Trazado de «${ud.name}»` : `Perfil de «${ud.name}»`;
   const shape = await editShape(ud.shape, def.usesShape, title, { closedPath: !!ud.params.closed });
   if (shape) {
-    editor.update(id, { shape });
+    editor.update(id, { shape: { ...ud.shape, ...shape } });
     if (def.usesShape === 'open' || ud.type === 'extrude') editor.dropToFloor([id]);
     renderProps();
   }
@@ -324,6 +383,8 @@ function refreshOps() {
   set('union', two); set('subtract', two); set('intersect', two);
   set('split', canSplit);
   set('explode', types.includes('boolean'));
+  const is2D = sel.length === 1 && (types[0] === 'line2d' || types[0] === 'circle2d');
+  set('extrude2d', is2D); set('lathe2d', is2D);
   set('drop', sel.length > 0);
 }
 
@@ -562,6 +623,16 @@ function renderProps() {
         h('p', { class: 'note' }, `${def.usesShape === 'path' ? 'Trazado' : 'Perfil'} de ${n} puntos${sel.shape?.smooth ? ', curva suave' : ''}.`),
         h('div', { class: 'btn-row', style: 'margin-bottom:8px' },
           h('button', { class: 'btn sm', onclick: () => editProfile(id) }, def.usesShape === 'path' ? 'Editar trazado…' : 'Editar perfil…')));
+    }
+    if (sel.type === 'extrude' && sel.shape?.holes?.length) {
+      geo.push(h('p', { class: 'note' }, `Con ${sel.shape.holes.length} hueco${sel.shape.holes.length > 1 ? 's' : ''} interior${sel.shape.holes.length > 1 ? 'es' : ''}.`));
+    }
+    if (sel.type === 'line2d' || sel.type === 'circle2d') {
+      geo.push(
+        h('p', { class: 'note', style: 'margin-top:10px' }, 'Convertir en 3D:'),
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn sm', onclick: () => convert2DDialog('extrude') }, 'Extruir…'),
+          h('button', { class: 'btn sm', onclick: () => convert2DDialog('lathe') }, 'Revolución…')));
     }
   }
 
