@@ -596,6 +596,11 @@ const SECTIONS = [
         <li>El botón <b>Isométrica</b> de la barra de vistas (o <b>Iso</b> en la barra de estado) activa el modo isométrico del plano: la rejilla pasa a tener líneas verticales y a ±30°, los tres ejes de la perspectiva isométrica del dibujo técnico.</li>
         <li>Al activarlo se encienden <b>Forzar</b> (el cursor salta a los nodos de la red) y <b>Orto</b> (los trazos van solo por los ejes a 30°, 90° y 150°, con longitudes de nodo en nodo). Con <kbd>F8</kbd> quitas Orto para trazos libres.</li>
         <li>Así se dibujan cubos, piezas en L, soportes… en isométrica, con línea normal o con el <b>lápiz</b>. Las coordenadas polares también sirven: <code>@40&lt;30</code>, <code>@40&lt;150</code>, <code>@40&lt;90</code>.</li>
+        <li><b>Cara activa</b>: superior, derecha o izquierda del cubo. Se cambia con <kbd>F5</kbd> o con el botón <b>Cara</b> de la barra de vistas; los brazos del cursor siguen los dos ejes de esa cara.</li>
+        <li><b>Círculo</b> (<code>C</code>) en modo isométrico dibuja un <b>círculo isométrico</b>: la elipse con la que se ve una circunferencia sobre esa cara. Pides centro y radio real (o <code>D</code> y el diámetro) y queda tangente al rombo de la cara en el punto medio de sus lados.</li>
+        <li><b>Rectángulo</b> (<code>REC</code>) dibuja el <b>paralelogramo</b> de la cara activa: sus lados van por los dos ejes de la cara. Con <code>40x25</code> las medidas se toman sobre esos ejes.</li>
+        <li>Los círculos isométricos se seleccionan, mueven, giran, copian, desfasan (salen concéntricos) y se editan en Propiedades por su <b>radio real</b>; las referencias enganchan su centro y sus cuatro puntos de tangencia. En DXF se exportan como polilínea cerrada.</li>
+        <li>Ejemplo: cubo de 40 → cara superior <code>REC</code> <code>0,40</code> <code>40x40</code>; <kbd>F5</kbd> (derecha) <code>REC</code> <code>0,0</code> <code>40x40</code>; <kbd>F5</kbd> (izquierda) <code>REC</code> <code>0,0</code> <code>40x40</code>. Un taladro en la cara de arriba: <kbd>F5</kbd> hasta «Superior» y <code>C</code> <code>0,60</code> <code>15</code>.</li>
       </ul>
       <h4>Hoja (A5, A4, A3, A2, A1, A0)</h4>
       <ul>
@@ -678,6 +683,7 @@ const SECTIONS = [
         <tr><td>${k('Intro')} · ${k('Espacio')} · clic derecho</td><td>Terminar la orden (sin orden activa: repetir la última)</td></tr>
         <tr><td>${k('Esc')}</td><td>Cancelar la orden · quitar la selección</td></tr>
         <tr><td>${k('F3')} · ${k('F7')} · ${k('F8')} · ${k('F9')}</td><td>Referencias · Rejilla · Orto · Forzar a rejilla</td></tr>
+        <tr><td>${k('F5')}</td><td>Cara isométrica activa (superior → derecha → izquierda)</td></tr>
         <tr><td>Doble clic central</td><td>Encuadrar todo el plano</td></tr>
         <tr><td>Flechas · ${k('Mayús')}+flechas</td><td>Desplazar la selección un paso de rejilla · ×10</td></tr>
         <tr><td>${k('Ctrl', 'C')} · ${k('Ctrl', 'X')} · ${k('Ctrl', 'V')} · ${k('Ctrl', 'D')}</td><td>Copiar · Cortar · Pegar · Duplicar (en el plano)</td></tr>

@@ -8,7 +8,7 @@ import { toggleTheme } from './theme.js';
 import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
 import { makePdf } from './pdf.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -753,6 +753,11 @@ function refreshCadToggles() {
   const c = editor.cad;
   for (const b of document.querySelectorAll('[data-cadt]')) {
     const k = b.dataset.cadt;
+    if (k === 'isoplane') {
+      b.style.display = c.drawing.isoGrid ? '' : 'none';
+      b.textContent = `Cara: ${ISO_PLANES[c.drawing.isoPlane || 'top'].label}`;
+      continue;
+    }
     const on = k === 'grid' ? !!c.drawing.grid : k === 'pencil' ? c.drawing.curLt === 'pencil' : k === 'iso' ? !!c.drawing.isoGrid : !!c[k];
     b.classList.toggle(b.closest('#view-bar') ? 'active' : 'on', on);
   }
@@ -1049,6 +1054,25 @@ function renderCadProps(box) {
         num('Diámetro', 2 * e.r, v => { if (v > 0) upd({ r: v / 2 }); }, { min: 0 }),
         info([['Perímetro', `${F(inf.length)}${U}`], ['Área', `${F(inf.area)}${U ? `${U}²` : ''}`]]));
       break;
+    case 'ellipse': {
+      // círculo isométrico: se edita por su radio real (el de la circunferencia en la cara del cubo)
+      const iso = isIsoCircle(e);
+      const setR = r => upd(x => { const k = r / Math.hypot(...x.U), q = v => Math.round(v * k * 1e6) / 1e6; x.U = x.U.map(q); x.V = x.V.map(q); return x; });
+      geo.push(xy('Centro', e.c, (q, c) => upd({ c: q }, c)));
+      if (iso) {
+        const plane = Object.entries(ISO_PLANES).find(([, P]) => {
+          const ang = q => ((Math.round(Math.atan2(q[1], q[0]) * DEGR) % 180) + 180) % 180;
+          const got = [ang(e.U), ang(e.V)].sort((a, b) => a - b).join(), want = P.axes.map(a => a % 180).sort((a, b) => a - b).join();
+          return got === want;
+        });
+        geo.push(num('Radio', inf.r, v => { if (v > 0) setR(v); }, { min: 0 }),
+          num('Diámetro', 2 * inf.r, v => { if (v > 0) setR(v / 2); }, { min: 0 }),
+          info([['Cara', plane ? plane[1].label : 'girada'], ['Ejes de la elipse', `${F(2 * inf.r * Math.sqrt(1.5))} × ${F(2 * inf.r * Math.sqrt(0.5))}${U}`]]));
+      }
+      geo.push(info([['Perímetro', `${F(inf.length)}${U}`], ['Área', `${F(inf.area)}${U ? `${U}²` : ''}`]]));
+      if (iso) geo.push(h('p', { class: 'note' }, 'Es un círculo dibujado en isométrica: una circunferencia de ese radio sobre una cara del cubo se ve como esta elipse.'));
+      break;
+    }
     case 'arc':
       geo.push(xy('Centro', e.c, (q, c) => upd({ c: q }, c)),
         num('Radio', e.r, v => { if (v > 0) upd({ r: v }); }, { min: 0 }),
@@ -1080,10 +1104,10 @@ function renderCadProps(box) {
   }
   box.replaceChildren(
     h('div', { class: 'prop-section' },
-      h('h3', {}, e.type === 'dim' ? DIM_LABELS[e.kind] : isRect(e) ? 'Rectángulo' : TYPE_LABELS[e.type]),
+      h('h3', {}, e.type === 'dim' ? DIM_LABELS[e.kind] : isRect(e) ? 'Rectángulo' : isIsoCircle(e) ? 'Círculo isométrico' : TYPE_LABELS[e.type]),
       h('p', { class: 'muted small cad-hint' }, 'Escribe aquí valores exactos (Intro aplica) o, en el plano, arrastra los pinzamientos ■ azules. Esc: deseleccionar.'),
       row('Capa', layerSel(e.layer, v => upd({ layer: v }))),
-      ['line', 'pline', 'circle', 'arc'].includes(e.type)
+      ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type)
         ? row('Tipo de línea', ltSel(e.lt || '', cad.layer(e.layer)?.lt, v => cad.updateEntity(id, n => { if (v) n.lt = v; else delete n.lt; return n; })))
         : null),
     h('div', { class: 'prop-section' }, h('h3', {}, 'Geometría'), geo),

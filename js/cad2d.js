@@ -151,6 +151,11 @@ function sketchBase(e, seed, step) {
       return [{ pts: curve(e.c, e.r, a0, TAU + 0.18 + 0.12 * rand1(seed, 98)), open: false }];
     }
     case 'arc': return [{ pts: curve(e.c, e.r, e.a0, sweepOf(e.a0, e.a1)), open: true }];
+    case 'ellipse': {
+      const r = Math.max(Math.hypot(...e.U), Math.hypot(...e.V));
+      const n = Math.max(16, Math.ceil(TAU * r / step));
+      return [{ pts: ellPts(e, n, (rand1(seed, 99) + 1) * Math.PI, TAU + 0.18 + 0.12 * rand1(seed, 98)), open: false }];
+    }
     default: return [];
   }
 }
@@ -197,7 +202,7 @@ export function sketchStrokes(strokes, seed, { amp, step, over, bowMax = 0 }) {
   return out;
 }
 
-export const TYPE_LABELS = { line: 'Línea', pline: 'Polilínea', circle: 'Círculo', arc: 'Arco', text: 'Texto', dim: 'Cota' };
+export const TYPE_LABELS = { line: 'Línea', pline: 'Polilínea', circle: 'Círculo', arc: 'Arco', ellipse: 'Elipse', text: 'Texto', dim: 'Cota' };
 export const DIM_LABELS = { horizontal: 'Cota horizontal', vertical: 'Cota vertical', aligned: 'Cota alineada', radius: 'Cota de radio', diameter: 'Cota de diámetro', angle: 'Cota angular' };
 
 const LAYER_COLORS = ['#e5614f', '#f2a541', '#6fbf73', '#3fa7a0', '#5b9bea', '#7b6fd6', '#c56bd1'];
@@ -270,6 +275,37 @@ function arcPts(c, r, a0, a1, n) {
 }
 
 /** Primitivas geométricas: segmentos ('s') y arcos/círculos ('c'). */
+// ------------------------------------------------------------ elipses (círculos isométricos)
+// Una elipse se guarda como centro + dos semidiámetros conjugados U y V: p(t) = c + U·cos t + V·sin t.
+// Así cualquier transformación afín (mover, girar, escalar, simetría) es exacta: basta transformar c, c+U y c+V.
+const cross2 = (a, b) => a[0] * b[1] - a[1] * b[0];
+export function ellPts(e, n = 96, t0 = 0, sw = TAU) {
+  return Array.from({ length: n + 1 }, (_, k) => {
+    const t = t0 + sw * k / n;
+    return add(e.c, add(mul(e.U, Math.cos(t)), mul(e.V, Math.sin(t))));
+  });
+}
+/** Coordenadas (a, b) de un vector en la base U, V. */
+function inBasis(d, U, V) {
+  const det = cross2(U, V);
+  if (Math.abs(det) < 1e-18) return [0, 0];
+  return [cross2(d, V) / det, cross2(U, d) / det];
+}
+/** ¿Es un círculo isométrico (semidiámetros iguales a 120°)? */
+export function isIsoCircle(e) {
+  if (e.type !== 'ellipse') return false;
+  const a = Math.hypot(...e.U), b = Math.hypot(...e.V);
+  return Math.abs(a - b) < 1e-6 * Math.max(a, 1) && Math.abs(Math.abs(dot(e.U, e.V)) / (a * b) - 0.5) < 1e-6;
+}
+
+// Planos isométricos: los dos ejes (en grados) que forman cada cara del cubo
+export const ISO_PLANES = {
+  top: { label: 'Superior', axes: [30, 150] },
+  right: { label: 'Derecha', axes: [30, 90] },
+  left: { label: 'Izquierda', axes: [150, 90] },
+};
+export const isoAxes = D => (ISO_PLANES[D.isoPlane] || ISO_PLANES.top).axes.map(a => [Math.cos(a * Math.PI / 180), Math.sin(a * Math.PI / 180)]);
+
 function prims(e) {
   switch (e.type) {
     case 'line': return [{ k: 's', a: e.a, b: e.b }];
@@ -281,6 +317,7 @@ function prims(e) {
     }
     case 'circle': return [{ k: 'c', c: e.c, r: e.r, a0: 0, a1: TAU, full: true }];
     case 'arc': return [{ k: 'c', c: e.c, r: e.r, a0: e.a0, a1: e.a1 }];
+    case 'ellipse': { const q = ellPts(e, 96); return q.slice(0, -1).map((a, i) => ({ k: 's', a, b: q[i + 1] })); }
     default: return [];
   }
 }
@@ -481,6 +518,7 @@ function shapeOf(e, D) {
     case 'pline': poly(e.pts, e.closed); break;
     case 'circle': poly(arcPts(e.c, e.r, 0, TAU, 64), false); break;
     case 'arc': poly(arcPts(e.c, e.r, e.a0, e.a1, 48), false); break;
+    case 'ellipse': poly(ellPts(e, 64), false); break;
     case 'text': boxes.push(textCorners(e.p, e.text, e.h, e.rot || 0, 'left')); break;
     case 'dim': {
       const g = dimGeom(e, D);
@@ -498,12 +536,17 @@ function bboxOf(e, D) {
   const b = [Infinity, Infinity, -Infinity, -Infinity];
   const addP = p => { if (p[0] < b[0]) b[0] = p[0]; if (p[1] < b[1]) b[1] = p[1]; if (p[0] > b[2]) b[2] = p[0]; if (p[1] > b[3]) b[3] = p[1]; };
   if (e.type === 'circle') { addP([e.c[0] - e.r, e.c[1] - e.r]); addP([e.c[0] + e.r, e.c[1] + e.r]); return b; }
+  if (e.type === 'ellipse') {
+    const hx = Math.hypot(e.U[0], e.V[0]), hy = Math.hypot(e.U[1], e.V[1]);
+    addP([e.c[0] - hx, e.c[1] - hy]); addP([e.c[0] + hx, e.c[1] + hy]);
+    return b;
+  }
   for (const [p, q] of shapeOf(e, D).segs) { addP(p); addP(q); }
   return b;
 }
 
 function pickDist(e, p, D) {
-  if (['line', 'pline', 'circle', 'arc'].includes(e.type)) {
+  if (['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type)) {
     let d = Infinity;
     for (const pr of prims(e)) d = Math.min(d, primDist(p, pr).d);
     return d;
@@ -532,6 +575,10 @@ function snapPts(e) {
         { p: polar(e.c, e.r, e.a0 + sweepOf(e.a0, e.a1) / 2), k: 'mid' }, { p: e.c, k: 'cen' });
       for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; if (inSweep(a, e.a0, e.a1)) out.push({ p: polar(e.c, e.r, a), k: 'quad' }); }
       break;
+    case 'ellipse':
+      // centro y los cuatro puntos donde toca el rombo isométrico que la inscribe
+      out.push({ p: e.c, k: 'cen' }, { p: add(e.c, e.U), k: 'quad' }, { p: sub(e.c, e.U), k: 'quad' }, { p: add(e.c, e.V), k: 'quad' }, { p: sub(e.c, e.V), k: 'quad' });
+      break;
     case 'text': out.push({ p: e.p, k: 'ins' }); break;
   }
   return out;
@@ -547,6 +594,12 @@ export function entityInfo(e, D) {
     }
     case 'circle': return { length: TAU * e.r, area: Math.PI * e.r * e.r };
     case 'arc': { const sw = sweepOf(e.a0, e.a1); return { length: e.r * sw, sweep: sw * DEG }; }
+    case 'ellipse': {
+      const q = ellPts(e, 360);
+      let L = 0;
+      for (let i = 0; i < q.length - 1; i++) L += dist(q[i], q[i + 1]);
+      return { length: L, area: Math.PI * Math.abs(cross2(e.U, e.V)), r: Math.hypot(...e.U) };
+    }
     case 'dim': return { value: dimGeom(e, D).value };
     default: return {};
   }
@@ -568,6 +621,7 @@ function xform(e, f, o = {}) {
     case 'line': n.a = P(f(e.a)); n.b = P(f(e.b)); break;
     case 'pline': n.pts = e.pts.map(q => P(f(q))); break;
     case 'circle': n.c = P(f(e.c)); n.r = rnd(e.r * s); break;
+    case 'ellipse': { const c2 = f(e.c); n.c = P(c2); n.U = P(sub(f(add(e.c, e.U)), c2)); n.V = P(sub(f(add(e.c, e.V)), c2)); break; }
     case 'arc': {
       const a0 = mapAng(e.c, e.a0), a1 = mapAng(e.c, e.a1);
       n.c = P(f(e.c)); n.r = rnd(e.r * s);
@@ -605,6 +659,7 @@ function grips(e) {
     case 'pline': return e.pts.slice();
     case 'circle': return [e.c, ...[0, 1, 2, 3].map(i => polar(e.c, e.r, i * Math.PI / 2))];
     case 'arc': return [e.c, polar(e.c, e.r, e.a0), polar(e.c, e.r, e.a1), polar(e.c, e.r, e.a0 + sweepOf(e.a0, e.a1) / 2)];
+    case 'ellipse': return [e.c, add(e.c, e.U), add(e.c, e.V), sub(e.c, e.U), sub(e.c, e.V)];
     case 'text': return [e.p];
     case 'dim': return e.a ? [e.a, e.b, e.p] : [e.p];
     default: return [];
@@ -617,6 +672,7 @@ function gripLabel(e, i) {
     case 'line': return i < 2 ? 'Extremo · arrastra para estirar' : 'Punto medio · arrastra para mover la línea';
     case 'pline': return `Vértice ${i + 1} · arrastra para moverlo`;
     case 'circle': return i === 0 ? 'Centro · arrastra para mover' : 'Cuadrante · arrastra para cambiar el radio';
+    case 'ellipse': return i === 0 ? 'Centro · arrastra para mover' : 'Punto de tangencia · arrastra para cambiar el tamaño';
     case 'arc': return ['Centro · arrastra para mover', 'Inicio del arco · arrastra', 'Final del arco · arrastra', 'Arco · arrastra para cambiar el radio'][i];
     case 'text': return 'Texto · arrastra para mover';
     case 'dim': return e.a && i < 2 ? 'Punto acotado · arrastra' : 'Cota · arrastra para colocar la línea y el texto';
@@ -624,7 +680,7 @@ function gripLabel(e, i) {
   }
 }
 
-function entLabel(e) { return e.type === 'dim' ? (DIM_LABELS[e.kind] || 'Cota') : TYPE_LABELS[e.type] || e.type; }
+function entLabel(e) { return e.type === 'dim' ? (DIM_LABELS[e.kind] || 'Cota') : isIsoCircle(e) ? 'Círculo isométrico' : TYPE_LABELS[e.type] || e.type; }
 
 function applyGrip(e, i, p) {
   const n = structuredClone(e);
@@ -641,6 +697,14 @@ function applyGrip(e, i, p) {
       else if (i === 1) n.a0 = normA(angOf(e.c, p));
       else if (i === 2) n.a1 = normA(angOf(e.c, p));
       else n.r = rnd(Math.max(1e-6, dist(e.c, p)));
+      break;
+    case 'ellipse':
+      if (i === 0) n.c = P(p);
+      else {
+        // el tamaño cambia de forma proporcional, para que la elipse pase por el punto
+        const k = Math.max(1e-6, Math.hypot(...inBasis(sub(p, e.c), e.U, e.V)));
+        n.U = P(mul(e.U, k)); n.V = P(mul(e.V, k));
+      }
       break;
     case 'text': n.p = P(p); break;
     case 'dim': if (e.a) n[['a', 'b', 'p'][i]] = P(p); else n.p = P(p); break;
@@ -662,6 +726,13 @@ function offsetEntity(e, d, side) {
       delete n.id;
       n.r = rnd(r);
       return n;
+    }
+    case 'ellipse': {
+      // círculo isométrico concéntrico (r ± d), que es lo que se espera al dibujar en isométrica
+      const r = Math.hypot(...e.U), inside = Math.hypot(...inBasis(sub(side, e.c), e.U, e.V)) < 1;
+      const r2 = r + (inside ? -d : d);
+      if (r2 <= 1e-9) return null;
+      return { type: 'ellipse', c: [...e.c], U: P(mul(e.U, r2 / r)), V: P(mul(e.V, r2 / r)) };
     }
     case 'pline': {
       const segs = prims(e);
@@ -754,6 +825,7 @@ export function buildShapes(ents) {
   const loops = [], chains = [];
   for (const e of ents) {
     if (e.type === 'circle') loops.push(arcPts(e.c, e.r, 0, TAU, 72).slice(0, -1));
+    else if (e.type === 'ellipse') loops.push(ellPts(e, 96).slice(0, -1));
     else if (e.type === 'pline') (e.closed ? loops : chains).push(e.pts.map(p => [...p]));
     else if (e.type === 'line') chains.push([[...e.a], [...e.b]]);
     else if (e.type === 'arc') chains.push(arcPts(e.c, e.r, e.a0, e.a1, 48));
@@ -864,6 +936,12 @@ export function toDXF(D) {
         w(0, 'SEQEND'); w(8, l);
         break;
       case 'circle': w(0, 'CIRCLE'); w(8, l); w(10, num(e.c[0])); w(20, num(e.c[1])); w(30, 0); w(40, num(e.r)); break;
+      case 'ellipse':
+        // DXF R12 no tiene ELLIPSE: se exporta como polilínea cerrada
+        w(0, 'POLYLINE'); w(8, l); w(66, 1); w(70, 1); w(10, 0); w(20, 0); w(30, 0);
+        for (const p of ellPts(e, 96).slice(0, -1)) { w(0, 'VERTEX'); w(8, l); w(10, num(p[0])); w(20, num(p[1])); w(30, 0); }
+        w(0, 'SEQEND'); w(8, l);
+        break;
       case 'arc': arc(l, e.c, e.r, e.a0, e.a1); break;
       case 'text': text(l, e.p, e.text, e.h, e.rot || 0, false); break;
       case 'dim': {
@@ -1075,7 +1153,7 @@ export function toSVG(D, entities = D.entities) {
     const LT = LINETYPES[ltOf(e, L)] || LINETYPES.continuous;
     const dash = LT.dash.map(v => rnd(v * 0.5 * mmU)).join(' ');
     const st = ` stroke="${col}" stroke-width="${sw}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
-    if (LT.sketch && ['line', 'pline', 'circle', 'arc'].includes(e.type)) {
+    if (LT.sketch && ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type)) {
       const seed = hashStr(e.id || e.type);
       const base = sketchBase(e, seed, 1.2 * mmU).map(s0 => ({ ...s0, pts: s0.pts.map(p => [X(p[0]), Y(p[1])]) }));
       for (const s0 of sketchStrokes(base, seed, { amp: 0.2 * mmU, step: 1.2 * mmU, over: 1 * mmU, bowMax: 0.7 * mmU })) {
@@ -1089,6 +1167,7 @@ export function toSVG(D, entities = D.entities) {
       case 'line': out.push(`<line x1="${X(e.a[0])}" y1="${Y(e.a[1])}" x2="${X(e.b[0])}" y2="${Y(e.b[1])}"${st}`); break;
       case 'pline': out.push(`<${e.closed ? 'polygon' : 'polyline'} points="${e.pts.map(p => `${X(p[0])},${Y(p[1])}`).join(' ')}"${st}`); break;
       case 'circle': out.push(`<circle cx="${X(e.c[0])}" cy="${Y(e.c[1])}" r="${rnd(e.r)}"${st}`); break;
+      case 'ellipse': out.push(`<polygon points="${ellPts(e, 96).slice(0, -1).map(p => `${X(p[0])},${Y(p[1])}`).join(' ')}"${st}`); break;
       case 'arc': out.push(arcPath(e.c, e.r, e.a0, e.a1) + st); break;
       case 'text': out.push(txt(e.p, e.text, e.h, e.rot || 0, 'start', col)); break;
       case 'dim': {
@@ -1159,7 +1238,7 @@ export function toPDF(D, { title = '' } = {}) {
     out.push(`${f(r)} ${f(g)} ${f(b)} rg BT /F1 ${f(size)} Tf ${f(c)} ${f(sn)} ${f(-sn)} ${f(c)} ${f(x)} ${f(y)} Tm (${pdfText(str)}) Tj ET`);
   };
   const entity = (e, col, wmm, LT) => {
-    if (LT?.sketch && ['line', 'pline', 'circle', 'arc'].includes(e.type)) {
+    if (LT?.sketch && ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type)) {
       const seed = hashStr(e.id || e.type);
       const base = sketchBase(e, seed, 1.2 * S.k).map(s0 => ({ ...s0, pts: s0.pts.map(q => [(q[0] - S.x0) / S.k, (q[1] - S.y0) / S.k]) }));
       for (const s0 of sketchStrokes(base, seed, { amp: 0.2, step: 1.2, over: 1, bowMax: 0.7 })) {
@@ -1175,6 +1254,7 @@ export function toPDF(D, { title = '' } = {}) {
       case 'line': poly([e.a, e.b]); break;
       case 'pline': poly(e.pts, e.closed); break;
       case 'circle': poly(curve(e.c, e.r, 0, TAU), true); break;
+      case 'ellipse': poly(ellPts(e, 120).slice(0, -1), true); break;
       case 'arc': poly(curve(e.c, e.r, e.a0, sweepOf(e.a0, e.a1))); break;
       case 'text': text(e.p, e.text, e.h, e.rot || 0, false, col); break;
       case 'dim': {
@@ -1393,20 +1473,35 @@ const TOOLS = {
   },
   rect: cad => {
     let a = null;
-    const corners = b => [a, [b[0], a[1]], b, [a[0], b[1]]];
+    // en modo isométrico el «rectángulo» es el paralelogramo de la cara activa (lados por sus dos ejes)
+    const iso = () => !!cad.drawing.isoGrid;
+    const corners = b => {
+      if (!iso()) return [a, [b[0], a[1]], b, [a[0], b[1]]];
+      const [u, v] = isoAxes(cad.drawing);
+      const [s1, t1] = inBasis(sub(b, a), u, v);
+      return [a, add(a, mul(u, s1)), b, add(a, mul(v, t1))];
+    };
     const make = b => {
-      if (Math.abs(b[0] - a[0]) < 1e-9 || Math.abs(b[1] - a[1]) < 1e-9) { cad.message('El rectángulo no puede tener un lado de longitud 0'); return; }
-      cad.add({ type: 'pline', pts: corners(b).map(P), closed: true });
+      const c = corners(b);
+      if (dist(c[0], c[1]) < 1e-9 || dist(c[0], c[3]) < 1e-9) { cad.message('El rectángulo no puede tener un lado de longitud 0'); return; }
+      cad.add({ type: 'pline', pts: c.map(P), closed: true });
       cad.commit();
       cad.setTool('select');
     };
+    const title = () => (iso() ? `RECTÁNGULO ISOMÉTRICO (cara ${ISO_PLANES[cad.drawing.isoPlane || 'top'].label.toLowerCase()}, F5 cambia)` : 'RECTÁNGULO');
     return {
-      prompt: () => (a ? 'RECTÁNGULO · Esquina opuesta (o ancho x alto, p. ej. 80x40, o @80,40)' : 'RECTÁNGULO · Primera esquina'),
+      prompt: () => (a ? `${title()} · Esquina opuesta (o ancho x alto, p. ej. 80x40${iso() ? ', medidos sobre los ejes isométricos' : ', o @80,40'})` : `${title()} · Primera esquina`),
       last: () => a,
       point(p) { if (!a) a = p; else make(p); },
       input(s) {
         const m = s.match(/^\s*(-?[\d.,]+)\s*[x×*]\s*(-?[\d.,]+)\s*$/i);
-        if (m && a) { const w = parseNum(m[1]), h = parseNum(m[2]); if (w !== null && h !== null) { make(add(a, [w, h])); return true; } }
+        if (m && a) {
+          const w = parseNum(m[1]), h = parseNum(m[2]);
+          if (w !== null && h !== null) {
+            if (iso()) { const [u, v] = isoAxes(cad.drawing); make(add(a, add(mul(u, w), mul(v, h)))); } else make(add(a, [w, h]));
+            return true;
+          }
+        }
         return false;
       },
       preview: () => (a && cad.cur ? { ents: [{ type: 'pline', pts: corners(cad.cur), closed: true }] } : null),
@@ -1414,16 +1509,25 @@ const TOOLS = {
   },
   circle: cad => {
     let c = null;
+    // en modo isométrico, el círculo de la cara activa se ve como una elipse (círculo isométrico)
+    const iso = () => !!cad.drawing.isoGrid;
+    const ent = r => {
+      if (!iso()) return { type: 'circle', c: P(c), r: rnd(r) };
+      const [u, v] = isoAxes(cad.drawing);
+      return { type: 'ellipse', c: P(c), U: P(mul(u, r)), V: P(mul(v, r)) };
+    };
+    const radiusTo = p => (iso() ? Math.hypot(...inBasis(sub(p, c), ...isoAxes(cad.drawing))) : dist(c, p));
     const make = r => {
       if (!(r > 0)) { cad.message('El radio debe ser mayor que 0'); return; }
-      cad.add({ type: 'circle', c: P(c), r: rnd(r) });
+      cad.add(ent(r));
       cad.commit();
       cad.setTool('select');
     };
+    const title = () => (iso() ? `CÍRCULO ISOMÉTRICO (cara ${ISO_PLANES[cad.drawing.isoPlane || 'top'].label.toLowerCase()}, F5 cambia)` : 'CÍRCULO');
     return {
-      prompt: () => (c ? 'CÍRCULO · Radio (número) o D y el diámetro (p. ej. D30)' : 'CÍRCULO · Centro'),
+      prompt: () => (c ? `${title()} · Radio (número) o D y el diámetro (p. ej. D30)` : `${title()} · Centro`),
       last: () => c,
-      point(p) { if (!c) c = p; else make(dist(c, p)); },
+      point(p) { if (!c) c = p; else make(radiusTo(p)); },
       input(s) {
         if (!c) return false;
         const m = s.match(/^\s*[dDØø]\s*([\d.,]+)\s*$/);
@@ -1432,7 +1536,7 @@ const TOOLS = {
         if (v !== null) { make(v); return true; }
         return false;
       },
-      preview: () => (c && cad.cur ? { ents: [{ type: 'circle', c, r: dist(c, cad.cur) }], guides: [[c, cad.cur]] } : null),
+      preview: () => (c && cad.cur && radiusTo(cad.cur) > 1e-9 ? { ents: [ent(radiusTo(cad.cur))], guides: [[c, cad.cur]] } : null),
     };
   },
   arc: cad => {
@@ -1636,7 +1740,7 @@ const TOOLS = {
     let d = null, target = null;
     return {
       get pickMode() { return d !== null && !target; },
-      pickFilter: e => ['line', 'pline', 'circle', 'arc'].includes(e.type),
+      pickFilter: e => ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type),
       prompt: () => (d === null ? `DESFASE · Distancia${cad.lastOffset ? ` (Intro: ${fmtNum(cad.lastOffset, cad.drawing)})` : ''}`
         : !target ? `DESFASE (${fmtNum(d, cad.drawing)}) · Designa una línea, polilínea, círculo o arco (Intro: terminar)` : 'DESFASE · Señala hacia qué lado'),
       last: () => null,
@@ -1772,7 +1876,7 @@ export class Cad extends EventTarget {
     const n = { ...e, id: eid() };
     if (!n.layer || !this.layer(n.layer)) n.layer = this.layerFor(n.type);
     // estilo de línea activo al dibujar (p. ej. Lápiz): solo para lo que se dibuja ahora, no para copias ni recortes
-    if (!n.lt && this.drawing.curLt && DRAW_TOOLS.has(this.toolName) && ['line', 'pline', 'circle', 'arc'].includes(n.type)) n.lt = this.drawing.curLt;
+    if (!n.lt && this.drawing.curLt && DRAW_TOOLS.has(this.toolName) && ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(n.type)) n.lt = this.drawing.curLt;
     this.drawing.entities.push(n);
     return n;
   }
@@ -1907,7 +2011,7 @@ export class Cad extends EventTarget {
 
   others(e) {
     const b = bboxOf(e, this.drawing);
-    return this.visibleEntities().filter(o => o !== e && ['line', 'pline', 'circle', 'arc'].includes(o.type) && (() => {
+    return this.visibleEntities().filter(o => o !== e && ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(o.type) && (() => {
       const q = bboxOf(o, this.drawing);
       return q[0] <= b[2] + 1e-9 && q[2] >= b[0] - 1e-9 && q[1] <= b[3] + 1e-9 && q[3] >= b[1] - 1e-9;
     })());
@@ -2048,6 +2152,7 @@ export class Cad extends EventTarget {
     if (k === 'F8') { e.preventDefault(); this.toggle('ortho'); return true; }
     if (k === 'F9') { e.preventDefault(); this.toggle('gridSnap'); return true; }
     if (k === 'F7') { e.preventDefault(); this.toggle('grid'); return true; }
+    if (k === 'F5') { e.preventDefault(); this.toggle('isoplane'); return true; }
     if (mod) {
       const l = k.toLowerCase();
       if (l === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); return true; }
@@ -2104,7 +2209,16 @@ export class Cad extends EventTarget {
         this.savePrefs();
       }
       this.commit();
-      this.message(this.drawing.isoGrid ? 'Modo isométrico: rejilla a 30°, 90° y 150°, el cursor salta a sus nodos (Forzar) y las líneas van por esos ejes (Orto, F8 para trazar libre).' : 'Modo isométrico desactivado: rejilla normal');
+      this.emitPrompt();
+      this.message(this.drawing.isoGrid ? `Modo isométrico · cara ${ISO_PLANES[this.drawing.isoPlane || 'top'].label.toLowerCase()} (F5 cambia de cara): los círculos salen como elipses isométricas y los rectángulos como paralelogramos de esa cara. Forzar y Orto activados (F8 para trazar libre).` : 'Modo isométrico desactivado: rejilla normal');
+    }
+    else if (key === 'isoplane') {
+      const order = ['top', 'right', 'left'];
+      this.drawing.isoPlane = order[(order.indexOf(this.drawing.isoPlane || 'top') + 1) % 3];
+      if (!this.drawing.isoGrid) this.drawing.isoGrid = true;
+      this.commit();
+      this.message(`Cara isométrica: ${ISO_PLANES[this.drawing.isoPlane].label} (ejes a ${ISO_PLANES[this.drawing.isoPlane].axes.join('° y ')}°). Los círculos y rectángulos se dibujan en esa cara.`);
+      this.emitPrompt();
     }
     else if (key === 'pencil') {
       this.drawing.curLt = this.drawing.curLt === 'pencil' ? null : 'pencil';
@@ -2234,7 +2348,7 @@ export class Cad extends EventTarget {
     }
     if (this.hover) {
       const e = this.hover, inf = entityInfo(e, D);
-      const meas = e.type === 'circle' ? `Ø ${F(2 * e.r)}` : e.type === 'arc' ? `R ${F(e.r)}` : inf.length ? `L ${F(inf.length)}` : '';
+      const meas = e.type === 'circle' ? `Ø ${F(2 * e.r)}` : isIsoCircle(e) ? `Ø ${F(2 * Math.hypot(...e.U))} (isométrico)` : e.type === 'arc' ? `R ${F(e.r)}` : inf.length ? `L ${F(inf.length)}` : '';
       const head = `${entLabel(e)}${meas ? ` · ${meas}` : ''} · capa ${e.layer}`;
       return this.sel.has(e.id)
         ? [head, 'Arrastra para mover · doble clic: editar valores · Mayús+clic: quitar']
@@ -2583,7 +2697,13 @@ export class Cad extends EventTarget {
     if (view === this.activeView && view.screenCursor && !this.hand) {
       const [sx, sy] = view.screenCursor;
       ctx.strokeStyle = C.fg; ctx.globalAlpha = 0.45; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, Math.round(sy) + 0.5); ctx.lineTo(W, Math.round(sy) + 0.5); ctx.moveTo(Math.round(sx) + 0.5, 0); ctx.lineTo(Math.round(sx) + 0.5, H); ctx.stroke();
+      ctx.beginPath();
+      if (D.isoGrid) {
+        // cursor isométrico: sus dos brazos siguen los ejes de la cara activa
+        const L = W + H;
+        for (const [ux, uy] of isoAxes(D)) { ctx.moveTo(sx - ux * L, sy + uy * L); ctx.lineTo(sx + ux * L, sy - uy * L); }
+      } else { ctx.moveTo(0, Math.round(sy) + 0.5); ctx.lineTo(W, Math.round(sy) + 0.5); ctx.moveTo(Math.round(sx) + 0.5, 0); ctx.lineTo(Math.round(sx) + 0.5, H); }
+      ctx.stroke();
       ctx.globalAlpha = 0.9;
       if (!this.T || this.T.selecting || this.T.pickMode) ctx.strokeRect(Math.round(sx) - 4.5, Math.round(sy) - 4.5, 9, 9);
       ctx.globalAlpha = 1;
@@ -2706,7 +2826,7 @@ function drawEnt(ctx, v, e, D, st) {
   const S = q => v.toScreen(q), z = v.zoom;
   ctx.strokeStyle = st.color; ctx.fillStyle = st.color; ctx.lineWidth = st.lw;
   ctx.setLineDash(st.dash); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  if (st.sketch && ['line', 'pline', 'circle', 'arc'].includes(e.type)) { drawSketch(ctx, v, e, st); return; }
+  if (st.sketch && ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type)) { drawSketch(ctx, v, e, st); return; }
   switch (e.type) {
     case 'line': { const a = S(e.a), b = S(e.b); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); break; }
     case 'pline': {
@@ -2717,6 +2837,13 @@ function drawEnt(ctx, v, e, D, st) {
       break;
     }
     case 'circle': { const c = S(e.c); ctx.beginPath(); ctx.arc(c[0], c[1], Math.max(0.5, e.r * z), 0, TAU); ctx.stroke(); break; }
+    case 'ellipse': {
+      ctx.beginPath();
+      ellPts(e, 96).forEach((q, i) => { const p = S(q); if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
     case 'arc': { const c = S(e.c); ctx.beginPath(); ctx.arc(c[0], c[1], Math.max(0.5, e.r * z), -e.a0, -e.a0 - sweepOf(e.a0, e.a1), true); ctx.stroke(); break; }
     case 'text': drawText(ctx, v, e.p, e.text, e.h, e.rot || 0, 'left'); break;
     case 'dim': {
