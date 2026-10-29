@@ -226,8 +226,9 @@ const SECTIONS = [
         <li>El nombre también se cambia haciendo clic sobre él en la barra superior del editor.</li>
       </ul>
       <h4>Guardado automático</h4>
-      <p>Todo se guarda solo en el almacenamiento del navegador (<code>localStorage</code>) medio segundo después de cada cambio; junto al nombre verás <i>Guardando…</i> y luego <i>Guardado</i>. <kbd>Ctrl</kbd>+<kbd>S</kbd> fuerza el guardado.</p>
-      <div class="callout">Los proyectos viven en <b>este navegador</b>: otro navegador, otro equipo o una ventana privada no los verán. Descarga copias en JSON de lo que te importe; el espacio suele limitarse a unos 5 MB.</div>
+      <p>Todo se guarda solo en la base de datos del navegador (<code>IndexedDB</code>) medio segundo después de cada cambio; junto al nombre verás <i>Guardando…</i> y luego <i>Guardado</i>. <kbd>Ctrl</kbd>+<kbd>S</kbd> fuerza el guardado.</p>
+      <p>El espacio disponible es <b>grande</b> (normalmente cientos de MB o varios GB, según el disco): la pantalla de proyectos muestra cuánto se usa y cuánto queda. Forja 3D pide además al navegador almacenamiento <b>persistente</b> para que no lo borre si el disco se llena. Los proyectos guardados con versiones anteriores (en <code>localStorage</code>) se migran solos la primera vez.</p>
+      <div class="callout">Los proyectos viven en <b>este navegador</b>: otro navegador, otro equipo o una ventana privada no los verán, y borrar los «datos de sitios» del navegador los elimina. Descarga copias en JSON de lo que te importe.</div>
       <h4>Exportar e importar</h4>
       <ul>
         <li><b>Exportar → Proyecto Forja 3D</b> (editor) o <b>JSON</b> (tarjeta): un archivo <code>.forja3d.json</code> con el proyecto. Para otros programas mira <a href="#" data-goto="formatos">Exportar e importar 3D</a>.</li>
@@ -257,7 +258,7 @@ const SECTIONS = [
         <li>Cada malla del archivo se convierte en un objeto <b>Malla importada</b>: se puede mover, girar, escalar, recolorear y usar en <a href="#" data-goto="booleanas">operaciones booleanas</a>, pero no tiene parámetros editables.</li>
         <li>Si el modelo es enorme o diminuto (por ejemplo, en milímetros), se reescala automáticamente a unas 2 unidades y se avisa del factor.</li>
       </ul>
-      <div class="callout">No se importan texturas, animaciones ni glTF con compresión Draco/Meshopt. Los modelos muy detallados ocupan mucho: el almacenamiento del navegador ronda los 5 MB, así que descarga el proyecto en JSON si avisa de que es grande.</div>
+      <div class="callout">No se importan texturas, animaciones ni glTF con compresión Draco/Meshopt. Los modelos muy detallados ocupan bastante; caben sin problema, pero conviene descargar una copia del proyecto en JSON.</div>
       <h4>Con Blender</h4>
       <ol class="steps">
         <li><b>De Forja 3D a Blender</b>: Exportar → GLB. En Blender: <i>Archivo → Importar → glTF 2.0 (.glb/.gltf)</i>. Blender convierte automáticamente el eje vertical (Y arriba → Z arriba).</li>
@@ -453,6 +454,44 @@ const SECTIONS = [
       ${exBtn('torno')}`,
   },
   {
+    id: 'escultor', title: 'Modo escultor',
+    html: `
+      <p>Convierte cualquier objeto en una <b>escultura</b> y modélalo con pinceles, como en arcilla o piedra. Selecciona el objeto y pulsa <b>Esculpir</b> en la barra de operaciones (o en Propiedades). Hay <b>dos métodos</b>; puedes probar los dos y quedarte con el que prefieras (con <i>Pasar a volumen… / Pasar a malla…</i> se cambia de uno a otro sobre la forma actual):</p>
+      <div class="ops-grid">
+        <div><b>Volumen (tallar)</b><span>El objeto se convierte en un bloque de material. Las herramientas <b>quitan o añaden materia</b>: se pueden abrir agujeros y túneles, separar partes y volver a rellenar. Es lo más parecido a <b>picar piedra</b>.</span></div>
+        <div><b>Malla (deformar)</b><span>El objeto se subdivide y los pinceles <b>empujan, hunden, alisan o estiran</b> su superficie. Ideal para formas orgánicas suaves, relieves o terrenos; no puede abrir agujeros.</span></div>
+      </div>
+      <h4>Herramientas · Volumen</h4>
+      <ul>
+        <li><b>Cincel</b> (<kbd>C</kbd>): quita material a cada golpe. <b>Gubia</b> (<kbd>U</kbd>): abre surcos al arrastrar. <b>Arcilla</b> (<kbd>A</kbd>): añade material.</li>
+        <li><b>Lima</b> (<kbd>S</kbd>): suaviza las marcas. <b>Aplanar</b> (<kbd>F</kbd>): desbasta en plano, como un formón (con <kbd>Ctrl</kbd>, rellena hasta el plano).</li>
+      </ul>
+      <h4>Herramientas · Malla</h4>
+      <ul>
+        <li><b>Dibujar</b> (<kbd>D</kbd>): levanta la superficie (con <kbd>Ctrl</kbd>, la hunde). <b>Inflar</b> (<kbd>I</kbd>): hincha en todas direcciones.</li>
+        <li><b>Suavizar</b> (<kbd>S</kbd>), <b>Aplanar</b> (<kbd>F</kbd>), <b>Pellizcar</b> (<kbd>P</kbd>, afila aristas) y <b>Arrastrar</b> (<kbd>G</kbd>, agarra una zona y la estira).</li>
+      </ul>
+      <h4>Controles</h4>
+      <ul>
+        <li><b>Arrastra sobre el objeto</b> para esculpir; arrastrando fuera de él, la vista gira como siempre.</li>
+        <li><b>Tamaño</b> y <b>Fuerza</b> con los deslizadores o con <kbd>[</kbd> <kbd>]</kbd> y <kbd>Mayús</kbd>+<kbd>[</kbd> <kbd>]</kbd>. El círculo sobre la superficie muestra el tamaño; el círculo interior, la fuerza (rojo: quita, verde: añade, azul: suaviza).</li>
+        <li><kbd>Ctrl</kbd> mientras esculpes <b>invierte</b> la herramienta (quitar ↔ añadir, levantar ↔ hundir).</li>
+        <li><b>Simetría</b> X / Y / Z: lo que hagas en un lado se repite reflejado en el otro (ideal para caras).</li>
+        <li>Con tableta gráfica, la <b>presión del lápiz</b> regula la fuerza.</li>
+        <li>Cada trazo se puede deshacer con <kbd>Ctrl</kbd>+<kbd>Z</kbd>. <b>Suavizar todo</b> alisa el objeto entero. <kbd>Intro</kbd> o <kbd>Esc</kbd> (o <b>Terminar</b>) salen del modo escultor.</li>
+        <li>El <b>Detalle</b> (Baja / Media / Alta) se elige al convertir: más detalle permite marcas más finas pero cada trazo es más lento.</li>
+      </ul>
+      <p>Una escultura se comporta como cualquier objeto: se puede mover, colorear, usar en booleanas, capturar y exportar a GLB, OBJ o STL (por ejemplo, para imprimirla en 3D).</p>
+      <h4>Ejemplo: tallar una cara en una esfera</h4>
+      <ol class="steps">
+        <li>Añade una <b>Esfera</b> (radio 1), pulsa <b>Esculpir</b> y elige <b>Volumen (tallar)</b>, detalle <b>Media</b>.</li>
+        <li>Pulsa ${k('1')} (alzado) y activa la <b>Simetría X</b>.</li>
+        <li>Con el <b>Cincel</b> (tamaño pequeño, fuerza alta), golpea dos veces donde irán los ojos: se abren las dos cuencas a la vez.</li>
+        <li>Con la <b>Arcilla</b> añade la nariz; con la <b>Gubia</b> traza la boca de un lado a otro.</li>
+        <li>Pasa la <b>Lima</b> para suavizar y pulsa <b>Terminar</b>.</li>
+      </ol>`,
+  },
+  {
     id: 'booleanas', title: 'Operaciones booleanas',
     html: `
       <p>Combinan el volumen de varios objetos. Selecciona primero la <b>base (A)</b> y después el resto con <kbd>Mayús</kbd>+clic; luego elige la operación en la barra superior del visor o en el panel de propiedades.</p>
@@ -522,6 +561,12 @@ const SECTIONS = [
         <tr><td>${k('F')}</td><td>Encuadrar selección</td></tr>
         <tr><td>${k('Z')}</td><td>Alternar Sólido ⇄ Wire</td></tr>
         <tr><td>${k('N')}</td><td>Mostrar u ocultar el panel lateral</td></tr>
+        <tr><th colspan="2">Modo escultor</th></tr>
+        <tr><td>${k('[')} ${k(']')}</td><td>Tamaño del pincel</td></tr>
+        <tr><td>${k('Mayús', '[')} ${k('Mayús', ']')}</td><td>Fuerza del pincel</td></tr>
+        <tr><td>${k('Ctrl')} + arrastrar</td><td>Invertir (quitar ↔ añadir)</td></tr>
+        <tr><td>Letras de herramienta</td><td>C, U, A, S, F (volumen) · D, I, S, F, P, G (malla)</td></tr>
+        <tr><td>${k('Intro')} · ${k('Esc')}</td><td>Terminar de esculpir</td></tr>
         <tr><th colspan="2">Capturar</th></tr>
         <tr><td>${k('Ctrl', 'P')}</td><td>Capturar imagen, PDF o imprimir</td></tr>
         <tr><th colspan="2">Ayuda</th></tr>

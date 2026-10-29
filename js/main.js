@@ -7,6 +7,7 @@ import * as store from './storage.js';
 import { toggleTheme } from './theme.js';
 import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
 import { makePdf } from './pdf.js';
+import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -47,7 +48,7 @@ const fmtDate = ts => new Date(ts).toLocaleString('es-ES', { dateStyle: 'medium'
 const CUBE_SVG = '<svg viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>';
 
 function showProjects() {
-  flushSave();
+  if (project && editor) { editor.endSculpt?.(); saveNow({ thumb: true }); }
   project = null;
   $('#editor-screen').hidden = true;
   $('#projects-screen').hidden = false;
@@ -82,20 +83,24 @@ function renderProjectList() {
         h('button', { onclick: () => (location.hash = `#/p/${p.id}`) }, 'Abrir'),
         h('button', { onclick: () => {
           const name = prompt('Nuevo nombre del proyecto', p.name);
-          if (name?.trim()) { store.renameProject(p.id, name.trim()); renderProjectList(); }
+          if (name?.trim()) store.renameProject(p.id, name.trim()).then(renderProjectList);
         } }, 'Renombrar'),
-        h('button', { onclick: () => { store.duplicateProject(p.id); renderProjectList(); toast('Proyecto duplicado'); } }, 'Duplicar'),
-        h('button', { onclick: () => exportProject(store.loadProject(p.id)) }, 'JSON'),
+        h('button', { onclick: async () => { await store.duplicateProject(p.id); renderProjectList(); toast('Proyecto duplicado'); } }, 'Duplicar'),
+        h('button', { onclick: async () => exportProject(await store.loadProject(p.id)) }, 'JSON'),
         h('button', { class: 'del', onclick: () => {
           if (confirm(`¿Eliminar «${p.name}»? Esta acción no se puede deshacer.`)) {
-            store.deleteProject(p.id); renderProjectList(); toast('Proyecto eliminado');
+            store.deleteProject(p.id).then(renderProjectList); toast('Proyecto eliminado');
           }
         } }, 'Eliminar'))));
   }
-  const kb = store.storageUsage() / 1024;
-  $('#storage-info').textContent =
-    `${list.length} proyecto${list.length === 1 ? '' : 's'} · ${kb < 1024 ? kb.toFixed(0) + ' KB' : (kb / 1024).toFixed(2) + ' MB'} usados en el almacenamiento local (límite habitual ≈ 5 MB). ` +
-    'Descarga copias en JSON de los proyectos importantes.';
+  const info = $('#storage-info');
+  info.textContent = `${list.length} proyecto${list.length === 1 ? '' : 's'}`;
+  store.storageInfo().then(st => {
+    const parts = [`${list.length} proyecto${list.length === 1 ? '' : 's'}`];
+    if (st.usage || st.quota) parts.push(`${fmtBytes(st.usage)} usados de ${fmtBytes(st.quota)} disponibles para este sitio (${st.backend})`);
+    parts.push(st.persisted ? 'almacenamiento persistente: el navegador no lo borrará por falta de espacio' : 'el navegador podría borrar los datos si se queda sin espacio');
+    info.textContent = parts.join(' · ') + '. Descarga copias en JSON de los proyectos importantes.';
+  });
 }
 
 function exportProject(p) {
@@ -123,8 +128,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'F1' || (e.key === '?' && !e.ctrlKey && !e.metaKey)) { e.preventDefault(); showHelp(); }
 });
 
-$('#btn-export-all').onclick = () => {
-  const projects = store.listProjects().map(p => store.loadProject(p.id)).filter(Boolean);
+$('#btn-export-all').onclick = async () => {
+  const projects = (await Promise.all(store.listProjects().map(p => store.loadProject(p.id)))).filter(Boolean);
   if (!projects.length) return toast('No hay proyectos que exportar', true);
   store.downloadJSON({ format: 'forja3d-bundle', version: 1, exported: new Date().toISOString(), projects },
     `forja3d-todos-${new Date().toISOString().slice(0, 10)}.json`);
@@ -160,7 +165,10 @@ $('#file-input').onchange = async e => {
 // ============================================================== importar / exportar
 let pendingImport = null;   // archivos a importar al abrir el siguiente proyecto
 
-const fmtBytes = b => b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
+function fmtBytes(b) {
+  if (b >= 1024 ** 3) return `${(b / 1024 ** 3).toFixed(1)} GB`;
+  return b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
 
 /** Importa archivos (modelos o proyectos .json) en la escena abierta. */
 async function importFiles(files) {
@@ -186,8 +194,8 @@ async function importFiles(files) {
         let msg = `«${file.name}» importado: ${r.ids.length} pieza${r.ids.length === 1 ? '' : 's'}`;
         if (r.scaled) msg += ` · escalado ×${+r.scale.toPrecision(3)} (medía ${+r.size.toPrecision(3)} unidades)`;
         toast(msg);
-        if (r.bytes > 2.5 * 1024 * 1024) {
-          setTimeout(() => toast(`Modelo grande (${fmtBytes(r.bytes)}): puede no caber en el almacenamiento del navegador. Descarga el proyecto en JSON.`, true), 2600);
+        if (r.bytes > 20 * 1024 * 1024) {
+          setTimeout(() => toast(`Modelo grande (${fmtBytes(r.bytes)}): se guarda sin problema, pero conviene descargar una copia en JSON.`), 2600);
         }
         editor.frame();
       } else {
@@ -249,8 +257,9 @@ function exportDialog() {
 }
 
 // ============================================================== editor: abrir
-function openProject(id) {
-  const p = store.loadProject(id);
+async function openProject(id) {
+  const p = await store.loadProject(id);
+  if (location.hash !== `#/p/${id}`) return;   // el usuario ya ha navegado a otro sitio
   if (!p) {
     toast('Proyecto no encontrado', true);
     location.hash = '';
@@ -303,14 +312,22 @@ function scheduleSave() {
   saveTimer = setTimeout(saveNow, 600);
 }
 
-function saveNow() {
+let lastThumb = 0;
+/** Guarda ya. La miniatura se regenera como mucho cada 20 s (o al salir del proyecto), porque leer el lienzo 3D es costoso. */
+function saveNow({ thumb = false } = {}) {
   clearTimeout(saveTimer);
   saveTimer = null;
   if (!project || !editor) return;
   snapshotProject();
-  const ok = store.saveProject(project, editor.thumbnail());
-  if (ok) setSaveState(false);
-  else { setSaveState(true, 'Sin espacio'); toast('No hay espacio en el almacenamiento local. Descarga el JSON.', true); }
+  const saving = project;
+  const now = Date.now();
+  let t;
+  if (thumb || now - lastThumb > 20000) { t = editor.thumbnail(); lastThumb = now; }
+  store.saveProject(project, t).then(ok => {
+    if (saving !== project) return;
+    if (ok) { if (!saveTimer) setSaveState(false); }
+    else { setSaveState(true, 'Error al guardar'); toast('No se pudo guardar en el navegador (¿sin espacio?). Descarga el proyecto en JSON.', true); }
+  });
 }
 
 function flushSave() { if (saveTimer) saveNow(); }
@@ -348,6 +365,7 @@ function initEditor() {
   editor.addEventListener('select', () => { refreshOutliner(); renderProps(); refreshStatus(); refreshOps(); });
   editor.addEventListener('transform', () => syncTransformFields());
   editor.addEventListener('notice', e => toast(e.detail.msg, e.detail.error));
+  editor.addEventListener('sculpt', e => { renderSculptBar(); renderProps(); refreshOps(); refreshStatus(); });
   editor.addEventListener('camera', e => refreshCamera(e.detail));
   editor.addEventListener('history', e => {
     $('#btn-undo').disabled = !e.detail.canUndo;
@@ -421,6 +439,7 @@ function runOp(op) {
   else if (op === 'drop') editor.dropToFloor();
   else if (op === 'extrude2d') convert2DDialog('extrude');
   else if (op === 'lathe2d') convert2DDialog('lathe');
+  else if (op === 'sculpt') sculptCommand();
 }
 
 /** Diálogo para extruir o revolucionar el elemento 2D seleccionado. */
@@ -480,6 +499,132 @@ function convert2DDialog(kind) {
   modeSel.focus();
 }
 
+// ============================================================== modo escultor
+function sculptCommand() {
+  const sel = editor.getSelected();
+  if (!sel || editor.selection.length !== 1) return toast('Selecciona un objeto para esculpirlo', true);
+  if (sel.type === 'sculpt') editor.startSculpt(sel.id);
+  else sculptDialog();
+}
+
+/** Diálogo para convertir el objeto seleccionado en escultura (malla o volumen). */
+function sculptDialog(preferred) {
+  const sel = editor.getSelected();
+  if (!sel) return;
+  const flat = ['plane', 'ring', 'circle2d', 'line2d'].includes(sel.type);
+  let method = preferred || (flat ? 'mesh' : 'voxel');
+  let level = 'mid';
+  const wrap = h('div', { class: 'modal-backdrop' });
+  const cards = Object.entries(SCULPT_METHODS).map(([key, m]) => h('label', { class: 'format-card' },
+    h('input', { type: 'radio', name: 'sm', value: key, checked: key === method, disabled: key === 'voxel' && flat }),
+    h('div', {}, h('b', {}, m.label), h('span', {}, m.desc),
+      h('span', { class: 'tool-list' }, Object.values(m.tools).map(t => t.label).join(' · ')),
+      key === 'voxel' && flat ? h('span', { class: 'warn' }, 'No disponible: este objeto es plano (no tiene volumen).') : null)));
+  const detail = h('div', { class: 'seg cap-seg' });
+  const syncDetail = () => {
+    const lv = SCULPT_METHODS[method].levels;
+    detail.replaceChildren(...Object.keys(lv).map(k => h('button', { type: 'button', class: k === level ? 'active' : '', onclick: () => { level = k; syncDetail(); } },
+      `${LEVEL_LABELS[k]} · ${method === 'voxel' ? `${lv[k]}³` : `~${Math.round(lv[k] / 1000)}k △`}`)));
+  };
+  syncDetail();
+  const close = () => { document.removeEventListener('keydown', onKey2, true); wrap.remove(); };
+  const go = () => {
+    close();
+    toast('Preparando la escultura…');
+    setTimeout(() => {
+      try {
+        const t0 = performance.now();
+        editor.convertToSculpt(sel.id, method, level);
+        editor.startSculpt(sel.id);
+        toast(`Listo (${Math.round(performance.now() - t0)} ms). Arrastra sobre el objeto para esculpir; fuera de él, la vista gira.`);
+      } catch (err) {
+        console.error(err);
+        toast(err.message, true);
+      }
+    }, 30);
+  };
+  const onKey2 = e => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); go(); }
+    else e.stopPropagation();
+  };
+  document.addEventListener('keydown', onKey2, true);
+  wrap.append(h('div', { class: 'modal export', role: 'dialog', 'aria-modal': 'true' },
+    h('header', { class: 'modal-head' }, h('h2', {}, `Esculpir «${sel.name}»`),
+      h('span', { class: 'muted' }, 'El objeto se convierte en escultura (se puede deshacer con Ctrl+Z). Elige el método; puedes probar el otro más tarde.')),
+    h('div', { class: 'export-body', onchange: e => { if (e.target.name === 'sm') { method = e.target.value; syncDetail(); } } },
+      cards,
+      h('div', { class: 'cap-row' }, h('span', { class: 'cap-label' }, 'Detalle'), detail),
+      h('p', { class: 'note' }, 'Más detalle permite marcas más finas, pero cada trazo tarda más y el proyecto ocupa más. «Media» va bien en casi todos los equipos.')),
+    h('footer', { class: 'modal-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn btn-primary', onclick: go }, 'Convertir y esculpir'))));
+  wrap.addEventListener('pointerdown', e => { if (e.target === wrap) close(); });
+  document.body.append(wrap);
+}
+
+const TOOL_ICONS = {
+  draw: '<path d="M4 18c3-6 6-9 8-9s3 4 8 4"/><path d="M4 20h16"/>',
+  inflate: '<circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
+  smooth: '<path d="M3 14c3-3 5 2 9-1s6 1 9-1"/><path d="M3 18h18"/>',
+  flatten: '<path d="M3 15h18"/><path d="M6 15l2-6h8l2 6"/>',
+  pinch: '<path d="M5 6l7 6 7-6M5 18l7-6 7 6"/>',
+  grab: '<path d="M8 13V6a1.5 1.5 0 0 1 3 0v6M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6a1.5 1.5 0 0 1 3 0v8c0 4-2.5 6-6 6s-5-2-7-5l-1.5-3a1.5 1.5 0 0 1 2.6-1.4L8 13"/>',
+  chisel: '<path d="M14 3l7 7-3 3-7-7z"/><path d="M11 6 4 13l-1 7 7-1 7-7"/>',
+  gouge: '<path d="M4 20c4-1 6-6 8-10s5-6 8-6"/><path d="M6 21c4-1 7-6 9-10"/>',
+  clay: '<path d="M5 17c0-5 3-9 7-9s7 4 7 9z"/><path d="M3 17h18"/>',
+};
+
+/** Barra de herramientas del modo escultor. */
+function renderSculptBar() {
+  const bar = $('#sculpt-bar');
+  const ses = editor.sculpt;
+  $('#ops-bar').hidden = !!ses;
+  bar.hidden = !ses;
+  $('#viewport').classList.toggle('is-sculpting', !!ses);
+  if (!ses) { bar.replaceChildren(); return; }
+  const M = SCULPT_METHODS[ses.method];
+  const tools = Object.entries(M.tools).map(([key, t]) => {
+    const b = h('button', { class: `sc-tool${ses.tool === key ? ' active' : ''}`, title: `${t.label} (${t.key}) · ${t.desc}`, onclick: () => { ses.tool = key; renderSculptBar(); } });
+    b.innerHTML = `<svg viewBox="0 0 24 24">${TOOL_ICONS[key] || TOOL_ICONS.draw}</svg><span>${t.label}</span>`;
+    return b;
+  });
+  const slider = (label, min, max, step, value, onInput, fmt) => {
+    const out = h('output', {}, fmt(value));
+    const r = h('input', { type: 'range', min, max, step, value });
+    r.addEventListener('input', () => { onInput(+r.value); out.textContent = fmt(+r.value); });
+    r.addEventListener('change', () => r.blur());
+    return h('label', { class: 'sc-slider' }, h('span', {}, label), r, out);
+  };
+  const symBtn = ax => h('button', { class: `sc-sym${ses.sym[ax] ? ' active' : ''}`, title: `Simetría en ${ax.toUpperCase()}`, onclick: () => { ses.sym[ax] = !ses.sym[ax]; renderSculptBar(); } }, ax.toUpperCase());
+  bar.replaceChildren(
+    h('div', { class: 'sc-head' },
+      h('b', {}, `Esculpir · ${M.label}`),
+      h('button', { class: 'btn sm btn-primary', title: 'Terminar (Intro o Esc)', onclick: () => editor.endSculpt() }, 'Terminar')),
+    h('div', { class: 'sc-tools' }, tools),
+    slider('Tamaño', 0.02, 0.6, 0.01, ses.size, v => { ses.size = v; }, v => `${Math.round(v * 100)}%`),
+    slider('Fuerza', 0.05, 1, 0.05, ses.strength, v => { ses.strength = v; }, v => `${Math.round(v * 100)}%`),
+    h('div', { class: 'sc-row' }, h('span', {}, 'Simetría'), symBtn('x'), symBtn('y'), symBtn('z'),
+      h('button', { class: 'btn sm', style: 'margin-left:auto', title: 'Suaviza todo el objeto un poco', onclick: () => ses.smoothAll() }, 'Suavizar todo')),
+    h('p', { class: 'sc-hint' }, h('b', {}, 'Ctrl'), ' invierte · ', h('b', {}, '[ ]'), ' tamaño · ', h('b', {}, 'Mayús + [ ]'), ' fuerza · arrastra fuera del objeto para girar la vista'));
+}
+
+/** Atajos del modo escultor. Devuelve true si la tecla se ha usado. */
+function sculptKey(e) {
+  const ses = editor.sculpt;
+  if (e.key === 'Escape' || e.key === 'Enter') { editor.endSculpt(); return true; }
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+    const up = e.code === 'BracketRight';
+    if (e.shiftKey) ses.strength = Math.min(1, Math.max(0.05, +(ses.strength + (up ? 0.05 : -0.05)).toFixed(2)));
+    else ses.size = Math.min(0.6, Math.max(0.02, ses.size * (up ? 1.15 : 1 / 1.15)));
+    renderSculptBar();
+    return true;
+  }
+  const entry = Object.entries(SCULPT_METHODS[ses.method].tools).find(([, t]) => t.key.toLowerCase() === e.key.toLowerCase());
+  if (entry) { ses.tool = entry[0]; renderSculptBar(); return true; }
+  return ['w', 'e', 'r', 'delete', 'backspace'].includes(e.key.toLowerCase());
+}
+
 async function editProfile(id) {
   const sel = editor.objects.get(id);
   if (!sel) return;
@@ -508,6 +653,7 @@ function refreshOps() {
   set('explode', types.includes('boolean'));
   const is2D = sel.length === 1 && (types[0] === 'line2d' || types[0] === 'circle2d');
   set('extrude2d', is2D); set('lathe2d', is2D);
+  set('sculpt', sel.length === 1 && !editor.sculpt);
   set('drop', sel.length > 0);
 }
 
@@ -777,6 +923,7 @@ function onKey(e) {
   if (typing) return;
   const k = e.key.toLowerCase();
   const digit = (e.code.match(/^(?:Digit|Numpad)(\d)$/) || [])[1];
+  if (editor.sculpt && !mod && sculptKey(e)) return;
   if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); editor.undo(); }
   else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); editor.redo(); }
   else if (mod && k === 'd') { e.preventDefault(); editor.duplicate(); }
@@ -919,7 +1066,8 @@ function refreshStatus() {
     `<span>Objetos <b>${s.objects}</b></span><span>Triángulos <b>${s.tris.toLocaleString('es-ES')}</b></span>` +
     `<span>Vértices <b>${s.verts.toLocaleString('es-ES')}</b></span>` +
     `<span>Vista <b>${VIEW_LABEL[editor.viewMode]}</b></span><span>Snap <b>${editor.snap ? 'sí' : 'no'}</b></span>` +
-    (n > 1 ? `<span>Selección <b>${n} objetos</b></span>` : sel ? `<span>Selección <b>${escapeHTML(sel.name)}</b></span>` : '');
+    (n > 1 ? `<span>Selección <b>${n} objetos</b></span>` : sel ? `<span>Selección <b>${escapeHTML(sel.name)}</b></span>` : '') +
+    (editor.sculpt ? '<span><b>Esculpiendo</b> · Intro o Esc para terminar</span>' : '');
 }
 const escapeHTML = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -1028,7 +1176,21 @@ function renderProps() {
 
   // geometría
   let geo;
-  if (sel.type === 'mesh') {
+  if (sel.type === 'sculpt') {
+    const s = sel.sculpt || {};
+    const g = editor.objects.get(id)?.geometry;
+    const n = g ? Math.round((g.index ? g.index.count : (g.drawRange.count !== Infinity ? g.drawRange.count : g.attributes.position.count)) / 3) : 0;
+    const voxel = s.kind === 'voxel';
+    geo = [
+      h('p', { class: 'note' }, `${voxel ? 'Escultura por volumen' : 'Escultura por malla'} · detalle ${LEVEL_LABELS[s.level] || '—'}` +
+        (voxel ? ` · rejilla ${s.dims?.join(' × ')}` : '') + ` · ${n.toLocaleString('es-ES')} triángulos.`),
+      editor.sculpt
+        ? h('div', { class: 'btn-row' }, h('button', { class: 'btn sm btn-primary', onclick: () => editor.endSculpt() }, 'Terminar de esculpir'))
+        : h('div', { class: 'btn-row' },
+          h('button', { class: 'btn sm btn-primary', onclick: () => editor.startSculpt(id) }, 'Esculpir'),
+          h('button', { class: 'btn sm', title: 'Probar el otro método sobre la forma actual', onclick: () => sculptDialog(voxel ? 'mesh' : 'voxel') }, voxel ? 'Pasar a malla…' : 'Pasar a volumen…')),
+    ];
+  } else if (sel.type === 'mesh') {
     const tris = editor.objects.get(id)?.geometry;
     const n = tris ? Math.round((tris.index ? tris.index.count : tris.attributes.position.count) / 3) : 0;
     geo = [
@@ -1246,4 +1408,4 @@ function renderMultiProps(box) {
 
 // ================================================================== arranque
 window.addEventListener('hashchange', route);
-route();
+store.init().then(route);

@@ -18,6 +18,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
   - **Árbol de operaciones** en la lista de Escena: cada operación se despliega mostrando sus piezas anidadas y su papel (base, +, −, ∩, corte). Cada pieza se puede seleccionar (se resalta en 3D), mover con el gizmo, editar sus parámetros, extraer o quitar, y la operación se recalcula.
 - **Selección múltiple** con Mayús/Ctrl + clic (en el visor o en la lista); el gizmo mueve, gira y escala todo el grupo.
 - **Reflejar** en X/Y/Z y **Apoyar en el suelo**.
+- **Modo escultor** con dos métodos a elegir: **Volumen (tallar)** — el objeto se convierte en un bloque de material y se pica con Cincel, Gubia, Arcilla, Lima y Aplanar (permite agujeros y túneles) — y **Malla (deformar)** — Dibujar, Inflar, Suavizar, Aplanar, Pellizcar y Arrastrar sobre una malla subdividida. Tamaño, fuerza, simetría X/Y/Z, presión del lápiz y deshacer por trazo.
 - **Pantalla dividida** en 1, 2, 3 o 4 vistas, cada una con su propia cámara, navegador de ejes y vista (perspectiva, alzado, planta, perfil…); se guarda con el proyecto.
 - **Panel lateral** redimensionable (arrastrando su borde) y ocultable (botón o tecla `N`).
 - **Capturar** lo que se ve en pantalla (todas las vistas) como **PNG** (también con fondo transparente), **JPG**, **PDF** A4 o **imprimir**, con o sin rejilla, a 1×, 2× o 4× de resolución.
@@ -30,7 +31,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Snap** a rejilla (0,25 u), rotación (15°) y escala (0,1).
 - **Modo claro y oscuro**: sigue al sistema por defecto y se puede cambiar con el botón de luna/sol; la elección se recuerda.
 - **Gestor de proyectos**: crear, abrir, renombrar, duplicar, eliminar; miniatura automática de cada proyecto.
-- **Guardado automático** en `localStorage`.
+- **Guardado automático** en **IndexedDB** (cientos de MB o más según el disco; se pide almacenamiento persistente). Los proyectos antiguos de `localStorage` se migran solos.
 - **Exportar** a **GLB / glTF** (recomendado para Blender, Unity, Godot y visores web), **OBJ + MTL** y **STL** (impresión 3D), además del JSON propio editable.
 - **Importar** modelos **.glb, .gltf, .obj (+ .mtl) y .stl** (botón o arrastrar y soltar) como «Mallas importadas» que se pueden transformar, recolorear y usar en booleanas; y proyectos `.json` (uno o un paquete completo).
 - **Blender**: el formato `.blend` no se puede generar en el navegador; usa GLB en ambos sentidos (Archivo → Importar/Exportar → glTF 2.0).
@@ -61,6 +62,7 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `?` / `F1` | Abrir la ayuda |
 | `N` | Mostrar u ocultar el panel lateral |
 | `Ctrl+P` | Capturar imagen, PDF o imprimir |
+| `[` `]` / `Mayús+[` `]` | (Modo escultor) tamaño / fuerza del pincel |
 | `Esc` | Quitar selección |
 
 Las teclas de vista funcionan tanto en la fila de números como en el teclado numérico (mismo esquema que Blender).
@@ -98,7 +100,8 @@ css/style.css           Estilos
 js/main.js              Navegación, gestor de proyectos, paneles, atajos
 js/editor.js            Escena three.js, selección, gizmo, vistas, historial, serialización
 js/primitives.js        Catálogo de primitivas y sus parámetros
-js/storage.js           Persistencia en localStorage, import/export JSON
+js/storage.js           Persistencia en IndexedDB (con migración), import/export JSON
+js/sculpt.js            Modo escultor: malla (deformar) y volumen (tallar con vóxeles)
 js/csg.js               Operaciones booleanas (CSG) y caché de resultados
 js/sketch.js            Editor de perfiles 2D para extrusión y revolución
 js/help.js              Ayuda integrada y proyectos de ejemplo
@@ -158,7 +161,7 @@ En `js/primitives.js`, añade una entrada a `PRIMITIVES` con su etiqueta, icono 
 
 ## Limitaciones conocidas
 
-- `localStorage` suele limitarse a unos 5 MB por sitio; descarga los proyectos importantes en JSON.
+- Los datos viven en IndexedDB de ese navegador; borrar los datos del sitio los elimina. Descarga los proyectos importantes en JSON.
 - Los datos viven en ese navegador y ese dominio: otro navegador u otro equipo no los verá salvo que importes el JSON.
 - Las booleanas funcionan mejor con objetos cerrados (sólidos); con planos o anillos (superficies abiertas) el resultado puede tener huecos.
 - Aún no hay agrupación jerárquica ni exportación a formatos 3D (glTF/OBJ/STL).

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Brush, Evaluator, ADDITION, SUBTRACTION, INTERSECTION } from 'three-bvh-csg';
 import { buildGeometry } from './primitives.js';
 import { decodeGeometry } from './io.js';
+import { sculptGeometry } from './sculpt.js';
 
 const DEG = THREE.MathUtils.DEG2RAD;
 const OPS = { union: ADDITION, subtract: SUBTRACTION, intersect: INTERSECTION };
@@ -38,6 +39,7 @@ export const csgKey = data => JSON.stringify([data.params?.op, data.operands]);
 /** Geometría para cualquier objeto serializado (primitiva, perfil o booleana). */
 export function geometryFor(data) {
   if (data.type === 'mesh') return decodeGeometry(data.mesh);
+  if (data.type === 'sculpt') return sculptGeometry(data.sculpt);
   if (data.type !== 'boolean') return buildGeometry(data.type, data.params, data.shape);
   const key = csgKey(data);
   const hit = cacheGet(key);

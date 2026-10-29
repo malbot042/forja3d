@@ -359,6 +359,7 @@ export const BOOLEAN_OPS = {
 
 export function typeLabel(data) {
   if (data.type === 'mesh') return 'Malla importada';
+  if (data.type === 'sculpt') return data.sculpt?.kind === 'voxel' ? 'Escultura (volumen)' : 'Escultura (malla)';
   if (data.type === 'boolean') {
     if (data.operands?.some(o => o.helper)) return BOOLEAN_OPS.split.label;
     return BOOLEAN_OPS[data.params?.op]?.label || 'Booleana';

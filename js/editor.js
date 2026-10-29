@@ -6,6 +6,7 @@ import { PRIMITIVES, DEFAULT_SHAPES, BOOLEAN_OPS, defaultParams, typeLabel, prof
 import { geometryFor, evaluateBoolean, cachePut, csgKey, matrixOf } from './csg.js';
 import { uid } from './storage.js';
 import { encodeGeometry, meshDataSize } from './io.js';
+import { createSculpt, SculptSession } from './sculpt.js';
 import { cssVar, currentTheme } from './theme.js';
 import { View, LAYOUTS } from './views.js';
 
@@ -205,6 +206,7 @@ export class Editor extends EventTarget {
 
   /** Dibuja todos los paneles. `opts.only` limita a una vista; `opts.size` fuerza el tamaño total. */
   renderViews(opts = {}) {
+    if (this.sculpt) this.sculpt.tick();
     const r = this.renderer;
     const W = this.container.clientWidth, H = this.container.clientHeight;
     if (!W || !H) return;
@@ -256,6 +258,7 @@ export class Editor extends EventTarget {
 
   // ---------------------------------------------------------------- picking
   _pick(view, e) {
+    if (this.sculpt) return;
     if (this.gizmo.dragging || this.gizmo.axis) return;
     const r = view.el.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -280,7 +283,8 @@ export class Editor extends EventTarget {
 
   // -------------------------------------------------------------- creación
   _makeMesh(data) {
-    const mat = new THREE.MeshStandardMaterial({ side: DOUBLE_SIDED.has(data.type) ? THREE.DoubleSide : THREE.FrontSide });
+    const double = DOUBLE_SIDED.has(data.type) || (data.type === 'sculpt' && data.sculpt?.kind === 'mesh');
+    const mat = new THREE.MeshStandardMaterial({ side: double ? THREE.DoubleSide : THREE.FrontSide });
     let geom;
     try {
       geom = geometryFor(data);
@@ -298,6 +302,7 @@ export class Editor extends EventTarget {
     if (data.shape) mesh.userData.shape = structuredClone(data.shape);
     if (data.operands) mesh.userData.operands = structuredClone(data.operands);
     if (data.mesh) mesh.userData.mesh = { ...data.mesh };
+    if (data.sculpt) mesh.userData.sculpt = data.sculpt;
     this._applyTransform(mesh, data);
     this._applyMaterial(mesh);
     mesh.visible = data.visible !== false;
@@ -627,7 +632,7 @@ export class Editor extends EventTarget {
   mergeObjects(objects) {
     const ids = [];
     for (const d of objects || []) {
-      if (d.type !== 'boolean' && d.type !== 'mesh' && !PRIMITIVES[d.type]) continue;
+      if (!['boolean', 'mesh', 'sculpt'].includes(d.type) && !PRIMITIVES[d.type]) continue;
       const data = { ...d, id: uid(), name: this._uniqueName(d.name || typeLabel(d)) };
       this._insert(data);
       ids.push(data.id);
@@ -707,11 +712,13 @@ export class Editor extends EventTarget {
   selectAll() { this.setSelection([...this.objects.keys()].filter(id => this.objects.get(id).visible)); }
 
   setSelection(ids, { keepSub = false } = {}) {
+    if (this.sculpt && !(ids.length === 1 && ids[0] === this.sculpt.mesh.userData.id)) this.endSculpt();
     this.selection = ids.filter(id => this.objects.has(id));
     if (!keepSub) this.subSel = null;
     this._refreshSub();
     const primary = this.objects.get(this.selectedId);
-    if (this.subSel) this.gizmo.attach(this._proxy);
+    if (this.sculpt) this.gizmo.detach();
+    else if (this.subSel) this.gizmo.attach(this._proxy);
     else if (primary && primary.visible) this.gizmo.attach(primary);
     else this.gizmo.detach();
     this._updateSelectionBoxes();
@@ -719,6 +726,11 @@ export class Editor extends EventTarget {
   }
 
   _updateSelectionBoxes() {
+    if (this.sculpt) {
+      for (const box of this.selectionBoxes.values()) { this.scene.remove(box); box.geometry.dispose(); box.material.dispose(); }
+      this.selectionBoxes.clear();
+      return;
+    }
     for (const [id, box] of this.selectionBoxes) {
       if (!this.selection.includes(id) || !this.objects.get(id)?.visible) {
         this.scene.remove(box);
@@ -1039,6 +1051,7 @@ export class Editor extends EventTarget {
     if (ud.shape) out.shape = structuredClone(ud.shape);
     if (ud.operands) out.operands = structuredClone(ud.operands);
     if (ud.mesh) out.mesh = ud.mesh;
+    if (ud.sculpt) out.sculpt = ud.sculpt;
     return out;
   }
 
@@ -1058,7 +1071,7 @@ export class Editor extends EventTarget {
     this.clear();
     const skipped = [];
     for (const d of objects || []) {
-      if (d.type !== 'boolean' && d.type !== 'mesh' && !PRIMITIVES[d.type]) { skipped.push(d.type); continue; }
+      if (!['boolean', 'mesh', 'sculpt'].includes(d.type) && !PRIMITIVES[d.type]) { skipped.push(d.type); continue; }
       const data = { ...d, id: d.id || uid(), name: d.name || typeLabel(d) };
       this._insert(data);
     }
@@ -1083,12 +1096,17 @@ export class Editor extends EventTarget {
         this._meshRefs.set(ref, v);
         return { $ref: ref };
       }
+      if (k === 'sculpt' && v && v.kind) {
+        const ref = `s:${v.rev || (v.rle || '').slice(0, 60)}`;
+        this._meshRefs.set(ref, v);
+        return { $ref: ref };
+      }
       return v;
     });
   }
 
   _unsnapshot(str) {
-    return JSON.parse(str, (k, v) => (k === 'mesh' && v && v.$ref ? this._meshRefs.get(v.$ref) : v));
+    return JSON.parse(str, (k, v) => ((k === 'mesh' || k === 'sculpt') && v && v.$ref ? this._meshRefs.get(v.$ref) : v));
   }
 
   resetHistory() {
@@ -1104,13 +1122,88 @@ export class Editor extends EventTarget {
       this.history.push(snap);
       if (this.history.length > 100) this.history.shift();
       this.historyIndex = this.history.length - 1;
+      this._gcRefs();
       this._emitHistory();
     }
     this.dispatchEvent(new CustomEvent('objects'));
     this.dispatchEvent(new CustomEvent('change'));
   }
 
+  /** Libera mallas/esculturas que ya no están en el historial y limita su memoria (~250 MB). */
+  _gcRefs() {
+    if (!this._meshRefs?.size) return;
+    const collect = () => {
+      const live = new Set();
+      for (const h of this.history) for (const m of h.matchAll(/"\$ref":"([^"]+)"/g)) live.add(m[1]);
+      for (const k of this._meshRefs.keys()) if (!live.has(k)) this._meshRefs.delete(k);
+    };
+    collect();
+    const size = v => (v.positions?.length || 0) + (v.index?.length || 0) + (v.normals?.length || 0) + (v.rle?.length || 0) +
+      (v.mesh ? size(v.mesh) : 0);
+    let total = 0;
+    for (const v of this._meshRefs.values()) total += size(v);
+    while (total > 250e6 && this.history.length > 3 && this.historyIndex > 1) {
+      this.history.shift();
+      this.historyIndex--;
+      collect();
+      total = 0;
+      for (const v of this._meshRefs.values()) total += size(v);
+    }
+  }
+
+  // ----------------------------------------------------------- escultura
+  /** Convierte un objeto en escultura ('mesh' = deformar, 'voxel' = tallar). */
+  convertToSculpt(id, method, level = 'mid') {
+    const mesh = this.objects.get(id);
+    if (!mesh) return false;
+    if (this.sculpt) this.endSculpt();
+    const { sculpt, geometry } = createSculpt(mesh.geometry, method, level);
+    const ud = mesh.userData;
+    ud.type = 'sculpt';
+    ud.params = { method, level };
+    ud.sculpt = sculpt;
+    delete ud.shape; delete ud.operands; delete ud.mesh;
+    const old = mesh.geometry;
+    mesh.geometry = geometry;
+    old.dispose();
+    mesh.material.side = method === 'mesh' ? THREE.DoubleSide : THREE.FrontSide;
+    mesh.material.needsUpdate = true;
+    this._commit();
+    return true;
+  }
+
+  startSculpt(id) {
+    const mesh = this.objects.get(id);
+    if (!mesh || mesh.userData.type !== 'sculpt') return false;
+    if (this.sculpt) this.endSculpt();
+    this.setSelection([id]);
+    mesh.visible = true;
+    this.sculpt = new SculptSession(this, mesh, this._sculptPrefs);
+    this.gizmo.detach();
+    this._updateSelectionBoxes();
+    this.dispatchEvent(new CustomEvent('sculpt', { detail: { active: true, method: this.sculpt.method } }));
+    return true;
+  }
+
+  endSculpt() {
+    if (!this.sculpt) return;
+    const id = this.sculpt.mesh.userData.id;
+    this._sculptPrefs = this.sculpt.prefs();
+    this.sculpt.dispose();
+    this.sculpt = null;
+    this.setSelection(this.objects.has(id) ? [id] : []);
+    this.dispatchEvent(new CustomEvent('sculpt', { detail: { active: false } }));
+    this.dispatchEvent(new CustomEvent('objects'));
+  }
+
   _restore(i) {
+    // si se está esculpiendo, la sesión se reabre sobre el objeto restaurado
+    const sculptId = this.sculpt?.mesh.userData.id;
+    if (this.sculpt) {
+      this._sculptPrefs = this.sculpt.prefs();
+      this.sculpt.dispose();
+      this.sculpt = null;
+    }
     const sel = [...this.selection];
     this.historyIndex = i;
     const objects = this._unsnapshot(this.history[i]);
@@ -1119,6 +1212,14 @@ export class Editor extends EventTarget {
     for (const d of objects) this._insert(d);
     this.setSelection(sel);
     if (sub && this._operandAt(sub.rootId, sub.path)) this.selectOperand(sub.rootId, sub.path);
+    const sm = sculptId && this.objects.get(sculptId);
+    if (sm && sm.userData.type === 'sculpt') {
+      this.sculpt = new SculptSession(this, sm, this._sculptPrefs);
+      this.gizmo.detach();
+      this._updateSelectionBoxes();
+    } else if (sculptId) {
+      this.dispatchEvent(new CustomEvent('sculpt', { detail: { active: false } }));
+    }
     this._emitHistory();
     this.dispatchEvent(new CustomEvent('objects'));
     this.dispatchEvent(new CustomEvent('change'));
@@ -1139,9 +1240,9 @@ export class Editor extends EventTarget {
     for (const m of this.objects.values()) {
       const g = m.geometry;
       if (!g.attributes.position) continue;
-      const n = g.index ? g.index.count : g.attributes.position.count;
+      const n = g.index ? g.index.count : Math.min(g.attributes.position.count, g.drawRange.count);
       tris += n / 3;
-      verts += g.attributes.position.count;
+      verts += Math.min(g.attributes.position.count, g.drawRange.count);
     }
     return { objects: this.objects.size, tris: Math.round(tris), verts };
   }
@@ -1150,6 +1251,7 @@ export class Editor extends EventTarget {
   _withCleanScene(fn, { grid = false } = {}) {
     const boxes = [...this.selectionBoxes.values()];
     const hidden = [this.gizmoHelper, ...boxes];
+    if (this.sculpt) hidden.push(this.sculpt.cursor);
     if (!grid) hidden.push(this.helpers);
     const prev = hidden.map(o => o.visible);
     hidden.forEach(o => (o.visible = false));
