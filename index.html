@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forja 3D · Editor</title>
+  <meta name="description" content="Editor 3D en el navegador con primitivas, vista sólida y alámbrica, y proyectos guardados en el navegador.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3 28 10v12L16 29 4 22V10z' fill='none' stroke='%23f2a541' stroke-width='2.5'/%3E%3Cpath d='M4 10l12 7 12-7M16 17v12' fill='none' stroke='%23f2a541' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./lib/three/three.module.min.js",
+      "three/addons/": "./lib/three/addons/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- ============ PANTALLA DE PROYECTOS ============ -->
+  <section id="projects-screen" class="screen" hidden>
+    <header class="projects-head">
+      <div class="brand">
+        <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true"><path d="M16 3 28 10v12L16 29 4 22V10z"/><path d="M4 10l12 7 12-7M16 17v12"/></svg>
+        <div>
+          <h1>Forja 3D</h1>
+          <p>Editor 3D en el navegador · tus modelos se guardan en este navegador</p>
+        </div>
+      </div>
+      <div class="projects-actions">
+        <button class="btn" id="btn-import-project" title="Importar un proyecto desde un archivo .json">Importar JSON</button>
+        <button class="btn" id="btn-export-all" title="Descargar todos los proyectos en un único .json">Exportar todo</button>
+        <button class="btn btn-primary" id="btn-new-project">+ Nuevo proyecto</button>
+      </div>
+    </header>
+    <div id="projects-grid" class="projects-grid"></div>
+    <p class="storage-info" id="storage-info"></p>
+  </section>
+
+  <!-- ============ EDITOR ============ -->
+  <section id="editor-screen" class="screen" hidden>
+    <header class="topbar">
+      <button class="icon-btn" id="btn-back" title="Volver a proyectos">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <input id="project-name" class="project-name" spellcheck="false" aria-label="Nombre del proyecto">
+      <span class="save-state" id="save-state">Guardado</span>
+
+      <div class="topbar-group">
+        <button class="icon-btn" id="btn-undo" title="Deshacer (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+        <button class="icon-btn" id="btn-redo" title="Rehacer (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+      </div>
+
+      <div class="seg" id="transform-mode" role="group" aria-label="Herramienta">
+        <button data-mode="translate" class="active" title="Mover (W)">Mover</button>
+        <button data-mode="rotate" title="Rotar (E)">Rotar</button>
+        <button data-mode="scale" title="Escalar (R)">Escalar</button>
+      </div>
+
+      <div class="seg" id="view-mode" role="group" aria-label="Modo de visualización">
+        <button data-view="solid" class="active" title="Sólido (1)">Sólido</button>
+        <button data-view="wire" title="Alámbrico (2)">Wire</button>
+        <button data-view="both" title="Sólido + aristas (3)">Mixto</button>
+      </div>
+
+      <div class="topbar-group right">
+        <label class="toggle" title="Ajuste a rejilla (G)"><input type="checkbox" id="chk-snap"><span>Snap</span></label>
+        <label class="toggle" title="Mostrar rejilla"><input type="checkbox" id="chk-grid" checked><span>Rejilla</span></label>
+        <button class="btn" id="btn-export" title="Descargar el proyecto como .json">Descargar JSON</button>
+      </div>
+    </header>
+
+    <aside class="toolbar" id="primitives" aria-label="Primitivas"></aside>
+
+    <main class="viewport" id="viewport">
+      <div class="view-presets">
+        <button data-cam="persp" title="Perspectiva">Persp</button>
+        <button data-cam="front" title="Frontal">Frente</button>
+        <button data-cam="right" title="Derecha">Dcha</button>
+        <button data-cam="top" title="Superior">Arriba</button>
+        <button data-cam="focus" title="Encuadrar selección (F)">Encuadrar</button>
+      </div>
+      <div class="hint" id="hint">Añade una primitiva desde la barra izquierda · clic para seleccionar · W/E/R mover/rotar/escalar</div>
+    </main>
+
+    <aside class="sidebar">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Escena</h2>
+          <span class="count" id="obj-count">0</span>
+        </div>
+        <ul class="outliner" id="outliner"></ul>
+        <div class="panel-actions">
+          <button class="btn sm" id="btn-duplicate" title="Duplicar (Ctrl+D)">Duplicar</button>
+          <button class="btn sm danger" id="btn-delete" title="Eliminar (Supr)">Eliminar</button>
+        </div>
+      </div>
+      <div class="panel grow">
+        <div class="panel-head"><h2>Propiedades</h2></div>
+        <div id="props" class="props"><p class="empty">Nada seleccionado</p></div>
+      </div>
+    </aside>
+
+    <footer class="statusbar" id="statusbar"></footer>
+  </section>
+
+  <input type="file" id="file-input" accept=".json,application/json" hidden>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
