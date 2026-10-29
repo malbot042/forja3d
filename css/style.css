@@ -183,18 +183,8 @@ button, input, select { font: inherit; color: inherit; }
 
 .viewport { grid-area: view; position: relative; overflow: hidden; background: #0f1114; }
 .viewport canvas { display: block; width: 100%; height: 100%; outline: none; }
-.view-presets {
-  position: absolute; top: 10px; left: 10px; z-index: 2;
-  display: flex; gap: 4px;
-}
-.view-presets button {
-  background: rgba(24,27,31,.85); border: 1px solid var(--line); border-radius: 4px;
-  padding: 3px 8px; font-size: 11px; color: var(--muted); cursor: pointer;
-  backdrop-filter: blur(4px);
-}
-.view-presets button:hover { color: var(--text); border-color: var(--line-2); }
 .hint {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%);
   background: rgba(24,27,31,.85); border: 1px solid var(--line);
   border-radius: 20px; padding: 6px 14px; color: var(--muted); font-size: 12px;
   pointer-events: none; white-space: nowrap; max-width: calc(100% - 24px);
@@ -277,6 +267,84 @@ button, input, select { font: inherit; color: inherit; }
 }
 .statusbar b { color: var(--text); font-weight: 500; }
 
+/* ---------- barras flotantes del visor ---------- */
+.ops-bar, .view-bar {
+  position: absolute; z-index: 2;
+  display: flex; align-items: center; gap: 2px;
+  background: rgba(24,27,31,.88); border: 1px solid var(--line); border-radius: 8px;
+  padding: 3px; backdrop-filter: blur(6px);
+  max-width: calc(100% - 130px); overflow-x: auto; scrollbar-width: none;
+}
+.ops-bar { top: 10px; left: 10px; }
+.view-bar { bottom: 10px; left: 10px; max-width: calc(100% - 20px); }
+.ops-bar button, .view-bar button {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: 1px solid transparent; border-radius: 5px;
+  padding: 4px 8px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap;
+}
+.ops-bar button:hover:not(:disabled), .view-bar button:hover { color: var(--text); background: var(--panel-2); border-color: var(--line-2); }
+.ops-bar button:disabled { opacity: .35; cursor: default; }
+.view-bar button.active { color: var(--accent); background: var(--sel); }
+.ops-bar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.ops-bar svg .fill { fill: currentColor; stroke: none; opacity: .4; }
+.ops-bar button:hover:not(:disabled) svg .fill { fill: var(--accent); opacity: .6; }
+.ops-sep { width: 1px; align-self: stretch; background: var(--line); margin: 3px 4px; flex: none; }
+.cam-label {
+  position: absolute; top: 110px; right: 10px; z-index: 2; text-align: right; white-space: nowrap;
+  font: 11px var(--mono); color: var(--muted); pointer-events: none;
+}
+.nav-gizmo { position: absolute; top: 10px; right: 10px; z-index: 2; width: 96px; height: 96px; }
+
+/* ---------- selección múltiple / botones de propiedades ---------- */
+.btn-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.btn-row .btn { flex: 1; text-align: center; }
+.multi-list { list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; }
+.multi-list li { padding: 3px 0; display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); }
+.multi-list .badge { font: 10px var(--mono); background: var(--accent); color: var(--accent-ink); border-radius: 3px; padding: 0 4px; }
+.multi-list .badge.b { background: var(--panel-2); color: var(--muted); }
+.note { color: var(--muted); font-size: 12px; margin: 4px 0 10px; }
+.select-input {
+  width: 100%; background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; outline: none;
+}
+.select-input:focus { border-color: var(--accent); }
+.operand-list { list-style: none; margin: 0 0 8px; padding: 0; font-size: 12px; color: var(--muted); }
+.operand-list li { padding: 2px 0; }
+.operand-list b { color: var(--text); font-weight: 500; }
+.outliner .op-badge { font: 10px var(--mono); color: var(--accent); }
+
+/* ---------- modal / editor de perfiles ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50; background: rgba(5,6,8,.65);
+  display: grid; place-items: center; padding: 16px; backdrop-filter: blur(2px);
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5); width: min(920px, 100%); max-height: 100%;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head { padding: 14px 18px 10px; border-bottom: 1px solid var(--line); }
+.modal-head h2 { margin: 0 0 2px; font-size: 15px; }
+.muted { color: var(--muted); font-size: 12px; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.sketch-body { display: grid; grid-template-columns: 1fr 240px; min-height: 0; }
+.sketch-body canvas { width: 100%; height: min(560px, 62vh); display: block; touch-action: none; }
+.sketch-side { padding: 14px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+.field select { background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px; padding: 5px; color: var(--text); }
+.sketch-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.sketch-help { margin: 0; padding-left: 16px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.sketch-help b { color: var(--text); font-weight: 500; }
+.sketch-help .plus { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--line-2); color: var(--text); font-size: 11px; line-height: 1; }
+.sketch-info { margin: auto 0 0; font: 11px var(--mono); color: var(--muted); }
+@media (max-width: 720px) {
+  .sketch-body { grid-template-columns: 1fr; }
+  .sketch-side { border-left: 0; border-top: 1px solid var(--line); }
+  .sketch-body canvas { height: 46vh; }
+  .ops-bar button, .view-bar button { padding: 4px 6px; }
+  .nav-gizmo, .cam-label { display: none; }
+  .ops-bar { max-width: calc(100% - 20px); }
+}
+
 /* ---------- toast ---------- */
 .toast {
   position: fixed; left: 50%; bottom: 40px; transform: translate(-50%, 20px);
@@ -289,6 +357,10 @@ button, input, select { font: inherit; color: inherit; }
 .toast.error { border-color: var(--danger); }
 
 /* ---------- responsive ---------- */
+@media (max-height: 1000px) and (min-width: 721px) {
+  .tool-btn { padding: 5px 0; font-size: 0; gap: 0; }
+  .tool-btn svg { width: 22px; height: 22px; }
+}
 @media (max-width: 1000px) {
   .topbar { overflow-x: auto; }
   .save-state { display: none; }

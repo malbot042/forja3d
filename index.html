@@ -11,7 +11,9 @@
   {
     "imports": {
       "three": "./lib/three/three.module.min.js",
-      "three/addons/": "./lib/three/addons/"
+      "three/addons/": "./lib/three/addons/",
+      "three-mesh-bvh": "./lib/three-mesh-bvh/index.module.js",
+      "three-bvh-csg": "./lib/three-bvh-csg/index.module.js"
     }
   }
   </script>
@@ -59,9 +61,9 @@
       </div>
 
       <div class="seg" id="view-mode" role="group" aria-label="Modo de visualización">
-        <button data-view="solid" class="active" title="Sólido (1)">Sólido</button>
-        <button data-view="wire" title="Alámbrico (2)">Wire</button>
-        <button data-view="both" title="Sólido + aristas (3)">Mixto</button>
+        <button data-view="solid" class="active" title="Sólido (Z alterna)">Sólido</button>
+        <button data-view="wire" title="Alámbrico (Z alterna)">Wire</button>
+        <button data-view="both" title="Sólido + aristas (Z alterna)">Mixto</button>
       </div>
 
       <div class="topbar-group right">
@@ -74,14 +76,37 @@
     <aside class="toolbar" id="primitives" aria-label="Primitivas"></aside>
 
     <main class="viewport" id="viewport">
-      <div class="view-presets">
-        <button data-cam="persp" title="Perspectiva">Persp</button>
-        <button data-cam="front" title="Frontal">Frente</button>
-        <button data-cam="right" title="Derecha">Dcha</button>
-        <button data-cam="top" title="Superior">Arriba</button>
+      <div class="ops-bar" id="ops-bar" role="toolbar" aria-label="Operaciones">
+        <button data-op="union" title="Unir: fusiona los objetos seleccionados en uno (A ∪ B)">
+          <svg viewBox="0 0 24 24"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/><circle class="fill" cx="9" cy="12" r="6"/><circle class="fill" cx="15" cy="12" r="6"/></svg>Unir</button>
+        <button data-op="subtract" title="Restar: quita al primer objeto seleccionado el volumen de los demás (A − B)">
+          <svg viewBox="0 0 24 24"><path class="fill" d="M12 6.8A6 6 0 1 0 12 17.2 6 6 0 0 1 12 6.8z"/><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6" stroke-dasharray="2 2"/></svg>Restar</button>
+        <button data-op="intersect" title="Intersecar: conserva solo el volumen común (A ∩ B)">
+          <svg viewBox="0 0 24 24"><path class="fill" d="M12 6.8A6 6 0 0 0 12 17.2 6 6 0 0 0 12 6.8z"/><circle cx="9" cy="12" r="6" stroke-dasharray="2 2"/><circle cx="15" cy="12" r="6" stroke-dasharray="2 2"/></svg>Intersecar</button>
+        <button data-op="split" title="Partir: corta un objeto con un Plano seleccionado o, si no hay plano, en horizontal por su centro">
+          <svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M2 12.5h20" stroke-dasharray="3 2"/></svg>Partir</button>
+        <button data-op="explode" title="Separar: deshace una operación booleana y recupera sus piezas">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="8" height="8" rx="1"/><circle cx="16.5" cy="15" r="4.5"/><path d="M12 3l2 2M20 4l-2 2M3 19l3-2"/></svg>Separar</button>
+        <span class="ops-sep"></span>
+        <button data-op="drop" title="Apoyar en el suelo (y = 0)">
+          <svg viewBox="0 0 24 24"><rect x="8" y="4" width="8" height="8" rx="1"/><path d="M12 13v4M9.5 15l2.5 2.5 2.5-2.5M3 20h18"/></svg>Al suelo</button>
+      </div>
+
+      <div class="cam-label" id="cam-label">Perspectiva</div>
+
+      <div class="view-bar" id="view-bar" role="toolbar" aria-label="Vistas">
+        <button data-cam="front" title="Alzado / vista frontal (1 · Mayús+1 posterior)">Alzado</button>
+        <button data-cam="right" title="Perfil derecho / vista lateral (3)">Perfil D</button>
+        <button data-cam="left" title="Perfil izquierdo (Mayús+3)">Perfil I</button>
+        <button data-cam="top" title="Planta / vista superior (7 · Mayús+7 inferior)">Planta</button>
+        <button data-cam="back" title="Vista posterior (Mayús+1)">Post.</button>
+        <button data-cam="bottom" title="Vista inferior (Mayús+7)">Inf.</button>
+        <button data-cam="persp" title="Perspectiva (0)">Persp</button>
+        <span class="ops-sep"></span>
+        <button id="btn-proj" title="Alternar ortográfica / perspectiva (5)">Orto</button>
         <button data-cam="focus" title="Encuadrar selección (F)">Encuadrar</button>
       </div>
-      <div class="hint" id="hint">Añade una primitiva desde la barra izquierda · clic para seleccionar · W/E/R mover/rotar/escalar</div>
+      <div class="hint" id="hint">Añade una primitiva desde la barra izquierda · clic para seleccionar (Mayús+clic: varios) · W/E/R mover/rotar/escalar</div>
     </main>
 
     <aside class="sidebar">

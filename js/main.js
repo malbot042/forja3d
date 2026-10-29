@@ -1,6 +1,7 @@
 // Punto de entrada: navegación entre pantallas, gestor de proyectos y paneles del editor.
 import { Editor } from './editor.js';
-import { PRIMITIVES, TOOLBAR_ORDER, PALETTE } from './primitives.js';
+import { PRIMITIVES, TOOLBAR_ORDER, PALETTE, BOOLEAN_OPS, typeLabel } from './primitives.js';
+import { editShape } from './sketch.js';
 import * as store from './storage.js';
 
 const $ = sel => document.querySelector(sel);
@@ -206,9 +207,10 @@ function initEditor() {
   for (const type of TOOLBAR_ORDER) {
     if (type === '|') { bar.append(h('div', { class: 'tool-sep' })); continue; }
     const def = PRIMITIVES[type];
-    const btn = h('button', { class: 'tool-btn', title: `Añadir ${def.label.toLowerCase()}`, onclick: () => {
-      editor.addPrimitive(type);
+    const btn = h('button', { class: 'tool-btn', title: `Añadir ${def.label.toLowerCase()}`, onclick: async () => {
+      const id = editor.addPrimitive(type);
       $('#hint').hidden = true;
+      if (def.usesShape) await editProfile(id);
     } });
     btn.innerHTML = `<svg viewBox="0 0 24 24">${def.icon}</svg>`;
     btn.append(def.label);
@@ -216,14 +218,28 @@ function initEditor() {
   }
 
   editor.addEventListener('change', () => { scheduleSave(); refreshStatus(); });
-  editor.addEventListener('objects', () => { refreshOutliner(); refreshStatus(); });
-  editor.addEventListener('select', () => { refreshOutliner(); renderProps(); refreshStatus(); });
+  editor.addEventListener('objects', () => { refreshOutliner(); refreshStatus(); refreshOps(); });
+  editor.addEventListener('select', () => { refreshOutliner(); renderProps(); refreshStatus(); refreshOps(); });
   editor.addEventListener('transform', () => syncTransformFields());
+  editor.addEventListener('notice', e => toast(e.detail.msg, e.detail.error));
+  editor.addEventListener('camera', e => refreshCamera(e.detail));
   editor.addEventListener('history', e => {
     $('#btn-undo').disabled = !e.detail.canUndo;
     $('#btn-redo').disabled = !e.detail.canRedo;
   });
   editor.orbit.addEventListener('end', scheduleSave);
+  // al orbitar a mano se abandona la vista predefinida
+  editor.orbit.addEventListener('start', () => {
+    const q = editor.camera.quaternion.clone();
+    const once = () => {
+      if (!q.equals(editor.camera.quaternion) && editor.currentView !== 'free') {
+        editor.currentView = 'free';
+        refreshCamera({ projection: editor.projection, view: 'free' });
+      }
+      editor.orbit.removeEventListener('end', once);
+    };
+    editor.orbit.addEventListener('end', once);
+  });
 
   // barra superior
   $('#btn-back').onclick = () => (location.hash = '');
@@ -244,11 +260,64 @@ function initEditor() {
   $('#view-mode').onclick = e => { const b = e.target.closest('button'); if (b) { setView(b.dataset.view); scheduleSave(); } };
   $('#chk-snap').onchange = e => { editor.setSnap(e.target.checked); scheduleSave(); refreshStatus(); };
   $('#chk-grid').onchange = e => { editor.setGrid(e.target.checked); scheduleSave(); };
-  document.querySelector('.view-presets').onclick = e => {
-    const b = e.target.closest('button'); if (b) editor.cameraPreset(b.dataset.cam);
+
+  // vistas y operaciones
+  $('#view-bar').onclick = e => {
+    const b = e.target.closest('button[data-cam]');
+    if (b) { editor.setView(b.dataset.cam); scheduleSave(); }
+  };
+  $('#btn-proj').onclick = () => { editor.toggleProjection(); scheduleSave(); };
+  $('#ops-bar').onclick = e => {
+    const b = e.target.closest('button[data-op]');
+    if (b) runOp(b.dataset.op);
   };
 
   document.addEventListener('keydown', onKey);
+}
+
+function runOp(op) {
+  if (op === 'union' || op === 'subtract' || op === 'intersect') editor.booleanOp(op);
+  else if (op === 'split') editor.split();
+  else if (op === 'explode') editor.explode();
+  else if (op === 'drop') editor.dropToFloor();
+}
+
+async function editProfile(id) {
+  const sel = editor.objects.get(id);
+  if (!sel) return;
+  const ud = sel.userData;
+  const def = PRIMITIVES[ud.type];
+  const shape = await editShape(ud.shape, def.usesShape, `Perfil de «${ud.name}»`);
+  if (shape) {
+    editor.update(id, { shape });
+    if (def.usesShape === 'open' || ud.type === 'extrude') editor.dropToFloor([id]);
+    renderProps();
+  }
+}
+
+/** Activa/desactiva los botones de operación según la selección. */
+function refreshOps() {
+  if (!editor) return;
+  const sel = editor.selection.map(id => editor.objects.get(id)).filter(Boolean);
+  const types = sel.map(m => m.userData.type);
+  const two = sel.length >= 2;
+  const planes = types.filter(t => t === 'plane').length;
+  const canSplit = (sel.length === 1 && types[0] !== 'plane') || (sel.length === 2 && planes === 1);
+  const set = (op, on) => { const b = document.querySelector(`#ops-bar [data-op="${op}"]`); if (b) b.disabled = !on; };
+  set('union', two); set('subtract', two); set('intersect', two);
+  set('split', canSplit);
+  set('explode', types.includes('boolean'));
+  set('drop', sel.length > 0);
+}
+
+const VIEW_NAMES = { front: 'Alzado', back: 'Posterior', right: 'Perfil dcho.', left: 'Perfil izq.', top: 'Planta', bottom: 'Inferior', persp: 'Perspectiva', free: 'Libre' };
+function refreshCamera({ projection, view }) {
+  for (const b of document.querySelectorAll('#view-bar [data-cam]')) b.classList.toggle('active', b.dataset.cam === view);
+  const proj = $('#btn-proj');
+  proj.classList.toggle('active', projection === 'ortho');
+  proj.textContent = projection === 'ortho' ? 'Orto ✓' : 'Orto';
+  const name = view === 'persp' && projection === 'ortho' ? 'Libre' : VIEW_NAMES[view] || 'Libre';
+  $('#cam-label').textContent = projection === 'ortho' ? `${name} · ortográfica` : (name === 'Perspectiva' ? name : `${name} · perspectiva`);
 }
 
 function setTransform(mode) {
@@ -263,24 +332,30 @@ function setView(mode) {
   refreshStatus();
 }
 
+// Vistas por tecla (fila de números o teclado numérico, estilo Blender)
+const VIEW_KEYS = { 1: ['front', 'back'], 3: ['right', 'left'], 7: ['top', 'bottom'] };
+
 function onKey(e) {
-  if ($('#editor-screen').hidden) return;
+  if ($('#editor-screen').hidden || document.querySelector('.modal-backdrop')) return;
   const typing = e.target.closest('input, textarea, select');
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveNow(); toast('Guardado'); return; }
   if (typing) return;
   const k = e.key.toLowerCase();
+  const digit = (e.code.match(/^(?:Digit|Numpad)(\d)$/) || [])[1];
   if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); editor.undo(); }
   else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); editor.redo(); }
   else if (mod && k === 'd') { e.preventDefault(); editor.duplicate(); }
+  else if (mod && k === 'a') { e.preventDefault(); editor.selectAll(); }
   else if (mod) return;
+  else if (digit && VIEW_KEYS[digit]) { editor.setView(VIEW_KEYS[digit][e.shiftKey ? 1 : 0]); scheduleSave(); }
+  else if (digit === '5') { editor.toggleProjection(); scheduleSave(); }
+  else if (digit === '0') { editor.setView('persp'); scheduleSave(); }
+  else if (e.code === 'NumpadDecimal' || k === 'f') editor.frame();
   else if (k === 'w') setTransform('translate');
   else if (k === 'e') setTransform('rotate');
   else if (k === 'r') setTransform('scale');
-  else if (k === '1') setView('solid');
-  else if (k === '2') setView('wire');
-  else if (k === '3') setView('both');
-  else if (k === 'f') editor.frame();
+  else if (k === 'z') { const order = ['solid', 'wire', 'both']; setView(order[(order.indexOf(editor.viewMode) + 1) % 3]); scheduleSave(); }
   else if (k === 'g') { const c = $('#chk-snap'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); }
   else if (k === 'delete' || k === 'backspace') { e.preventDefault(); editor.remove(); }
   else if (k === 'escape') editor.select(null);
@@ -305,13 +380,17 @@ function refreshOutliner() {
     vis.innerHTML = o.visible ? EYE : EYE_OFF;
     const sw = h('span', { class: 'swatch' });
     sw.style.background = o.material.color;
+    const selected = editor.selection.includes(o.id);
     ul.append(h('li', {
-      class: [o.id === editor.selectedId && 'selected', !o.visible && 'hidden-obj'].filter(Boolean).join(' '),
-      onclick: () => editor.select(o.id),
+      class: [selected && 'selected', !o.visible && 'hidden-obj'].filter(Boolean).join(' '),
+      title: 'Clic: seleccionar · Mayús/Ctrl+clic: añadir a la selección · doble clic: encuadrar',
+      onclick: e => (e.shiftKey || e.ctrlKey || e.metaKey) ? editor.toggleSelect(o.id) : editor.select(o.id),
       ondblclick: () => { editor.select(o.id); editor.frame(); },
-    }, sw, h('span', { class: 'name' }, o.name), h('span', { class: 'type' }, PRIMITIVES[o.type].label), vis));
+    }, sw, h('span', { class: 'name' }, o.name),
+      o.type === 'boolean' ? h('span', { class: 'op-badge' }, BOOLEAN_OPS[o.params.op]?.symbol || '') : null,
+      h('span', { class: 'type' }, typeLabel(o)), vis));
   }
-  const hasSel = !!editor.selectedId;
+  const hasSel = editor.selection.length > 0;
   $('#btn-duplicate').disabled = !hasSel;
   $('#btn-delete').disabled = !hasSel;
   ul.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
@@ -322,11 +401,12 @@ function refreshStatus() {
   if (!editor) return;
   const s = editor.stats();
   const sel = editor.getSelected();
+  const n = editor.selection.length;
   $('#statusbar').innerHTML =
     `<span>Objetos <b>${s.objects}</b></span><span>Triángulos <b>${s.tris.toLocaleString('es-ES')}</b></span>` +
     `<span>Vértices <b>${s.verts.toLocaleString('es-ES')}</b></span>` +
     `<span>Vista <b>${VIEW_LABEL[editor.viewMode]}</b></span><span>Snap <b>${editor.snap ? 'sí' : 'no'}</b></span>` +
-    (sel ? `<span>Selección <b>${escapeHTML(sel.name)}</b></span>` : '');
+    (n > 1 ? `<span>Selección <b>${n} objetos</b></span>` : sel ? `<span>Selección <b>${escapeHTML(sel.name)}</b></span>` : '');
 }
 const escapeHTML = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -408,9 +488,11 @@ function rangeRow(label, value, onInput, onCommit) {
 function renderProps() {
   const box = $('#props');
   vecFields = {};
+  if (editor.selection.length > 1) return renderMultiProps(box);
   const sel = editor.getSelected();
   if (!sel) {
-    box.replaceChildren(h('p', { class: 'empty' }, 'Nada seleccionado. Haz clic en un objeto del visor o de la lista.'));
+    box.replaceChildren(h('p', { class: 'empty' },
+      'Nada seleccionado. Haz clic en un objeto del visor o de la lista (Mayús/Ctrl+clic para seleccionar varios).'));
     return;
   }
   const def = PRIMITIVES[sel.type];
@@ -419,15 +501,44 @@ function renderProps() {
 
   // objeto
   const name = h('input', { class: 'text-input', value: sel.name, spellcheck: 'false' });
-  name.addEventListener('change', () => upd({ name: name.value.trim() || def.label }, true));
+  name.addEventListener('change', () => upd({ name: name.value.trim() || typeLabel(sel) }, true));
   name.addEventListener('keydown', e => { if (e.key === 'Enter') name.blur(); });
 
   // geometría
-  const geo = def.params.map(p => row(p.label, numberField({
-    label: '↔', value: sel.params[p.key] ?? p.def, step: p.step, min: p.min, max: p.max, int: p.int,
-    onInput: v => upd({ params: { [p.key]: v } }, false),
-    onCommit: v => upd({ params: { [p.key]: v } }, true),
-  })));
+  let geo;
+  if (sel.type === 'boolean') {
+    const isPiece = sel.operands.some(o => o.helper);
+    const opSel = h('select', { class: 'select-input' },
+      ['union', 'subtract', 'intersect'].map(k => {
+        const o = h('option', { value: k }, `${BOOLEAN_OPS[k].symbol}  ${BOOLEAN_OPS[k].label}`);
+        if (k === sel.params.op) o.selected = true;
+        return o;
+      }));
+    opSel.onchange = () => upd({ params: { op: opSel.value } }, true);
+    geo = [
+      isPiece
+        ? h('p', { class: 'note' }, `Pieza obtenida al partir «${sel.operands[0].name}» con un plano.`)
+        : row('Operación', opSel),
+      h('p', { class: 'note' }, 'Operandos (el primero es la base):'),
+      h('ul', { class: 'operand-list' }, sel.operands.filter(o => !o.helper).map((o, i) =>
+        h('li', {}, `${i + 1}. `, h('b', {}, o.name || typeLabel(o)), ` · ${typeLabel(o)}`))),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn sm', onclick: () => editor.explode([id]) }, 'Separar piezas')),
+    ];
+  } else {
+    geo = def.params.map(p => row(p.label, numberField({
+      label: '↔', value: sel.params[p.key] ?? p.def, step: p.step, min: p.min, max: p.max, int: p.int,
+      onInput: v => upd({ params: { [p.key]: v } }, false),
+      onCommit: v => upd({ params: { [p.key]: v } }, true),
+    })));
+    if (def.usesShape) {
+      const n = sel.shape?.points?.length || 0;
+      geo.unshift(
+        h('p', { class: 'note' }, `Perfil de ${n} puntos${sel.shape?.smooth ? ', curva suave' : ''}.`),
+        h('div', { class: 'btn-row', style: 'margin-bottom:8px' },
+          h('button', { class: 'btn sm', onclick: () => editProfile(id) }, 'Editar perfil…')));
+    }
+  }
 
   // material
   const m = sel.material;
@@ -448,13 +559,15 @@ function renderProps() {
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Objeto'),
       row('Nombre', name),
-      row('Tipo', h('span', {}, def.label))),
+      row('Tipo', h('span', {}, typeLabel(sel)))),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Transformación'),
       vec3Row('Posición', 'position', sel.position, 0.05),
       vec3Row('Rotación °', 'rotation', sel.rotation, 1),
-      vec3Row('Escala', 'scale', sel.scale, 0.05)),
-    h('div', { class: 'prop-section' }, h('h3', {}, 'Geometría'), geo),
+      vec3Row('Escala', 'scale', sel.scale, 0.05),
+      row('Reflejar', mirrorButtons()),
+      row('', h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', onclick: () => editor.dropToFloor() }, 'Apoyar en el suelo')))),
+    h('div', { class: 'prop-section' }, h('h3', {}, sel.type === 'boolean' ? 'Operación booleana' : 'Geometría'), geo),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Material'),
       row('Color', h('div', { class: 'color-input' }, color, code)),
@@ -463,6 +576,43 @@ function renderProps() {
       rangeRow('Rugosidad', m.roughness, v => upd({ material: { roughness: v } }, false), v => upd({ material: { roughness: v } }, true)),
       rangeRow('Opacidad', m.opacity, v => upd({ material: { opacity: v } }, false), v => upd({ material: { opacity: v } }, true)),
       row('Facetado', h('label', { class: 'toggle' }, flat, h('span', {}, 'Sombreado plano')))),
+  );
+}
+
+const mirrorButtons = () => h('div', { class: 'btn-row' },
+  ['x', 'y', 'z'].map(a => h('button', { class: 'btn sm', title: `Reflejar en el eje ${a.toUpperCase()}`, onclick: () => editor.mirror(a) }, a.toUpperCase())));
+
+/** Panel para varios objetos seleccionados: orden, operaciones y color común. */
+function renderMultiProps(box) {
+  const sel = editor.selection.map(id => editor.objects.get(id)?.userData).filter(Boolean);
+  const op = (label, key, title) => h('button', { class: 'btn sm', title, onclick: () => runOp(key) }, label);
+  const hasPlane = sel.length === 2 && sel.filter(u => u.type === 'plane').length === 1;
+  box.replaceChildren(
+    h('div', { class: 'prop-section' },
+      h('h3', {}, `${sel.length} objetos seleccionados`),
+      h('ul', { class: 'multi-list' }, sel.map((u, i) => h('li', {},
+        h('span', { class: i === 0 ? 'badge' : 'badge b' }, i === 0 ? 'A' : String.fromCharCode(65 + i)),
+        h('span', {}, u.name), h('span', { class: 'muted' }, typeLabel(u))))),
+      h('p', { class: 'note' }, 'El primero seleccionado (A) es la base: en «Restar» se le quitan los demás. El gizmo mueve todo el grupo.')),
+    h('div', { class: 'prop-section' },
+      h('h3', {}, 'Operaciones'),
+      h('div', { class: 'btn-row' },
+        op('∪ Unir', 'union', 'A ∪ B'), op('− Restar', 'subtract', 'A − B'), op('∩ Intersecar', 'intersect', 'A ∩ B')),
+      hasPlane ? h('div', { class: 'btn-row', style: 'margin-top:4px' }, op('Partir con el plano', 'split', 'Corta el objeto con el plano seleccionado')) : null),
+    h('div', { class: 'prop-section' },
+      h('h3', {}, 'Transformación'),
+      row('Reflejar', mirrorButtons()),
+      row('', h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', onclick: () => editor.dropToFloor() }, 'Apoyar en el suelo')))),
+    h('div', { class: 'prop-section' },
+      h('h3', {}, 'Color para todos'),
+      h('div', { class: 'palette', style: 'grid-column:auto' }, PALETTE.map(c => {
+        const b = h('button', { title: c, onclick: () => {
+          for (const u of sel) editor.update(u.id, { material: { color: c } }, false);
+          editor._commit();
+        } });
+        b.style.background = c;
+        return b;
+      }))),
   );
 }
 

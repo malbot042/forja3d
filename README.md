@@ -5,6 +5,17 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 ## Funcionalidades
 
 - **14 primitivas**: cubo, esfera, cilindro, cono, pirámide, toro, cápsula, plano, anillo, tetraedro, octaedro, dodecaedro, icosaedro y nudo toroidal. Todos sus parámetros (radios, alturas, segmentos…) son editables.
+- **Extrusión**: dibuja un perfil cerrado en planta (o elige una plantilla: rectángulo, círculo, estrella, perfiles L/T/U/I, engranaje, flecha…) y se extruye hacia arriba, con altura y bisel ajustables.
+- **Revolución (torno)**: dibuja medio perfil y gíralo alrededor del eje vertical para hacer jarrones, copas, botellas, peones… con ángulo parcial opcional.
+- **Operaciones booleanas** (no destructivas, recuperables con *Separar*):
+  - **Unir** (A ∪ B): fusiona varios objetos en uno.
+  - **Restar** (A − B): vacía el primer objeto seleccionado con el volumen de los demás (agujeros, ranuras, encajes).
+  - **Intersecar** (A ∩ B): conserva solo el volumen común.
+  - **Partir**: corta un objeto con un *Plano* seleccionado (o, si no hay plano, en horizontal por su centro) y genera dos piezas.
+  - **Separar**: deshace una operación booleana y devuelve las piezas originales.
+- **Selección múltiple** con Mayús/Ctrl + clic (en el visor o en la lista); el gizmo mueve, gira y escala todo el grupo.
+- **Reflejar** en X/Y/Z y **Apoyar en el suelo**.
+- **Vistas rápidas** con cámara ortográfica: alzado (frontal), perfil derecho e izquierdo (laterales), planta (superior), posterior, inferior y perspectiva; navegador de ejes clicable en la esquina del visor.
 - **Transformaciones** con gizmo (mover / rotar / escalar) o con valores numéricos exactos. Arrastra la etiqueta X/Y/Z de un campo para cambiar el valor deslizando (Mayús = ajuste fino).
 - **Modos de vista**: Sólido, Wire (alámbrico) y Mixto (sólido + aristas).
 - **Materiales**: color con paleta rápida, metalizado, rugosidad, opacidad y sombreado plano.
@@ -20,7 +31,14 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 | Tecla | Acción |
 |---|---|
 | `W` / `E` / `R` | Mover / Rotar / Escalar |
-| `1` / `2` / `3` | Vista sólida / alámbrica / mixta |
+| `1` / `Mayús+1` | Alzado (frontal) / posterior |
+| `3` / `Mayús+3` | Perfil derecho / izquierdo (laterales) |
+| `7` / `Mayús+7` | Planta (superior) / inferior |
+| `5` | Alternar ortográfica / perspectiva |
+| `0` | Vista en perspectiva |
+| `Z` | Alternar sólido / alámbrico / mixto |
+| `Ctrl+A` | Seleccionar todo |
+| `Mayús` o `Ctrl` + clic | Añadir o quitar de la selección |
 | `F` | Encuadrar selección (o toda la escena) |
 | `G` | Activar/desactivar snap |
 | `Supr` / `Retroceso` | Eliminar objeto seleccionado |
@@ -28,6 +46,8 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 | `Ctrl+Z` / `Ctrl+Y` (o `Ctrl+Mayús+Z`) | Deshacer / Rehacer |
 | `Ctrl+S` | Guardar ahora |
 | `Esc` | Quitar selección |
+
+Las teclas de vista funcionan tanto en la fila de números como en el teclado numérico (mismo esquema que Blender).
 
 Ratón en el visor: botón izquierdo orbita, derecho desplaza, rueda hace zoom. Clic sobre un objeto lo selecciona; doble clic en la lista lo encuadra.
 
@@ -63,7 +83,11 @@ js/main.js              Navegación, gestor de proyectos, paneles, atajos
 js/editor.js            Escena three.js, selección, gizmo, vistas, historial, serialización
 js/primitives.js        Catálogo de primitivas y sus parámetros
 js/storage.js           Persistencia en localStorage, import/export JSON
+js/csg.js               Operaciones booleanas (CSG) y caché de resultados
+js/sketch.js            Editor de perfiles 2D para extrusión y revolución
 lib/three/              three.js r170 (copia local, licencia MIT) y controles
+lib/three-bvh-csg/      three-bvh-csg 0.0.17 (MIT) · booleanas
+lib/three-mesh-bvh/     three-mesh-bvh 0.8.3 (MIT) · dependencia de la anterior
 ```
 
 three.js se incluye en el repositorio (`lib/three`) para que el editor no dependa de un CDN y funcione también sin conexión. Si prefieres un CDN, cambia el import map de `index.html`:
@@ -102,7 +126,9 @@ three.js se incluye en el repositorio (`lib/three`) para que el editor no depend
 ```
 
 - `rotation` va en **grados** (orden XYZ).
-- `type` es uno de: `box`, `sphere`, `cylinder`, `cone`, `pyramid`, `torus`, `capsule`, `plane`, `ring`, `tetrahedron`, `octahedron`, `dodecahedron`, `icosahedron`, `torusKnot`.
+- `type` es uno de: `box`, `sphere`, `cylinder`, `cone`, `pyramid`, `torus`, `capsule`, `plane`, `ring`, `tetrahedron`, `octahedron`, `dodecahedron`, `icosahedron`, `torusKnot`, `extrude`, `lathe` o `boolean`.
+- `extrude` y `lathe` añaden `"shape": { "points": [[x, y], …], "smooth": false }`.
+- `boolean` guarda la operación en `params.op` (`union`, `subtract`, `intersect`) y los objetos originales en `operands` (con sus transformaciones relativas al resultado). La malla se recalcula al abrir el proyecto, así que el JSON sigue siendo pequeño y editable.
 - “Exportar todo” genera `{ "format": "forja3d-bundle", "projects": [ … ] }`, que también se puede importar.
 
 ## Añadir una primitiva nueva
@@ -113,8 +139,9 @@ En `js/primitives.js`, añade una entrada a `PRIMITIVES` con su etiqueta, icono 
 
 - `localStorage` suele limitarse a unos 5 MB por sitio; descarga los proyectos importantes en JSON.
 - Los datos viven en ese navegador y ese dominio: otro navegador u otro equipo no los verá salvo que importes el JSON.
-- Aún no hay agrupación jerárquica, operaciones booleanas ni exportación a formatos 3D (glTF/OBJ/STL).
+- Las booleanas funcionan mejor con objetos cerrados (sólidos); con planos o anillos (superficies abiertas) el resultado puede tener huecos.
+- Aún no hay agrupación jerárquica ni exportación a formatos 3D (glTF/OBJ/STL).
 
 ## Licencia
 
-MIT. three.js © three.js authors, licencia MIT (`lib/three/LICENSE`).
+MIT. three.js © three.js authors; three-bvh-csg y three-mesh-bvh © Garrett Johnson. Todas con licencia MIT (ver `LICENSE` en cada carpeta de `lib/`).

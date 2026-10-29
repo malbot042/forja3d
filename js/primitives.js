@@ -8,7 +8,7 @@ export const PRIMITIVES = {
   box: {
     label: 'Cubo',
     icon: '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
-    params: [P('width', 'Ancho', 1, 0.01, 100), P('height', 'Alto', 1, 0.01, 100), P('depth', 'Fondo', 1, 0.01, 100),
+    params: [P('width', 'Ancho', 1, 0.01, 10000), P('height', 'Alto', 1, 0.01, 10000), P('depth', 'Fondo', 1, 0.01, 10000),
              SEG('segments', 'Segmentos', 1, 1, 32)],
     geometry: p => new THREE.BoxGeometry(p.width, p.height, p.depth, p.segments, p.segments, p.segments),
   },
@@ -95,11 +95,60 @@ export const PRIMITIVES = {
              SEG('p', 'p', 2, 1, 20), SEG('q', 'q', 3, 1, 20)],
     geometry: p => new THREE.TorusKnotGeometry(p.radius, p.tube, p.tubularSegments, p.radialSegments, p.p, p.q),
   },
+
+  // ---- Objetos basados en un perfil 2D (editable con el editor de perfiles)
+  extrude: {
+    label: 'Extrusión',
+    usesShape: 'closed',
+    icon: '<path d="M4 15.5 8 19h12l-4-3.5z"/><path d="M4 15.5V7l4 3.5V19M4 7h12l4 3.5H8M20 10.5V19M16 7v8.5"/>',
+    params: [P('depth', 'Altura', 0.5, 0.001, 100, 0.05), P('bevel', 'Bisel', 0, 0, 2, 0.01),
+             SEG('bevelSegments', 'Seg. bisel', 3, 1, 12), SEG('curveSegments', 'Seg. curva', 12, 1, 64)],
+    geometry: (p, shape) => {
+      const pts = shapePoints(shape, true).map(([x, y]) => new THREE.Vector2(x, y));
+      if (pts.length < 3) return new THREE.BoxGeometry(0.01, 0.01, 0.01);
+      const s = new THREE.Shape(pts);
+      const g = new THREE.ExtrudeGeometry(s, {
+        depth: p.depth, curveSegments: p.curveSegments,
+        bevelEnabled: p.bevel > 0, bevelThickness: p.bevel, bevelSize: p.bevel * 0.7, bevelSegments: p.bevelSegments,
+      });
+      // perfil dibujado en planta (XZ) y extruido hacia arriba (+Y)
+      g.rotateX(-Math.PI / 2);
+      g.center();
+      return g;
+    },
+  },
+  lathe: {
+    label: 'Revolución',
+    usesShape: 'open',
+    icon: '<path d="M12 2.5v19" stroke-dasharray="2 2"/><path d="M8 3.5c-2 3 2 5 0 8s-3 6-1 9h10c2-3 1-6-1-9s2-5 0-8"/>',
+    params: [SEG('segments', 'Segmentos', 40, 3, 256), P('angle', 'Ángulo °', 360, 1, 360, 5)],
+    geometry: (p, shape) => {
+      const pts = shapePoints(shape, false).map(([x, y]) => new THREE.Vector2(Math.max(0, x), y));
+      if (pts.length < 2) return new THREE.BoxGeometry(0.01, 0.01, 0.01);
+      const g = new THREE.LatheGeometry(pts, p.segments, 0, p.angle * Math.PI / 180);
+      g.center();
+      return g;
+    },
+  },
+};
+
+/** Puntos de un perfil, interpolados con una curva suave si `shape.smooth`. */
+export function shapePoints(shape, closed) {
+  const pts = (shape?.points || []).filter(p => Array.isArray(p) && p.length >= 2).map(p => [+p[0] || 0, +p[1] || 0]);
+  if (!shape?.smooth || pts.length < 3) return pts;
+  const curve = new THREE.CatmullRomCurve3(pts.map(([x, y]) => new THREE.Vector3(x, y, 0)), closed, 'centripetal');
+  return curve.getPoints(pts.length * 10).slice(0, closed ? -1 : undefined).map(v => [v.x, v.y]);
+}
+
+// Perfiles iniciales al crear una extrusión o una revolución
+export const DEFAULT_SHAPES = {
+  extrude: { smooth: false, points: [[-0.5, -0.5], [0.5, -0.5], [0.5, -0.2], [-0.2, -0.2], [-0.2, 0.5], [-0.5, 0.5]] },
+  lathe: { smooth: true, points: [[0, 0], [0.4, 0], [0.45, 0.15], [0.3, 0.55], [0.22, 0.85], [0.35, 1.15], [0.3, 1.2], [0, 1.2]] },
 };
 
 // Orden y separadores en la barra de herramientas
 export const TOOLBAR_ORDER = ['box', 'sphere', 'cylinder', 'cone', 'pyramid', 'torus', 'capsule', '|',
-  'plane', 'ring', '|', 'tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron', 'torusKnot'];
+  'plane', 'ring', '|', 'tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron', 'torusKnot', '|', 'extrude', 'lathe'];
 
 export function defaultParams(type) {
   const out = {};
@@ -107,7 +156,7 @@ export function defaultParams(type) {
   return out;
 }
 
-export function buildGeometry(type, params) {
+export function buildGeometry(type, params, shape) {
   const def = PRIMITIVES[type];
   if (!def) throw new Error(`Primitiva desconocida: ${type}`);
   const p = { ...defaultParams(type), ...params };
@@ -118,7 +167,23 @@ export function buildGeometry(type, params) {
     if (d.int) v = Math.round(v);
     p[d.key] = v;
   }
-  return def.geometry(p);
+  return def.geometry(p, shape || DEFAULT_SHAPES[type]);
+}
+
+// Operaciones booleanas
+export const BOOLEAN_OPS = {
+  union: { label: 'Unión', symbol: '∪' },
+  subtract: { label: 'Diferencia', symbol: '−' },
+  intersect: { label: 'Intersección', symbol: '∩' },
+  split: { label: 'Pieza', symbol: '/' },
+};
+
+export function typeLabel(data) {
+  if (data.type === 'boolean') {
+    if (data.operands?.some(o => o.helper)) return BOOLEAN_OPS.split.label;
+    return BOOLEAN_OPS[data.params?.op]?.label || 'Booleana';
+  }
+  return PRIMITIVES[data.type]?.label || data.type;
 }
 
 // Paleta rápida de colores para materiales
