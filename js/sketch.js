@@ -29,6 +29,24 @@ export const PRESETS = {
     }) },
     'Corazón': { smooth: true, points: [[0, -0.55], [0.45, -0.05], [0.42, 0.32], [0.2, 0.42], [0, 0.25], [-0.2, 0.42], [-0.42, 0.32], [-0.45, -0.05]] },
   },
+  path: {
+    'Recta': { points: [[-0.5, 0], [0.5, 0]] },
+    'Polilínea en L': { points: [[-0.5, 0.5], [-0.5, -0.5], [0.5, -0.5]] },
+    'Zigzag': { points: [[-0.8, -0.2], [-0.4, 0.2], [0, -0.2], [0.4, 0.2], [0.8, -0.2]] },
+    'Onda': { smooth: true, points: [[-0.9, 0], [-0.6, 0.25], [-0.3, 0], [0, -0.25], [0.3, 0], [0.6, 0.25], [0.9, 0]] },
+    'Arco': { smooth: true, points: [[-0.6, 0], [-0.42, 0.42], [0, 0.6], [0.42, 0.42], [0.6, 0]] },
+    'Espiral': { smooth: true, points: Array.from({ length: 22 }, (_, i) => {
+      const a = i * 0.6, r = 0.05 + i * 0.03;
+      return [r3(Math.cos(a) * r), r3(Math.sin(a) * r)];
+    }) },
+    'Escalera': { points: [[-0.6, -0.6], [-0.6, -0.3], [-0.3, -0.3], [-0.3, 0], [0, 0], [0, 0.3], [0.3, 0.3], [0.3, 0.6], [0.6, 0.6]] },
+    'Rectángulo': { points: [[-0.6, -0.4], [0.6, -0.4], [0.6, 0.4], [-0.6, 0.4]] },
+    'Triángulo': { points: poly(3, 0.55) },
+    'Estrella': { points: Array.from({ length: 10 }, (_, i) => {
+      const a = Math.PI / 2 + (i / 10) * TAU, r = i % 2 ? 0.22 : 0.55;
+      return [r3(Math.cos(a) * r), r3(Math.sin(a) * r)];
+    }) },
+  },
   open: {
     'Jarrón': { smooth: true, points: [[0, 0], [0.4, 0], [0.45, 0.15], [0.3, 0.55], [0.22, 0.85], [0.35, 1.15], [0.3, 1.2], [0, 1.2]] },
     'Copa': { smooth: true, points: [[0, 0], [0.35, 0], [0.35, 0.04], [0.06, 0.08], [0.05, 0.55], [0.3, 0.75], [0.4, 1.1], [0.37, 1.1], [0, 0.72]] },
@@ -45,7 +63,7 @@ export const PRESETS = {
  * Abre el editor de perfiles. Resuelve con el nuevo `shape` o `null` si se cancela.
  * @param {'closed'|'open'} mode
  */
-export function editShape(initial, mode, title) {
+export function editShape(initial, mode, title, { closedPath = false } = {}) {
   return new Promise(resolve => {
     const state = {
       points: (initial?.points || []).map(p => [...p]),
@@ -55,7 +73,9 @@ export function editShape(initial, mode, title) {
       cx: 0, cy: mode === 'open' ? 0.6 : 0,
       hover: -1, drag: -1, hoverMid: -1,
     };
-    const closed = mode === 'closed';
+    const closed = mode === 'closed' || (mode === 'path' && closedPath);
+    const lathe = mode === 'open';
+    const filled = mode === 'closed';
 
     const presetOpts = Object.keys(PRESETS[mode]).map(k => `<option>${k}</option>`).join('');
     const wrap = document.createElement('div');
@@ -64,7 +84,7 @@ export function editShape(initial, mode, title) {
       <div class="modal sketch" role="dialog" aria-modal="true" aria-label="${title}">
         <header class="modal-head">
           <h2>${title}</h2>
-          <span class="muted">${closed ? 'Perfil cerrado · se dibuja en planta y se extruye hacia arriba' : 'Perfil abierto · gira alrededor del eje vertical (línea discontinua)'}</span>
+          <span class="muted">${filled ? 'Perfil cerrado · se dibuja en planta y se extruye hacia arriba' : lathe ? 'Perfil abierto · gira alrededor del eje vertical (línea discontinua)' : `Línea ${closed ? 'cerrada' : 'abierta'} · se dibuja en planta (vista desde arriba)`}</span>
         </header>
         <div class="sketch-body">
           <canvas></canvas>
@@ -112,7 +132,7 @@ export function editShape(initial, mode, title) {
     const toWorld = (sx, sy) => [state.cx + (sx - W / 2) / scale(), state.cy - (sy - H / 2) / scale()];
     const snapP = ([x, y]) => {
       if (state.snap) { x = Math.round(x / 0.05) * 0.05; y = Math.round(y / 0.05) * 0.05; }
-      if (!closed) x = Math.max(0, x);
+      if (lathe) x = Math.max(0, x);
       return [r3(x), r3(y)];
     };
     const segs = () => {
@@ -146,13 +166,13 @@ export function editShape(initial, mode, title) {
       }
       // ejes
       const [ox, oy] = toScreen([0, 0]);
-      ctx.strokeStyle = closed ? '#e5614f88' : '#e5614f55';
+      ctx.strokeStyle = lathe ? '#e5614f55' : '#e5614f88';
       ctx.beginPath(); ctx.moveTo(0, oy); ctx.lineTo(W, oy); ctx.stroke();
-      ctx.strokeStyle = closed ? '#5b9bea88' : '#6fbf73';
-      if (!closed) { ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; }
+      ctx.strokeStyle = lathe ? '#6fbf73' : '#5b9bea88';
+      if (lathe) { ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; }
       ctx.beginPath(); ctx.moveTo(ox, 0); ctx.lineTo(ox, H); ctx.stroke();
       ctx.setLineDash([]); ctx.lineWidth = 1;
-      if (!closed) { ctx.fillStyle = 'rgba(229,97,79,.05)'; ctx.fillRect(0, 0, ox, H); }
+      if (lathe) { ctx.fillStyle = 'rgba(229,97,79,.05)'; ctx.fillRect(0, 0, ox, H); }
 
       const pts = state.points;
       // relleno / silueta resultante (con suavizado)
@@ -162,9 +182,8 @@ export function editShape(initial, mode, title) {
         curve.forEach((p, i) => { const [sx, sy] = toScreen(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
         if (closed) {
           ctx.closePath();
-          ctx.fillStyle = 'rgba(242,165,65,.12)';
-          ctx.fill();
-        } else {
+          if (filled) { ctx.fillStyle = 'rgba(242,165,65,.12)'; ctx.fill(); }
+        } else if (lathe) {
           // simetría (fantasma) para la revolución
           ctx.save();
           ctx.strokeStyle = 'rgba(242,165,65,.25)'; ctx.setLineDash([4, 4]);
@@ -280,7 +299,7 @@ export function editShape(initial, mode, title) {
     function fit() {
       const pts = state.points;
       if (!pts.length) return;
-      const xs = pts.map(p => p[0]).concat(closed ? [] : [0]), ys = pts.map(p => p[1]);
+      const xs = pts.map(p => p[0]).concat(lathe ? [0] : []), ys = pts.map(p => p[1]);
       const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
       state.cx = (minX + maxX) / 2; state.cy = (minY + maxY) / 2;
       state.view = Math.max(0.4, Math.max((maxY - minY) / 2, (maxX - minX) / 2 * (H / W)) * 1.35);

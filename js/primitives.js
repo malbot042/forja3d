@@ -3,6 +3,7 @@ import * as THREE from 'three';
 
 const P = (key, label, def, min, max, step = 0.1, int = false) => ({ key, label, def, min, max, step, int });
 const SEG = (key, label, def, min = 3, max = 128) => P(key, label, def, min, max, 1, true);
+const BOOL = (key, label, def) => ({ key, label, def: def ? 1 : 0, min: 0, max: 1, step: 1, int: true, bool: true });
 
 export const PRIMITIVES = {
   box: {
@@ -96,6 +97,30 @@ export const PRIMITIVES = {
     geometry: p => new THREE.TorusKnotGeometry(p.radius, p.tube, p.tubularSegments, p.radialSegments, p.p, p.q),
   },
 
+  // ---- Primitivas 2D (planas, se dibujan sobre el suelo)
+  circle2d: {
+    label: 'Círculo 2D',
+    flat: true,
+    icon: '<circle cx="12" cy="12" r="8"/><path d="M12 12h8"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
+    params: [P('radius', 'Radio', 0.5, 0.001, 1000, 0.05), BOOL('filled', 'Relleno', false),
+             P('thickness', 'Grosor línea', 0.03, 0.001, 10, 0.01), P('angle', 'Ángulo °', 360, 1, 360, 5),
+             SEG('segments', 'Segmentos', 64, 3, 256)],
+    geometry: p => {
+      const theta = p.angle * Math.PI / 180;
+      if (p.filled) return new THREE.CircleGeometry(p.radius, p.segments, 0, theta);
+      const half = Math.min(p.thickness / 2, p.radius);
+      return new THREE.RingGeometry(Math.max(0, p.radius - half), p.radius + half, p.segments, 1, 0, theta);
+    },
+  },
+  line2d: {
+    label: 'Línea 2D',
+    flat: true,
+    usesShape: 'path',
+    icon: '<path d="M4 18 20 6"/><circle cx="4" cy="18" r="1.8" fill="currentColor"/><circle cx="20" cy="6" r="1.8" fill="currentColor"/>',
+    params: [P('thickness', 'Grosor', 0.03, 0.001, 10, 0.01), BOOL('closed', 'Cerrada', false)],
+    geometry: (p, shape) => ribbonGeometry(shapePoints(shape, !!p.closed), p.thickness, !!p.closed),
+  },
+
   // ---- Objetos basados en un perfil 2D (editable con el editor de perfiles)
   extrude: {
     label: 'Extrusión',
@@ -132,6 +157,53 @@ export const PRIMITIVES = {
   },
 };
 
+/** Cinta plana (en XY) de grosor `width` que sigue una polilínea, con uniones en inglete. */
+export function ribbonGeometry(points, width, closed) {
+  const pts = [];
+  for (const p of points) {
+    const last = pts[pts.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 1e-6) pts.push(p);
+  }
+  if (closed && pts.length > 2) {
+    const [a, b] = [pts[0], pts[pts.length - 1]];
+    if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6) pts.pop();
+  }
+  const n = pts.length;
+  const g = new THREE.BufferGeometry();
+  if (n < 2) return new THREE.PlaneGeometry(0.001, 0.001);
+  const loop = closed && n > 2;
+  const half = width / 2;
+  const segNormal = (a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+    return [-dy / l, dx / l];
+  };
+  const pos = [], idx = [];
+  for (let i = 0; i < n; i++) {
+    const prev = i > 0 ? pts[i - 1] : loop ? pts[n - 1] : null;
+    const next = i < n - 1 ? pts[i + 1] : loop ? pts[0] : null;
+    const n1 = prev ? segNormal(prev, pts[i]) : null;
+    const n2 = next ? segNormal(pts[i], next) : null;
+    let m = n1 && n2 ? [n1[0] + n2[0], n1[1] + n2[1]] : (n1 || n2);
+    const ml = Math.hypot(m[0], m[1]) || 1;
+    m = [m[0] / ml, m[1] / ml];
+    const ref = n1 || n2;
+    const len = half / Math.max(m[0] * ref[0] + m[1] * ref[1], 0.25);
+    const [x, y] = pts[i];
+    pos.push(x + m[0] * len, y + m[1] * len, 0, x - m[0] * len, y - m[1] * len, 0);
+  }
+  const segs = loop ? n : n - 1;
+  for (let i = 0; i < segs; i++) {
+    const a = i * 2, b = ((i + 1) % n) * 2;
+    idx.push(a, a + 1, b + 1, a, b + 1, b);
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length / 3).fill([0, 0, 1]).flat(), 3));
+  g.setIndex(idx);
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
+
 /** Puntos de un perfil, interpolados con una curva suave si `shape.smooth`. */
 export function shapePoints(shape, closed) {
   const pts = (shape?.points || []).filter(p => Array.isArray(p) && p.length >= 2).map(p => [+p[0] || 0, +p[1] || 0]);
@@ -143,12 +215,13 @@ export function shapePoints(shape, closed) {
 // Perfiles iniciales al crear una extrusión o una revolución
 export const DEFAULT_SHAPES = {
   extrude: { smooth: false, points: [[-0.5, -0.5], [0.5, -0.5], [0.5, -0.2], [-0.2, -0.2], [-0.2, 0.5], [-0.5, 0.5]] },
+  line2d: { smooth: false, points: [[-0.5, 0], [0.5, 0]] },
   lathe: { smooth: true, points: [[0, 0], [0.4, 0], [0.45, 0.15], [0.3, 0.55], [0.22, 0.85], [0.35, 1.15], [0.3, 1.2], [0, 1.2]] },
 };
 
 // Orden y separadores en la barra de herramientas
 export const TOOLBAR_ORDER = ['box', 'sphere', 'cylinder', 'cone', 'pyramid', 'torus', 'capsule', '|',
-  'plane', 'ring', '|', 'tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron', 'torusKnot', '|', 'extrude', 'lathe'];
+  'plane', 'ring', 'circle2d', 'line2d', '|', 'tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron', 'torusKnot', '|', 'extrude', 'lathe'];
 
 export function defaultParams(type) {
   const out = {};

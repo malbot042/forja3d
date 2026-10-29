@@ -236,7 +236,15 @@ const SECTIONS = [
   {
     id: 'primitivas', title: 'Primitivas y propiedades',
     html: `
-      <p>Hay 14 piezas básicas: <b>Cubo, Esfera, Cilindro, Cono, Pirámide, Toro, Cápsula, Plano, Anillo, Tetraedro, Octaedro, Dodecaedro, Icosaedro</b> y <b>Nudo</b>. Además, <a href="#" data-goto="extrusion">Extrusión</a> y <a href="#" data-goto="revolucion">Revolución</a> crean piezas a partir de un perfil dibujado.</p>
+      <p>Hay 14 piezas 3D: <b>Cubo, Esfera, Cilindro, Cono, Pirámide, Toro, Cápsula, Plano, Anillo, Tetraedro, Octaedro, Dodecaedro, Icosaedro</b> y <b>Nudo</b>, y 2 primitivas 2D: <b>Círculo 2D</b> y <b>Línea 2D</b>. Además, <a href="#" data-goto="extrusion">Extrusión</a> y <a href="#" data-goto="revolucion">Revolución</a> crean piezas a partir de un perfil dibujado.</p>
+      <h4>Primitivas 2D</h4>
+      <p>Se dibujan planas sobre el suelo (vistas desde arriba, en <b>Planta</b> con <kbd>7</kbd>). Sirven para bocetos, contornos, marcas, caminos o como guía para colocar piezas 3D.</p>
+      <ul>
+        <li><b>Círculo 2D</b>: por defecto es un contorno con <b>Grosor línea</b> ajustable. Activa <b>Relleno</b> para un disco. Con <b>Ángulo</b> menor de 360° obtienes un arco (o un sector, si está relleno); pocos <b>Segmentos</b> dan polígonos (6 = hexágono).</li>
+        <li><b>Línea 2D</b>: al añadirla se abre el editor de trazado. Haz clic para ir añadiendo puntos (polilínea), activa <b>Curva suave</b> para trazos curvos o elige una plantilla: recta, L, zigzag, onda, arco, espiral, escalera… En Propiedades ajusta el <b>Grosor</b> y marca <b>Cerrada</b> para unir el último punto con el primero. <b>Editar trazado…</b> lo vuelve a abrir.</li>
+      </ul>
+      <p>Ejemplos: un <b>reloj</b> = Círculo 2D (radio 1) + 12 Líneas 2D cortas giradas de 30° en 30°; un <b>camino de jardín</b> = Línea 2D con plantilla <i>Onda</i> y grosor 0,3; una <b>señal de prohibido</b> = Círculo 2D con grosor 0,15 + Línea 2D recta girada 45°.</p>
+      <p class="muted">Al ser superficies sin grosor, las primitivas 2D no son adecuadas para operaciones booleanas; para convertir un contorno en sólido usa <a href="#" data-goto="extrusion">Extrusión</a>.</p>
       <h4>Panel de propiedades</h4>
       <ul>
         <li><b>Objeto</b>: nombre y tipo.</li>

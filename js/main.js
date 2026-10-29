@@ -303,7 +303,8 @@ async function editProfile(id) {
   if (!sel) return;
   const ud = sel.userData;
   const def = PRIMITIVES[ud.type];
-  const shape = await editShape(ud.shape, def.usesShape, `Perfil de «${ud.name}»`);
+  const title = def.usesShape === 'path' ? `Trazado de «${ud.name}»` : `Perfil de «${ud.name}»`;
+  const shape = await editShape(ud.shape, def.usesShape, title, { closedPath: !!ud.params.closed });
   if (shape) {
     editor.update(id, { shape });
     if (def.usesShape === 'open' || ud.type === 'extrude') editor.dropToFloor([id]);
@@ -542,17 +543,25 @@ function renderProps() {
         h('button', { class: 'btn sm', onclick: () => editor.explode([id]) }, 'Separar piezas')),
     ];
   } else {
-    geo = def.params.map(p => row(p.label, numberField({
-      label: '↔', value: sel.params[p.key] ?? p.def, step: p.step, min: p.min, max: p.max, int: p.int,
-      onInput: v => upd({ params: { [p.key]: v } }, false),
-      onCommit: v => upd({ params: { [p.key]: v } }, true),
-    })));
+    geo = def.params.map(p => {
+      if (p.bool) {
+        const chk = h('input', { type: 'checkbox' });
+        chk.checked = !!(sel.params[p.key] ?? p.def);
+        chk.onchange = () => { upd({ params: { [p.key]: chk.checked ? 1 : 0 } }, true); renderProps(); };
+        return row(p.label, h('label', { class: 'toggle' }, chk, h('span', {}, chk.checked ? 'Sí' : 'No')));
+      }
+      return row(p.label, numberField({
+        label: '↔', value: sel.params[p.key] ?? p.def, step: p.step, min: p.min, max: p.max, int: p.int,
+        onInput: v => upd({ params: { [p.key]: v } }, false),
+        onCommit: v => upd({ params: { [p.key]: v } }, true),
+      }));
+    });
     if (def.usesShape) {
       const n = sel.shape?.points?.length || 0;
       geo.unshift(
-        h('p', { class: 'note' }, `Perfil de ${n} puntos${sel.shape?.smooth ? ', curva suave' : ''}.`),
+        h('p', { class: 'note' }, `${def.usesShape === 'path' ? 'Trazado' : 'Perfil'} de ${n} puntos${sel.shape?.smooth ? ', curva suave' : ''}.`),
         h('div', { class: 'btn-row', style: 'margin-bottom:8px' },
-          h('button', { class: 'btn sm', onclick: () => editProfile(id) }, 'Editar perfil…')));
+          h('button', { class: 'btn sm', onclick: () => editProfile(id) }, def.usesShape === 'path' ? 'Editar trazado…' : 'Editar perfil…')));
     }
   }
 

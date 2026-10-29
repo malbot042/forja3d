@@ -10,8 +10,8 @@ import { uid } from './storage.js';
 const DEG = THREE.MathUtils.DEG2RAD;
 const RAD = THREE.MathUtils.RAD2DEG;
 const round = (v, d = 4) => Math.round(v * 10 ** d) / 10 ** d;
-const FLAT_TYPES = new Set(['plane', 'ring']);
-const DOUBLE_SIDED = new Set(['plane', 'ring', 'lathe']);
+const FLAT_TYPES = new Set(['plane', 'ring', 'circle2d', 'line2d']);
+const DOUBLE_SIDED = new Set(['plane', 'ring', 'lathe', 'circle2d', 'line2d']);
 const HALF_SPACE = 1000;
 
 export const DEFAULT_MATERIAL = { color: '#d9d4c7', metalness: 0.05, roughness: 0.6, opacity: 1, flatShading: false };
