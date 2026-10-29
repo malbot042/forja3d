@@ -577,8 +577,13 @@ const SECTIONS = [
       </ul>
       <h4>Seleccionar y editar</h4>
       <ul>
-        <li>Clic para seleccionar, <kbd>Mayús</kbd>+clic para añadir o quitar. Arrastrando: de izquierda a derecha <b>ventana</b> (solo lo que queda dentro, azul); de derecha a izquierda <b>captura</b> (todo lo que toca, verde).</li>
-        <li>Los <b>pinzamientos</b> (cuadrados azules) se arrastran para estirar extremos, mover centros o cambiar radios.</li>
+        <li>Al pasar el ratón, el objeto se <b>ilumina</b> y un rótulo junto al cursor dice qué es (tipo, medida, capa) y qué pasará al hacer clic o arrastrar.</li>
+        <li><b>Clic</b> para seleccionar (se dibuja discontinuo en azul), <kbd>Mayús</kbd>+clic para añadir o quitar, <kbd>Esc</kbd> o clic en vacío para deseleccionar.</li>
+        <li>Arrastrando en vacío: de izquierda a derecha, <b>ventana</b> azul (solo lo que queda dentro del todo); de derecha a izquierda, <b>captura</b> verde (todo lo que toca). El rótulo indica cuántos objetos entrarán.</li>
+        <li>Los <b>pinzamientos</b> (cuadrados azules) se ponen rojos al pasar por encima; arrástralos para estirar extremos, mover vértices o centros, o cambiar radios. Mientras arrastras se ve la medida (longitud, radio, desplazamiento).</li>
+        <li>Arrastrar la <b>línea</b> de un objeto lo mueve (con todo lo seleccionado). Las <b>flechas</b> lo desplazan un paso de rejilla (<kbd>Mayús</kbd>: ×10).</li>
+        <li><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>X</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd>: copiar, cortar y pegar (lo pegado sigue al cursor; clic para colocarlo, varias veces si quieres). <kbd>Ctrl</kbd>+<kbd>D</kbd>: duplicar.</li>
+        <li>Durante una orden, el rótulo junto al cursor muestra qué pide y lo que vas tecleando, para no tener que mirar la barra de estado.</li>
         <li>En <b>Propiedades</b> se editan las coordenadas, el radio, la longitud, el texto o la capa con valores exactos; con varios objetos se ve la longitud total y se puede cambiar la capa de todos.</li>
         <li>Seleccionando primero y escribiendo después la orden (por ejemplo <code>M</code>), la orden usa la selección directamente.</li>
       </ul>
@@ -646,6 +651,8 @@ const SECTIONS = [
         <tr><td>${k('Esc')}</td><td>Cancelar la orden · quitar la selección</td></tr>
         <tr><td>${k('F3')} · ${k('F7')} · ${k('F8')} · ${k('F9')}</td><td>Referencias · Rejilla · Orto · Forzar a rejilla</td></tr>
         <tr><td>Doble clic central</td><td>Encuadrar todo el plano</td></tr>
+        <tr><td>Flechas · ${k('Mayús')}+flechas</td><td>Desplazar la selección un paso de rejilla · ×10</td></tr>
+        <tr><td>${k('Ctrl', 'C')} · ${k('Ctrl', 'X')} · ${k('Ctrl', 'V')} · ${k('Ctrl', 'D')}</td><td>Copiar · Cortar · Pegar · Duplicar (en el plano)</td></tr>
         <tr><th colspan="2">Modo escultor</th></tr>
         <tr><td>${k('[')} ${k(']')}</td><td>Tamaño del pincel</td></tr>
         <tr><td>${k('Mayús', '[')} ${k('Mayús', ']')}</td><td>Fuerza del pincel</td></tr>

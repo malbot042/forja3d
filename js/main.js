@@ -30,11 +30,13 @@ let saveTimer = null;
 // ===================================================================== toast
 function toast(msg, error = false) {
   const t = $('#toast');
+  const ms = typeof error === 'number' ? error : 2400;
+  if (typeof error === 'number') error = false;
   t.textContent = msg;
   t.classList.toggle('error', error);
   t.classList.add('show');
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove('show'), 2400);
+  toast._t = setTimeout(() => t.classList.remove('show'), ms);
 }
 
 // ===================================================================== router
@@ -765,7 +767,11 @@ function applyMode() {
   $('#layers-panel').hidden = !two;
   renderToolbar();
   if (two) { renderCadBar(); renderLayers(); refreshCadToggles(); editor.cad.emitPrompt(); }
-  else editor.cad.cancel(true);
+  else {
+    editor.cad.cancel(true);
+    $('#cmd-input').value = '';
+    if (document.activeElement === $('#cmd-input')) $('#cmd-input').blur();
+  }
   renderProps();
   refreshStatus();
   refreshHistoryButtons();
@@ -795,10 +801,16 @@ function initCadUI() {
   cad.addEventListener('settings', refreshCadToggles);
   cad.addEventListener('editrequest', () => setTimeout(() => $('#props .cad-text')?.focus(), 40));
   for (const b of document.querySelectorAll('[data-cadt]')) b.addEventListener('click', () => cad.toggle(b.dataset.cadt));
+  cad.inputEl = $('#cmd-input');
+  $('#cmd-input').addEventListener('input', () => cad.redraw());
   $('#mode-seg').addEventListener('click', e => {
     const b = e.target.closest('button[data-m]');
     if (!b) return;
     editor.active.setMode(b.dataset.m);
+    if (b.dataset.m === '2d' && editor.views.length === 1 && editor.objects.size && !initCadUI.hinted) {
+      initCadUI.hinted = true;
+      toast('Plano 2D en este panel. Tu escena 3D sigue intacta: pulsa 3D para volver, o elige el diseño «Plano 2D + vista 3D» para ver los dos a la vez.', 6000);
+    }
     scheduleSave();
   });
   $('#btn-layer-add').onclick = () => {
@@ -912,6 +924,19 @@ function renderCadProps(box) {
           ].map(t => `<li>${t}</li>`).join('');
           return ul;
         })()),
+      h('div', { class: 'prop-section' },
+        h('h3', {}, 'Seleccionar y editar'),
+        (() => {
+          const ul = h('ul', { class: 'kbd-list' });
+          ul.innerHTML = [
+            '<b>Clic</b> en un objeto: seleccionarlo · <b>Mayús+clic</b>: añadir o quitar · <b>Esc</b>: deseleccionar',
+            'Arrastrar en vacío <b>→</b> (azul): solo lo que queda dentro · <b>←</b> (verde): todo lo que toca',
+            'Seleccionado: arrastra un <b>pinzamiento ■</b> para estirar, cambiar el radio o mover un vértice; arrastra la línea para mover el objeto',
+            'Valores exactos: edítalos aquí, en Propiedades (doble clic en el objeto)',
+            '<b>Flechas</b>: desplazar (Mayús ×10) · <b>Ctrl+C / Ctrl+V</b>: copiar y pegar · <b>Ctrl+D</b>: duplicar · <b>Supr</b>: borrar',
+          ].map(t => `<li>${t}</li>`).join('');
+          return ul;
+        })()),
     );
     return;
   }
@@ -927,6 +952,7 @@ function renderCadProps(box) {
     box.replaceChildren(
       h('div', { class: 'prop-section' },
         h('h3', {}, `${ents.length} objetos seleccionados`),
+        h('p', { class: 'muted small cad-hint' }, 'Arrastra cualquiera de ellos para mover el grupo · flechas: desplazar · Ctrl+D: duplicar · Supr: borrar · Esc: deseleccionar'),
         info([...Object.entries(byType).map(([k, n]) => [k, String(n)]), length ? ['Longitud total', `${F(length)}${U}`] : null]),
         row('Capa', layerSel(ents.every(e => e.layer === ents[0].layer) ? ents[0].layer : '', v => {
           for (const e of ents) e.layer = v;
@@ -1013,6 +1039,7 @@ function renderCadProps(box) {
   box.replaceChildren(
     h('div', { class: 'prop-section' },
       h('h3', {}, e.type === 'dim' ? DIM_LABELS[e.kind] : isRect(e) ? 'Rectángulo' : TYPE_LABELS[e.type]),
+      h('p', { class: 'muted small cad-hint' }, 'Escribe aquí valores exactos (Intro aplica) o, en el plano, arrastra los pinzamientos ■ azules. Esc: deseleccionar.'),
       row('Capa', layerSel(e.layer, v => upd({ layer: v })))),
     h('div', { class: 'prop-section' }, h('h3', {}, 'Geometría'), geo),
     h('div', { class: 'prop-section' },

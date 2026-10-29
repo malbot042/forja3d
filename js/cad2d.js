@@ -479,6 +479,21 @@ function grips(e) {
   }
 }
 
+/** Qué hace cada pinzamiento (para el rótulo junto al cursor). */
+function gripLabel(e, i) {
+  switch (e.type) {
+    case 'line': return i < 2 ? 'Extremo · arrastra para estirar' : 'Punto medio · arrastra para mover la línea';
+    case 'pline': return `Vértice ${i + 1} · arrastra para moverlo`;
+    case 'circle': return i === 0 ? 'Centro · arrastra para mover' : 'Cuadrante · arrastra para cambiar el radio';
+    case 'arc': return ['Centro · arrastra para mover', 'Inicio del arco · arrastra', 'Final del arco · arrastra', 'Arco · arrastra para cambiar el radio'][i];
+    case 'text': return 'Texto · arrastra para mover';
+    case 'dim': return e.a && i < 2 ? 'Punto acotado · arrastra' : 'Cota · arrastra para colocar la línea y el texto';
+    default: return 'Arrastra';
+  }
+}
+
+function entLabel(e) { return e.type === 'dim' ? (DIM_LABELS[e.kind] || 'Cota') : TYPE_LABELS[e.type] || e.type; }
+
 function applyGrip(e, i, p) {
   const n = structuredClone(e);
   switch (e.type) {
@@ -1399,6 +1414,27 @@ const TOOLS = {
       return r ? { removed: r.removed } : null;
     },
   }),
+  // Pegar lo copiado con Ctrl+C (o duplicar con Ctrl+D): los objetos siguen al cursor
+  paste: cad => {
+    const src = cad.clipboard || [];
+    const bb = cad.extents(src) || [0, 0, 0, 0];
+    const base = [bb[0], bb[1]];
+    let n = 0;
+    const at = p => src.map(e => xform(e, q => add(q, sub(p, base))));
+    return {
+      prompt: () => `PEGAR · Punto de inserción (esquina inferior izquierda de lo copiado)${n ? ` · ${n} vez${n > 1 ? 'es' : ''} · Intro o Esc: terminar` : ''}`,
+      last: () => null,
+      point(p) {
+        const ids = at(p).map((e, k) => cad.add({ ...e, layer: src[k].layer }).id);
+        n++;
+        cad.commit();
+        cad.sel = new Set(ids);
+        cad.emit('select');
+      },
+      enter() { cad.setTool('select'); },
+      preview: () => (cad.cur ? { ents: at(cad.cur) } : null),
+    };
+  },
   erase: modify('BORRAR', cad => ({ begin() { cad.eraseSel(); cad.setTool('select'); }, prompt: () => '' })),
   explode: modify('DESCOMPONER', cad => ({ begin() { cad.explodeSel(); cad.setTool('select'); }, prompt: () => '' })),
 };
@@ -1634,7 +1670,7 @@ export class Cad extends EventTarget {
     } else {
       this.toolName = name;
       this.T = TOOLS[name](this);
-      this.lastCmd = name;
+      if (name !== 'paste') this.lastCmd = name;
       this.measure = null;
       this.T.start?.();
     }
@@ -1661,8 +1697,8 @@ export class Cad extends EventTarget {
   emitPrompt() {
     let p;
     if (this.T) p = this.T.prompt();
-    else if (this.sel.size) p = `${this.sel.size} objeto${this.sel.size > 1 ? 's' : ''} seleccionado${this.sel.size > 1 ? 's' : ''} · arrastra los pinzamientos para editar · Supr: borrar · o escribe una orden (M, CO, RO…)`;
-    else p = 'Orden: escribe una orden (L, PL, REC, C, A, T, DLI, M, CO, RO, O, TR…) o elige una herramienta';
+    else if (this.sel.size) p = `${this.sel.size} seleccionado${this.sel.size > 1 ? 's' : ''} · arrastra un pinzamiento ■ para editar o el objeto para moverlo · flechas: desplazar · Supr: borrar · Esc: deseleccionar · o escribe una orden (M, CO, RO…)`;
+    else p = 'Seleccionar: clic en un objeto · arrastra en vacío para seleccionar por ventana · o escribe una orden (L, REC, C, DLI, M…)';
     this.emit('prompt', p);
   }
 
@@ -1754,15 +1790,42 @@ export class Cad extends EventTarget {
       if (l === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); return true; }
       if (l === 'y' || (l === 'z' && e.shiftKey)) { e.preventDefault(); this.redo(); return true; }
       if (l === 'a' && !typing) { e.preventDefault(); this.selectAll(); return true; }
+      if ((l === 'c' || l === 'x' || l === 'd') && !typing && !this.T) {
+        e.preventDefault();
+        if (!this.sel.size) { this.message('Selecciona primero los objetos'); return true; }
+        this.clipboard = this.selEnts().map(x => structuredClone(x));
+        const n = this.clipboard.length, s = n > 1 ? 's' : '';
+        if (l === 'x') { this.eraseSel(); this.message(`${n} objeto${s} cortado${s}: Ctrl+V para pegar`); }
+        else if (l === 'c') this.message(`${n} objeto${s} copiado${s}: Ctrl+V para pegar`);
+        else this.setTool('paste');
+        return true;
+      }
+      if (l === 'v' && !typing) {
+        e.preventDefault();
+        if (!this.clipboard?.length) { this.message('No hay nada copiado (selecciona y pulsa Ctrl+C)'); return true; }
+        this.setTool('paste');
+        return true;
+      }
       return false;
+    }
+    if (k.startsWith('Arrow') && !typing && !this.T && this.sel.size) {
+      e.preventDefault();
+      const step = (this.activeView?.gridStep() || 1) * (e.shiftKey ? 10 : 1);
+      const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[k];
+      this.transformSel(q => add(q, d));
+      this.commit();
+      this.emit('select');
+      this.message(`Desplazado ${fmtNum(step, this.drawing)} ${this.drawing.units === 'u' ? '' : this.drawing.units} (Mayús: ×10)`);
+      return true;
     }
     if ((k === 'Delete' || (k === 'Backspace' && !inp.value)) && !this.T && this.sel.size) { e.preventDefault(); this.eraseSel(); return true; }
     if (k === '?' && !inp.value) return false;
     if (k.length === 1) {
       if (!typing) { e.preventDefault(); inp.focus(); inp.value += k; }
+      this.redraw();
       return true;
     }
-    if (k === 'Backspace' && !typing && inp.value) { e.preventDefault(); inp.value = inp.value.slice(0, -1); return true; }
+    if (k === 'Backspace' && !typing && inp.value) { e.preventDefault(); inp.value = inp.value.slice(0, -1); this.redraw(); return true; }
     return false;
   }
 
@@ -1852,10 +1915,50 @@ export class Cad extends EventTarget {
     } else {
       this.snapHit = null;
       this.cur = raw;
-      this.hover = this.pick(view, raw, this.T?.pickMode ? this.T.pickFilter : null);
+      this.hotGrip = !this.T && this.sel.size && !(e?.shiftKey || e?.ctrlKey || e?.metaKey) ? this.gripAt(view, raw) : null;
+      this.hover = this.hotGrip ? null : this.pick(view, raw, this.T?.pickMode ? this.T.pickFilter : null);
     }
     this.emit('cursor', this.cur);
     this.redraw();
+  }
+
+  /** Rótulo que acompaña al cursor: qué pasará si haces clic o arrastras. */
+  _hint() {
+    const D = this.drawing, F = v => fmtNum(v, D);
+    if (this.drag?.moved) return this.drag.info || null;
+    if (this.win) return null;
+    if (this.T) {
+      const typed = this.inputEl?.value;
+      let p = this.T.prompt() || '';
+      if (p.length > 90) p = `${p.slice(0, 88)}…`;
+      const lines = [p];
+      if (this.T.selecting && this.hover) lines.push(this.sel.has(this.hover.id) ? `${entLabel(this.hover)} · ya seleccionado (Mayús+clic: quitar)` : `${entLabel(this.hover)} · clic: añadir`);
+      if (this.T.pickMode && this.hover) lines.push(`${entLabel(this.hover)} · clic para designarlo`);
+      if (typed) lines.push(`› ${typed}`);
+      return lines;
+    }
+    if (this.hotGrip) {
+      const e = this.byId(this.hotGrip.id);
+      return e ? [gripLabel(e, this.hotGrip.i)] : null;
+    }
+    if (this.hover) {
+      const e = this.hover, inf = entityInfo(e, D);
+      const meas = e.type === 'circle' ? `Ø ${F(2 * e.r)}` : e.type === 'arc' ? `R ${F(e.r)}` : inf.length ? `L ${F(inf.length)}` : '';
+      const head = `${entLabel(e)}${meas ? ` · ${meas}` : ''} · capa ${e.layer}`;
+      return this.sel.has(e.id)
+        ? [head, 'Arrastra para mover · doble clic: editar valores · Mayús+clic: quitar']
+        : [head, 'Clic: seleccionar · Mayús+clic: añadir · arrastra: mover'];
+    }
+    return null;
+  }
+
+  _dragInfo(d, sn) {
+    const D = this.drawing, F = v => fmtNum(v, D), A = (a, b) => `${F(normA(angOf(a, b)) * DEG)}°`;
+    if (d.kind === 'move') return [`Mover · Δ ${F(dist(d.base, sn))} < ${A(d.base, sn)}`, `ΔX ${F(sn[0] - d.base[0])} · ΔY ${F(sn[1] - d.base[1])}`];
+    const o = d.orig, g = grips(o)[d.i];
+    if ((o.type === 'circle' && d.i > 0) || (o.type === 'arc' && d.i === 3)) return [`Radio ${F(dist(o.c, sn))} · Ø ${F(2 * dist(o.c, sn))}`];
+    if (o.type === 'line' && d.i < 2) { const other = d.i === 0 ? o.b : o.a; return [`Longitud ${F(dist(other, sn))} < ${A(other, sn)}`]; }
+    return [`Δ ${F(dist(g, sn))} · X ${F(sn[0])} · Y ${F(sn[1])}`];
   }
 
   onDown(view, raw, e) {
@@ -1915,6 +2018,7 @@ export class Cad extends EventTarget {
     const sn = this.snap(view, raw, { exclude });
     this.snapHit = sn.k ? sn : null;
     this.cur = sn.p;
+    d.info = this._dragInfo(d, sn.p);
     if (d.kind === 'grip') {
       const i = this.drawing.entities.findIndex(x => x.id === d.id);
       if (i >= 0) this.drawing.entities[i] = applyGrip(d.orig, d.i, sn.p);
@@ -2046,9 +2150,11 @@ export class Cad extends EventTarget {
     const light = document.documentElement.dataset.theme === 'light';
     return white ? {
       bg: '#ffffff', fg: '#111111', grid: '#f0f0f0', major: '#dedede', sel: '#1f6fd1', accent: '#c8740c', axisX: 'rgba(229,97,79,.45)', axisY: 'rgba(63,160,80,.45)',
+      hover: '#1f6fd1', muted: '#666666',
     } : {
       bg: cssVar('--cv-bg') || '#0f1114', fg: cssVar('--text') || '#e6e8eb', grid: cssVar('--cv-grid') || '#1a1d22', major: cssVar('--cv-grid-major') || '#2a2f36',
       sel: light ? '#1f6fd1' : '#5ab0ff', accent: cssVar('--accent') || '#f2a541', axisX: 'rgba(229,97,79,.4)', axisY: 'rgba(111,191,115,.4)',
+      hover: light ? '#3d8bf0' : '#8cc8ff', muted: cssVar('--muted') || '#9aa0a8',
     };
   }
 
@@ -2069,8 +2175,9 @@ export class Cad extends EventTarget {
       const L = layers.get(e.layer) || D.layers[0];
       if (L.visible === false) continue;
       const st = { color: !L.color || L.color === 'auto' ? C.fg : L.color, dash: LINETYPES[L.lt]?.dash || [], lw: L.lw === 'thick' ? 1.8 : 1 };
-      if (interactive && this.sel.has(e.id)) Object.assign(st, { color: C.sel, dash: [7, 4], lw: st.lw + 0.6 });
-      else if (interactive && this.hover && this.hover.id === e.id) st.lw += 1.6;
+      const hov = interactive && this.hover && this.hover.id === e.id;
+      if (interactive && this.sel.has(e.id)) Object.assign(st, { color: C.sel, dash: [7, 4], lw: st.lw + (hov ? 1.8 : 0.6) });
+      else if (hov) Object.assign(st, { color: C.hover, lw: st.lw + 1.4 });
       drawEnt(ctx, view, e, D, st);
     }
     if (!interactive) return;
@@ -2096,11 +2203,14 @@ export class Cad extends EventTarget {
     }
     // pinzamientos
     if (!this.T && this.sel.size && this.sel.size <= 200) {
-      for (const e of this.selEnts()) for (const g of grips(e)) {
+      const hg = this.drag?.kind === 'grip' ? this.drag : this.hotGrip;
+      for (const e of this.selEnts()) grips(e).forEach((g, i) => {
         const s = view.toScreen(g);
-        ctx.fillStyle = '#2f6fff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
-        ctx.fillRect(s[0] - 4, s[1] - 4, 8, 8); ctx.strokeRect(s[0] - 4, s[1] - 4, 8, 8);
-      }
+        const hot = hg && hg.id === e.id && hg.i === i;
+        const r = hot ? 6 : 4;
+        ctx.fillStyle = hot ? '#e5614f' : '#2f6fff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+        ctx.fillRect(s[0] - r, s[1] - r, 2 * r, 2 * r); ctx.strokeRect(s[0] - r, s[1] - r, 2 * r, 2 * r);
+      });
     }
     // ventana de selección
     if (this.win && this.win.view === view) {
@@ -2112,6 +2222,13 @@ export class Cad extends EventTarget {
       ctx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
       ctx.strokeRect(Math.min(a[0], b[0]) + 0.5, Math.min(a[1], b[1]) + 0.5, Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
       ctx.setLineDash([]);
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) > 6) {
+        const n = this.visibleEntities().filter(ent => {
+          const r = [Math.min(this.win.a[0], this.win.b[0]), Math.min(this.win.a[1], this.win.b[1]), Math.max(this.win.a[0], this.win.b[0]), Math.max(this.win.a[1], this.win.b[1])];
+          return crossing ? this._crosses(ent, r) : this._inside(ent, r);
+        }).length;
+        this._tip(ctx, [crossing ? '← Captura: todo lo que toque el recuadro' : '→ Ventana: solo lo que quede dentro del todo', `${n} objeto${n === 1 ? '' : 's'}`], b[0] + 16, b[1] + 18, C, W, H);
+      }
     }
     // cursor
     if (view === this.activeView && view.screenCursor) {
@@ -2123,10 +2240,12 @@ export class Cad extends EventTarget {
       ctx.globalAlpha = 1;
       if (this.snapHit) this._snapMarker(ctx, view.toScreen(this.snapHit.p), this.snapHit.k, C);
       const last = this.T?.last?.();
+      const tip = this._hint() || [];
       if (last && this.cur && !this.T.selecting) {
         const d = dist(last, this.cur), a = normA(angOf(last, this.cur)) * DEG;
-        this._label(ctx, `${fmtNum(d, D)} < ${fmtNum(a, D, 1)}°`, sx + 18, sy + 30, C, 'left');
+        tip.push(`${fmtNum(d, D)} < ${fmtNum(a, D, 1)}°`);
       }
+      if (tip.length && !this.win) this._tip(ctx, tip, sx + 18, sy + 24, C, W, H);
     }
     // icono de ejes
     ctx.lineWidth = 1.6;
@@ -2174,6 +2293,22 @@ export class Cad extends EventTarget {
     ctx.strokeStyle = C.major; ctx.lineWidth = 1; ctx.strokeRect(lx + 0.5, y - 13.5, w - 1, 17);
     ctx.fillStyle = C.fg; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.fillText(text, lx + 5, y);
+  }
+
+  /** Rótulo de varias líneas junto al cursor (se recoloca para no salirse del panel). */
+  _tip(ctx, lines, x, y, C, W, H) {
+    ctx.font = `11px ${FONT}`;
+    const lh = 16, w = Math.max(...lines.map(t => ctx.measureText(t).width)) + 12, h = lines.length * lh + 6;
+    if (x + w > W - 4) x = Math.max(4, x - w - 36);
+    if (y + h > H - 4) y = Math.max(4, y - h - 40);
+    ctx.globalAlpha = 0.94; ctx.fillStyle = C.bg; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1;
+    ctx.strokeStyle = C.major; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    lines.forEach((t, i) => {
+      ctx.fillStyle = i === 0 ? C.fg : C.muted;
+      if (t.startsWith('›')) ctx.fillStyle = C.accent;
+      ctx.fillText(t, x + 6, y + 15 + i * lh);
+    });
   }
 
   _snapMarker(ctx, s, k, C) {
@@ -2258,6 +2393,7 @@ export class CadView {
     const local = e => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
     c.addEventListener('contextmenu', e => e.preventDefault());
     c.addEventListener('pointerdown', e => {
+      if (!this.visible) return;
       const [sx, sy] = local(e);
       c.setPointerCapture?.(e.pointerId);
       if (e.button === 1 || e.button === 2) {
@@ -2270,6 +2406,7 @@ export class CadView {
       if (e.button === 0) cad.onDown(this, this.toWorld(sx, sy), e);
     });
     c.addEventListener('pointermove', e => {
+      if (!this.visible) return;
       const [sx, sy] = local(e);
       this.screenCursor = [sx, sy];
       if (this.pan) {

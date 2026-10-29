@@ -106,7 +106,7 @@ export class Editor extends EventTarget {
       };
     });
     this.gizmo.addEventListener('dragging-changed', e => {
-      if (this.gizmoView) this.gizmoView.orbit.enabled = !e.value;
+      if (this.gizmoView) this.gizmoView.orbit.enabled = !e.value && this.gizmoView.mode === '3d';
       if (!e.value) {
         start = null;
         if (this.subSel) this._rebuildRoot(this.subSel.rootId);
@@ -157,7 +157,7 @@ export class Editor extends EventTarget {
     const prevTarget = this.views[0]?.target.clone();
     while (this.views.length > n) {
       const v = this.views.pop();
-      if (this.gizmoView === v) this._hoverView(this.views[0]);
+      if (this.gizmoView === v) this._detachGizmo();
       v.dispose();
     }
     while (this.views.length < n) {
@@ -181,7 +181,7 @@ export class Editor extends EventTarget {
       v._isNew = false;
     });
     if (!this.views.includes(this.active)) this.setActiveView(this.views[0]);
-    if (!this.gizmoView || !this.views.includes(this.gizmoView)) this._hoverView(this.views.find(v => v.mode === '3d') || this.views[0]);
+    this._syncGizmo();
     this._resize();
     this.dispatchEvent(new CustomEvent('layout', { detail: this.layout }));
     this.dispatchEvent(new CustomEvent('viewmode'));
@@ -199,10 +199,7 @@ export class Editor extends EventTarget {
   /** Un panel ha cambiado entre 2D y 3D. */
   _viewModeChanged(view) {
     if (view.mode === '2d' && this.sculpt) this.endSculpt();
-    if (this.gizmoView === view && view.mode === '2d') {
-      const other = this.views.find(v => v.mode === '3d');
-      if (other) this._hoverView(other);
-    }
+    this._syncGizmo();
     this._resize();
     this.dispatchEvent(new CustomEvent('viewmode'));
     this.dispatchEvent(new CustomEvent('layout', { detail: this.layout }));
@@ -211,6 +208,23 @@ export class Editor extends EventTarget {
   _emitCamera(view) {
     if (view !== this.active) return;
     this.dispatchEvent(new CustomEvent('camera', { detail: { projection: view.projection, view: view.currentView } }));
+  }
+
+  /**
+   * El gizmo 3D solo puede estar enganchado a un panel 3D: en un panel 2D capturaría
+   * el puntero y el plano dejaría de recibir los arrastres.
+   */
+  _syncGizmo() {
+    const g = this.gizmoView;
+    if (g && this.views.includes(g) && g.mode === '3d') return;
+    this._detachGizmo();
+    const v3 = this.views.find(v => v.mode === '3d');
+    if (v3) this._hoverView(v3);
+  }
+
+  _detachGizmo() {
+    if (this.gizmo.domElement) this.gizmo.disconnect();
+    this.gizmoView = null;
   }
 
   /** El gizmo trabaja en el panel que está bajo el ratón. */

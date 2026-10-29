@@ -376,8 +376,8 @@ body.resizing { cursor: col-resize; user-select: none; }
 .cad-toggles button:hover { border-color: var(--line-2); color: var(--text); }
 .cad-toggles button.on { color: var(--accent); background: var(--sel); }
 .cmd-coords { min-width: 150px; text-align: right; color: var(--text); }
-.cad-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; cursor: none; touch-action: none; z-index: 1; }
-.vp.is-2d .cad-canvas { display: block; }
+.vp > .cad-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; cursor: none; touch-action: none; z-index: 1; }
+.vp.is-2d > .cad-canvas { display: block; }
 .vp.is-2d .nav-gizmo { display: none; }
 .vp.is-2d .vp-label { top: 10px; z-index: 2; pointer-events: none; }
 .vp-layout.multi .vp.is-2d .vp-label { top: 10px; }
@@ -710,3 +710,4 @@ kbd {
 .projects-actions .theme-btn { width: 34px; height: 34px; border: 1px solid var(--line-2); background: var(--panel-2); }
 :root[data-theme="light"] .tool-btn:hover { background: var(--panel-2); }
 :root[data-theme="light"] .ops-bar svg .fill { opacity: .3; }
+.cad-hint { margin: 0 0 8px; line-height: 1.45; font-size: 11.5px; }
