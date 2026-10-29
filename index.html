@@ -95,7 +95,8 @@
 
     <aside class="toolbar" id="primitives" aria-label="Primitivas"></aside>
 
-    <main class="viewport" id="viewport">
+    <main class="work">
+      <div class="work-bar work-top">
       <div class="ops-bar" id="ops-bar" role="toolbar" aria-label="Operaciones">
         <button data-op="union" title="Unir: fusiona los objetos seleccionados en uno (A ∪ B)">
           <svg viewBox="0 0 24 24"><circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/><circle class="fill" cx="9" cy="12" r="6"/><circle class="fill" cx="15" cy="12" r="6"/></svg>Unir</button>
@@ -123,6 +124,9 @@
 
       <div class="ops-bar cad-bar" id="cad-bar" role="toolbar" aria-label="Edición 2D" hidden></div>
       <div class="sculpt-bar" id="sculpt-bar" hidden></div>
+      </div>
+      <div class="viewport" id="viewport"></div>
+      <div class="work-bar work-bottom">
       <div class="view-bar" id="view-bar" role="toolbar" aria-label="Vistas">
         <span class="layout-seg" role="group" aria-label="División de pantalla">
           <button data-layout="1" title="1 vista"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/></svg></button>
@@ -147,6 +151,7 @@
         <button data-cam="focus" title="Encuadrar (F en 3D · Z + Intro o doble clic central en 2D)">Encuadrar</button>
       </div>
       <div class="hint" id="hint">Añade una primitiva desde la barra izquierda · clic para seleccionar (Mayús+clic: varios) · W/E/R mover/rotar/escalar</div>
+      </div>
     </main>
 
     <aside class="sidebar">
