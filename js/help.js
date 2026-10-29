@@ -24,7 +24,7 @@ function bool(op, name, operands, p = [0, 0, 0], material) {
 }
 
 const halfSpace = y => ({
-  ...obj('box', 'Semiespacio', { width: 1000, height: 1000, depth: 1000 }, { p: [0, y + 500, 0] }), helper: true,
+  ...obj('box', 'Semiespacio', { width: 1000, height: 1000, depth: 1000 }, { p: [0, y + 500, 0], r: [-90, 0, 0] }), helper: true,
 });
 
 const hexagon = { points: [[0.5, 0], [0.25, 0.433], [-0.25, 0.433], [-0.5, 0], [-0.25, -0.433], [0.25, -0.433]] };
@@ -463,6 +463,22 @@ const SECTIONS = [
         <div><b>Partir</b><span>Corta un objeto en dos piezas. Con un <b>Plano</b> seleccionado corta por ese plano (puedes girarlo); sin plano, en horizontal por el centro.</span></div>
         <div><b>Separar</b><span>Deshace la operación del objeto seleccionado y devuelve las piezas originales, en su sitio.</span></div>
       </div>
+      <h4>El árbol de operaciones</h4>
+      <p>En la lista <b>Escena</b>, cada operación tiene una flecha <b>›</b> que la despliega y muestra sus piezas; si una pieza es a su vez una operación, se despliega dentro (árbol anidado). Los botones <b>⌄</b> y <b>›</b> de la cabecera despliegan o pliegan todo.</p>
+      <ul>
+        <li>Cada pieza lleva su <b>papel</b>: <code>base</code> (la pieza de partida), <code>+</code> se une, <code>−</code> se resta, <code>∩</code> se interseca, <code>corte</code> el plano de una pieza partida.</li>
+        <li>Haz clic en una pieza para seleccionarla: se <b>resalta en azul</b> en el visor y el <b>gizmo la mueve, gira o escala</b> dentro de la operación; al soltar, el resultado se recalcula.</li>
+        <li>En Propiedades puedes cambiar su nombre, su transformación y sus <b>parámetros</b> (radio, altura, segmentos…), o el tipo de una operación anidada. La ruta de arriba (<i>Taza › Cuerpo y asa › Asa</i>) permite subir de nivel.</li>
+        <li><b>Extraer como objeto</b> la saca de la operación y la deja como objeto independiente en su sitio; <b>Quitar de la operación</b> (o <kbd>Supr</kbd>) la elimina. Si la operación se queda con una sola pieza, desaparece y queda esa pieza.</li>
+        <li>En una pieza partida, selecciona el <b>Plano de corte</b> y muévelo o gíralo para cambiar por dónde se corta.</li>
+      </ul>
+      <h4>Ejemplo: ajustar el asa de la taza sin rehacer nada</h4>
+      <ol class="steps">
+        <li>Abre el ejemplo de la taza y despliega <b>Taza › Cuerpo y asa</b>.</li>
+        <li>Haz clic en <b>Asa</b>: se resalta en azul. Cambia <b>Grosor</b> a 0,1 y pulsa <kbd>Intro</kbd>.</li>
+        <li>Arrastra la flecha verde del gizmo para subir o bajar el asa; al soltar, la taza se recalcula.</li>
+        <li>Selecciona <b>Interior</b> y cambia su escala o su posición para hacer las paredes más finas o el fondo más grueso.</li>
+      </ol>
       <h4>Bueno saber</h4>
       <ul>
         <li>Las operaciones son <b>no destructivas</b>: el resultado recuerda sus piezas. En Propiedades puedes cambiar la operación (de Unir a Restar, por ejemplo) sin rehacer nada.</li>

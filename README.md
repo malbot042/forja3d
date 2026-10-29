@@ -15,6 +15,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
   - **Intersecar** (A ∩ B): conserva solo el volumen común.
   - **Partir**: corta un objeto con un *Plano* seleccionado (o, si no hay plano, en horizontal por su centro) y genera dos piezas.
   - **Separar**: deshace una operación booleana y devuelve las piezas originales.
+  - **Árbol de operaciones** en la lista de Escena: cada operación se despliega mostrando sus piezas anidadas y su papel (base, +, −, ∩, corte). Cada pieza se puede seleccionar (se resalta en 3D), mover con el gizmo, editar sus parámetros, extraer o quitar, y la operación se recalcula.
 - **Selección múltiple** con Mayús/Ctrl + clic (en el visor o en la lista); el gizmo mueve, gira y escala todo el grupo.
 - **Reflejar** en X/Y/Z y **Apoyar en el suelo**.
 - **Pantalla dividida** en 1, 2, 3 o 4 vistas, cada una con su propia cámara, navegador de ejes y vista (perspectiva, alzado, planta, perfil…); se guarda con el proyecto.

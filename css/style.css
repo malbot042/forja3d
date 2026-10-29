@@ -459,6 +459,47 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .drop-hint small { display: block; margin-top: 6px; color: var(--muted); font: 12px var(--mono); }
 
+/* ---------- árbol de la escena ---------- */
+.tree-tools { display: inline-flex; align-items: center; gap: 2px; }
+.icon-btn.mini { width: 22px; height: 22px; color: var(--muted); }
+.icon-btn.mini svg { width: 14px; height: 14px; }
+.outliner li { gap: 6px; }
+.outliner .caret {
+  width: 16px; height: 16px; flex: none; display: grid; place-items: center;
+  background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; border-radius: 3px;
+}
+.outliner .caret:hover { color: var(--text); background: var(--panel-2); }
+.outliner .caret svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.4; transition: transform .12s; }
+.outliner .caret.open svg { transform: rotate(90deg); }
+.outliner .caret.empty { cursor: default; }
+.outliner li.tree-child {
+  position: relative; padding-left: calc(6px + var(--d) * 16px); font-size: 12px; color: var(--muted);
+}
+.outliner li.tree-child::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: calc(var(--d) * 16px - 1px);
+  border-left: 1px solid var(--line-2);
+}
+.outliner li.tree-child .name { color: var(--text); }
+.outliner li.tree-child.helper .name { font-style: italic; }
+.outliner li.tree-child.selected { background: rgba(90, 176, 255, .14); }
+.outliner li.tree-child.selected .name { color: #5ab0ff; }
+:root[data-theme="light"] .outliner li.tree-child.selected { background: rgba(31, 111, 209, .1); }
+:root[data-theme="light"] .outliner li.tree-child.selected .name { color: #1f6fd1; }
+.outliner li.contains-selected { background: var(--panel-2); }
+.outliner .role {
+  flex: none; min-width: 18px; text-align: center; font: 10px/16px var(--mono); border-radius: 3px; padding: 0 4px;
+}
+.outliner .role-base { background: var(--panel-2); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-2); }
+.outliner .role-op { background: var(--sel); color: var(--accent); font-weight: 700; }
+.outliner .role-cut { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-2); }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 6px; font-size: 12px; }
+.crumb { background: none; border: 0; padding: 2px 4px; border-radius: 3px; color: var(--accent); cursor: pointer; }
+.crumb:hover { background: var(--sel); }
+.crumb.current { color: #5ab0ff; font-weight: 600; cursor: default; }
+:root[data-theme="light"] .crumb.current { color: #1f6fd1; }
+.crumb-sep { color: var(--muted); }
+.outliner { max-height: 42vh; }
+
 /* ---------- capturar / imprimir ---------- */
 .modal.capture { width: min(940px, 100%); }
 .capture-body { display: grid; grid-template-columns: 1fr 330px; gap: 16px; padding: 16px 18px; overflow-y: auto; }

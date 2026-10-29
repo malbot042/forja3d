@@ -93,7 +93,7 @@ export class Editor extends EventTarget {
     let start = null;
     this.gizmo.addEventListener('mouseDown', () => {
       const primary = this.objects.get(this.selectedId);
-      if (!primary) return;
+      if (!primary || this.subSel) { start = null; return; }
       primary.updateMatrix();
       start = {
         inv: primary.matrix.clone().invert(),
@@ -104,9 +104,14 @@ export class Editor extends EventTarget {
     });
     this.gizmo.addEventListener('dragging-changed', e => {
       if (this.gizmoView) this.gizmoView.orbit.enabled = !e.value;
-      if (!e.value) { start = null; this._commit(); }
+      if (!e.value) {
+        start = null;
+        if (this.subSel) this._rebuildRoot(this.subSel.rootId);
+        this._commit();
+      }
     });
     this.gizmo.addEventListener('objectChange', () => {
+      if (this.subSel) { this._proxyMoved(); return; }
       const primary = this.objects.get(this.selectedId);
       if (start && primary && start.others.length) {
         primary.updateMatrix();
@@ -419,7 +424,9 @@ export class Editor extends EventTarget {
     this.dispatchEvent(new CustomEvent('select', { detail: this.selectedId }));
   }
 
-  remove(ids = [...this.selection]) {
+  remove(ids) {
+    if (!ids && this.subSel) return this.removeOperand(this.subSel.rootId, this.subSel.path);
+    ids = ids || [...this.selection];
     if (!ids.length) return;
     this.setSelection(this.selection.filter(id => !ids.includes(id)));
     for (const id of ids) {
@@ -699,10 +706,13 @@ export class Editor extends EventTarget {
 
   selectAll() { this.setSelection([...this.objects.keys()].filter(id => this.objects.get(id).visible)); }
 
-  setSelection(ids) {
+  setSelection(ids, { keepSub = false } = {}) {
     this.selection = ids.filter(id => this.objects.has(id));
+    if (!keepSub) this.subSel = null;
+    this._refreshSub();
     const primary = this.objects.get(this.selectedId);
-    if (primary && primary.visible) this.gizmo.attach(primary);
+    if (this.subSel) this.gizmo.attach(this._proxy);
+    else if (primary && primary.visible) this.gizmo.attach(primary);
     else this.gizmo.detach();
     this._updateSelectionBoxes();
     this.dispatchEvent(new CustomEvent('select', { detail: this.selectedId }));
@@ -732,6 +742,201 @@ export class Editor extends EventTarget {
       box.setFromObject(mesh);
       box.material.opacity = id === this.selectedId ? 1 : 0.45;
     }
+  }
+
+  // ------------------------------------------- piezas dentro de operaciones
+  /**
+   * Localiza una pieza dentro de una operación booleana.
+   * `path` son los índices de operandos desde la raíz (p. ej. [0, 1]).
+   */
+  _operandAt(rootId, path) {
+    const root = this.objects.get(rootId);
+    if (!root || root.userData.type !== 'boolean' || !path?.length) return null;
+    root.updateMatrixWorld(true);
+    let list = root.userData.operands;
+    const parentWorld = root.matrixWorld.clone();
+    let parent = null;
+    for (let d = 0; d < path.length; d++) {
+      const node = list?.[path[d]];
+      if (!node) return null;
+      if (d === path.length - 1) {
+        return { root, node, list, index: path[d], parent, parentWorld, world: parentWorld.clone().multiply(matrixOf(node)) };
+      }
+      if (node.type !== 'boolean') return null;
+      parentWorld.multiply(matrixOf(node));
+      parent = node;
+      list = node.operands;
+    }
+    return null;
+  }
+
+  /** Matriz «visible» de una pieza: para un plano de corte es el plano, no el centro del semiespacio. */
+  _displayLocal(node) {
+    const m = matrixOf(node);
+    return node.helper ? m.multiply(new THREE.Matrix4().makeTranslation(0, 0, -HALF_SPACE / 2)) : m;
+  }
+
+  /** Inversa de _displayLocal: guarda en la pieza una matriz «visible». */
+  _storeLocal(node, m) {
+    const local = node.helper ? m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, HALF_SPACE / 2)) : m;
+    Object.assign(node, decompose(local));
+  }
+
+  /** Selecciona una pieza de una operación: se resalta en 3D y el gizmo la mueve. */
+  selectOperand(rootId, path) {
+    if (!this._operandAt(rootId, path)) return this.select(rootId);
+    this.subSel = { rootId, path: [...path] };
+    this.setSelection([rootId], { keepSub: true });
+  }
+
+  getSubSelected() {
+    if (!this.subSel) return null;
+    const at = this._operandAt(this.subSel.rootId, this.subSel.path);
+    if (!at) return null;
+    const out = { ...structuredClone(at.node), rootId: this.subSel.rootId, path: [...this.subSel.path], parentOp: at.parent ? at.parent.params?.op : at.root.userData.params.op };
+    if (at.node.helper) Object.assign(out, decompose(this._displayLocal(at.node)));
+    return out;
+  }
+
+  _refreshSub() {
+    if (this._ghost) {
+      this.scene.remove(this._ghost);
+      this._ghost.geometry.dispose();
+      this._ghost.material.dispose();
+      this._ghost = null;
+    }
+    if (!this.subSel) return;
+    const at = this._operandAt(this.subSel.rootId, this.subSel.path);
+    if (!at) { this.subSel = null; return; }
+    let edges;
+    if (at.node.helper) {
+      // plano de corte: un cuadrado sobre la cara del semiespacio
+      at.root.geometry.computeBoundingSphere();
+      const sz = Math.max(1, at.root.geometry.boundingSphere.radius * 2.6);
+      const pg = new THREE.PlaneGeometry(sz, sz);
+      edges = new THREE.EdgesGeometry(pg);
+      pg.dispose();
+    } else {
+      const g = geometryFor(at.node);
+      edges = new THREE.WireframeGeometry(g);
+      g.dispose();
+    }
+    const ghost = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+      color: this.theme === 'light' ? 0x1f6fd1 : 0x5ab0ff, transparent: true, opacity: at.node.helper ? 0.95 : 0.5, depthTest: false,
+    }));
+    const shown = at.parentWorld.clone().multiply(this._displayLocal(at.node));
+    ghost.matrixAutoUpdate = false;
+    ghost.matrix.copy(shown);
+    ghost.matrixWorldNeedsUpdate = true;
+    ghost.renderOrder = 4;
+    ghost.raycast = () => {};
+    this.scene.add(ghost);
+    this._ghost = ghost;
+    if (!this._proxy) { this._proxy = new THREE.Object3D(); this.scene.add(this._proxy); }
+    shown.decompose(this._proxy.position, this._proxy.quaternion, this._proxy.scale);
+    this._proxy.updateMatrixWorld(true);
+  }
+
+  /** El gizmo ha movido la pieza: actualizar sus datos y el resaltado (sin recalcular la operación). */
+  _proxyMoved() {
+    const at = this._operandAt(this.subSel.rootId, this.subSel.path);
+    if (!at) return;
+    this._proxy.updateMatrix();
+    this._storeLocal(at.node, at.parentWorld.clone().invert().multiply(this._proxy.matrix));
+    if (this._ghost) { this._ghost.matrix.copy(this._proxy.matrix); this._ghost.matrixWorldNeedsUpdate = true; }
+    this.dispatchEvent(new CustomEvent('transform', { detail: this.selectedId }));
+  }
+
+  /** Recalcula la malla de una operación tras cambiar alguna de sus piezas. */
+  _rebuildRoot(rootId) {
+    const mesh = this.objects.get(rootId);
+    if (!mesh) return;
+    const ud = mesh.userData;
+    try {
+      const g = geometryFor({ type: 'boolean', params: ud.params, operands: ud.operands });
+      const old = mesh.geometry;
+      mesh.geometry = g;
+      old.dispose();
+    } catch (err) {
+      console.error(err);
+      this.notice(`No se pudo recalcular la operación: ${err.message}`, true);
+    }
+    this._updateSelectionBoxes();
+  }
+
+  /** Cambia una pieza (nombre, transformación, parámetros u operación). `commit=false` solo actualiza el resaltado. */
+  updateOperand(rootId, path, patch, commit = true) {
+    const at = this._operandAt(rootId, path);
+    if (!at) return;
+    const n = at.node;
+    if (patch.name !== undefined) n.name = patch.name;
+    if (patch.position || patch.rotation || patch.scale) {
+      const cur = decompose(this._displayLocal(n));
+      const next = { position: patch.position || cur.position, rotation: patch.rotation || cur.rotation, scale: patch.scale || cur.scale };
+      this._storeLocal(n, matrixOf(next));
+    }
+    if (patch.params) n.params = { ...n.params, ...patch.params };
+    if (commit) {
+      this._rebuildRoot(rootId);
+      this.subSel = { rootId, path: [...path] };
+      this.setSelection([rootId], { keepSub: true });
+      this._commit();
+    } else if (patch.params) {
+      this._refreshSub();
+    } else if (this._ghost) {
+      const w = at.parentWorld.clone().multiply(this._displayLocal(n));
+      this._ghost.matrix.copy(w);
+      this._ghost.matrixWorldNeedsUpdate = true;
+      w.decompose(this._proxy.position, this._proxy.quaternion, this._proxy.scale);
+    }
+  }
+
+  /**
+   * Quita una pieza de su operación. Con `extract` la deja como objeto independiente en su sitio.
+   * Si la operación queda con una sola pieza, la operación desaparece y queda esa pieza.
+   */
+  removeOperand(rootId, path, { extract = false } = {}) {
+    const at = this._operandAt(rootId, path);
+    if (!at) return;
+    const { root, node, list, index, parent } = at;
+    const newIds = [];
+    if (extract && !node.helper) {
+      const data = { ...structuredClone(node), ...decompose(at.world), id: uid(), name: this._uniqueName(node.name || typeLabel(node)) };
+      delete data.helper;
+      if (!data.material) data.material = { ...root.userData.material };
+      this._insert(data);
+      newIds.push(data.id);
+    }
+    list.splice(index, 1);
+    let keepRoot = rootId;
+    if (list.length === 1) {
+      const rest = list[0];
+      if (!parent) {
+        // la operación raíz desaparece: queda la pieza restante (salvo que sea solo un plano de corte)
+        root.updateMatrix();
+        if (!rest.helper) {
+          const data = {
+            ...structuredClone(rest), ...decompose(root.matrix.clone().multiply(matrixOf(rest))),
+            id: uid(), name: this._uniqueName(rest.name || typeLabel(rest)), material: { ...root.userData.material }, visible: true,
+          };
+          delete data.helper;
+          this._insert(data);
+          newIds.unshift(data.id);
+        }
+        this._removeSilently([rootId]);
+        keepRoot = null;
+      } else {
+        // operación anidada: se sustituye por la pieza restante
+        const merged = { ...structuredClone(rest), ...decompose(matrixOf(parent).multiply(matrixOf(rest))) };
+        for (const k of Object.keys(parent)) delete parent[k];
+        Object.assign(parent, merged);
+      }
+    }
+    if (keepRoot) this._rebuildRoot(keepRoot);
+    this.subSel = null;
+    this.setSelection(newIds.length ? newIds : keepRoot ? [keepRoot] : []);
+    this._commit();
+    this.notice(extract ? 'Pieza extraída de la operación' : 'Pieza quitada de la operación');
   }
 
   getSelected() {
@@ -909,9 +1114,11 @@ export class Editor extends EventTarget {
     const sel = [...this.selection];
     this.historyIndex = i;
     const objects = this._unsnapshot(this.history[i]);
+    const sub = this.subSel;
     this.clear();
     for (const d of objects) this._insert(d);
     this.setSelection(sel);
+    if (sub && this._operandAt(sub.rootId, sub.path)) this.selectOperand(sub.rootId, sub.path);
     this._emitHistory();
     this.dispatchEvent(new CustomEvent('objects'));
     this.dispatchEvent(new CustomEvent('change'));

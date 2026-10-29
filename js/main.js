@@ -403,6 +403,8 @@ function initEditor() {
   }
   $('#btn-capture').onclick = () => captureDialog();
   $('#btn-side').onclick = () => toggleSidebar();
+  $('#btn-tree-open').onclick = () => setTreeOpen(true);
+  $('#btn-tree-close').onclick = () => setTreeOpen(false);
   initSidebarResize();
   $('#ops-bar').onclick = e => {
     const b = e.target.closest('button[data-op]');
@@ -798,6 +800,19 @@ function onKey(e) {
 const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/></svg>';
 
+// Árbol de la escena: las operaciones booleanas se despliegan y muestran sus piezas (anidadas).
+const treeOpen = new Set();       // claves «rootId/0/1» de los nodos desplegados
+const treeKey = (rootId, path) => [rootId, ...path].join('/');
+const CARET = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+const ROLE = {
+  union: i => (i === 0 ? ['base', 'Base de la unión'] : ['+', 'Se une']),
+  subtract: i => (i === 0 ? ['base', 'Pieza de la que se resta'] : ['−', 'Se resta (hueco)']),
+  intersect: i => (i === 0 ? ['base', 'Base de la intersección'] : ['∩', 'Se interseca']),
+};
+const roleOf = (op, i, node) => (node?.helper ? ['corte', 'Plano de corte (semiespacio)'] : (ROLE[op] || ROLE.union)(i));
+const nodeName = n => (n.helper ? 'Plano de corte' : n.name || typeLabel(n));
+const samePath = (a, b) => a && b && a.length === b.length && a.every((v, i) => v === b[i]);
+
 function refreshOutliner() {
   if (!editor) return;
   const ul = $('#outliner');
@@ -805,6 +820,45 @@ function refreshOutliner() {
   $('#obj-count').textContent = items.length;
   ul.replaceChildren();
   if (!items.length) ul.append(h('li', { class: 'empty-row' }, 'Escena vacía'));
+  const sub = editor.subSel;
+  // desplegar los antecesores de la pieza seleccionada
+  if (sub) for (let d = 0; d < sub.path.length; d++) treeOpen.add(treeKey(sub.rootId, sub.path.slice(0, d)));
+
+  const caret = (key, has) => {
+    if (!has) return h('span', { class: 'caret empty' });
+    const c = h('button', { class: `caret${treeOpen.has(key) ? ' open' : ''}`, title: treeOpen.has(key) ? 'Plegar' : 'Desplegar', onclick: e => {
+      e.stopPropagation();
+      treeOpen.has(key) ? treeOpen.delete(key) : treeOpen.add(key);
+      refreshOutliner();
+    } });
+    c.innerHTML = CARET;
+    return c;
+  };
+
+  const addChildren = (rootId, node, path, depth) => {
+    const op = node.params?.op;
+    node.operands.forEach((child, i) => {
+      const p = [...path, i];
+      const key = treeKey(rootId, p);
+      const isBool = child.type === 'boolean';
+      const [badge, roleTitle] = roleOf(op, i, child);
+      const selected = sub && sub.rootId === rootId && samePath(sub.path, p);
+      ul.append(h('li', {
+        class: ['tree-child', selected && 'selected', child.helper && 'helper'].filter(Boolean).join(' '),
+        style: `--d:${depth}`,
+        title: `${roleTitle} · clic: seleccionar la pieza (se resalta en 3D y se puede mover) · doble clic: encuadrar`,
+        onclick: () => editor.selectOperand(rootId, p),
+        ondblclick: () => { editor.selectOperand(rootId, p); frameOperand(); },
+      },
+        caret(key, isBool),
+        h('span', { class: `role role-${badge === 'base' ? 'base' : badge === 'corte' ? 'cut' : 'op'}`, title: roleTitle }, badge),
+        h('span', { class: 'name' }, nodeName(child)),
+        isBool ? h('span', { class: 'op-badge' }, BOOLEAN_OPS[child.params.op]?.symbol || '') : null,
+        h('span', { class: 'type' }, child.helper ? 'Corte' : typeLabel(child))));
+      if (isBool && treeOpen.has(key)) addChildren(rootId, child, p, depth + 1);
+    });
+  };
+
   for (const o of items) {
     const vis = h('button', { class: 'vis', title: o.visible ? 'Ocultar' : 'Mostrar', onclick: e => {
       e.stopPropagation();
@@ -813,20 +867,46 @@ function refreshOutliner() {
     vis.innerHTML = o.visible ? EYE : EYE_OFF;
     const sw = h('span', { class: 'swatch' });
     sw.style.background = o.material.color;
-    const selected = editor.selection.includes(o.id);
+    const inSel = editor.selection.includes(o.id);
+    const isBool = o.type === 'boolean';
+    const key = treeKey(o.id, []);
     ul.append(h('li', {
-      class: [selected && 'selected', !o.visible && 'hidden-obj'].filter(Boolean).join(' '),
+      class: [inSel && (sub?.rootId === o.id ? 'contains-selected' : 'selected'), !o.visible && 'hidden-obj', 'tree-root'].filter(Boolean).join(' '),
       title: 'Clic: seleccionar · Mayús/Ctrl+clic: añadir a la selección · doble clic: encuadrar',
       onclick: e => (e.shiftKey || e.ctrlKey || e.metaKey) ? editor.toggleSelect(o.id) : editor.select(o.id),
       ondblclick: () => { editor.select(o.id); editor.frame(); },
-    }, sw, h('span', { class: 'name' }, o.name),
-      o.type === 'boolean' ? h('span', { class: 'op-badge' }, BOOLEAN_OPS[o.params.op]?.symbol || '') : null,
+    }, caret(key, isBool), sw, h('span', { class: 'name' }, o.name),
+      isBool ? h('span', { class: 'op-badge', title: `${o.operands.length} piezas` }, `${BOOLEAN_OPS[o.params.op]?.symbol || ''}${o.operands.length}`) : null,
       h('span', { class: 'type' }, typeLabel(o)), vis));
+    if (isBool && treeOpen.has(key)) addChildren(o.id, o, [], 1);
   }
   const hasSel = editor.selection.length > 0;
   $('#btn-duplicate').disabled = !hasSel;
   $('#btn-delete').disabled = !hasSel;
+  $('#btn-delete').textContent = sub ? 'Quitar pieza' : 'Eliminar';
   ul.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
+}
+
+/** Abre o cierra todos los nodos de operaciones. */
+function setTreeOpen(open) {
+  treeOpen.clear();
+  if (open) {
+    const walk = (rootId, node, path) => {
+      treeOpen.add(treeKey(rootId, path));
+      node.operands?.forEach((c, i) => { if (c.type === 'boolean') walk(rootId, c, [...path, i]); });
+    };
+    for (const o of editor.serialize()) if (o.type === 'boolean') walk(o.id, o, []);
+  }
+  refreshOutliner();
+}
+
+/** Encuadra la pieza seleccionada (su resaltado) en la vista activa. */
+function frameOperand() {
+  const g = editor._ghost;
+  if (!g) return;
+  g.geometry.computeBoundingSphere();
+  const s = g.geometry.boundingSphere.clone().applyMatrix4(g.matrix);
+  editor.active.frameSphere(s);
 }
 
 // --------------------------------------------------------------- statusbar
@@ -897,6 +977,14 @@ function vec3Row(label, key, values, step) {
 }
 
 function applyVec(key, i, v, commit) {
+  if (editor.subSel) {
+    const op = editor.getSubSelected();
+    if (!op) return;
+    const arr = [...op[key]];
+    arr[i] = v;
+    editor.updateOperand(op.rootId, op.path, { [key]: arr }, commit);
+    return;
+  }
   const sel = editor.getSelected();
   if (!sel) return;
   const arr = [...sel[key]];
@@ -905,7 +993,7 @@ function applyVec(key, i, v, commit) {
 }
 
 function syncTransformFields() {
-  const sel = editor.getSelected();
+  const sel = editor.subSel ? editor.getSubSelected() : editor.getSelected();
   if (!sel) return;
   for (const key of ['position', 'rotation', 'scale']) vecFields[key]?.forEach((f, i) => f.set(sel[key][i]));
 }
@@ -922,6 +1010,7 @@ function renderProps() {
   const box = $('#props');
   vecFields = {};
   if (editor.selection.length > 1) return renderMultiProps(box);
+  if (editor.subSel) return renderOperandProps(box);
   const sel = editor.getSelected();
   if (!sel) {
     box.replaceChildren(h('p', { class: 'empty' },
@@ -1034,6 +1123,87 @@ function renderProps() {
       rangeRow('Rugosidad', m.roughness, v => upd({ material: { roughness: v } }, false), v => upd({ material: { roughness: v } }, true)),
       rangeRow('Opacidad', m.opacity, v => upd({ material: { opacity: v } }, false), v => upd({ material: { opacity: v } }, true)),
       row('Facetado', h('label', { class: 'toggle' }, flat, h('span', {}, 'Sombreado plano')))),
+  );
+}
+
+/** Propiedades de una pieza dentro de una operación (edición no destructiva). */
+function renderOperandProps(box) {
+  const op = editor.getSubSelected();
+  if (!op) return;
+  const { rootId, path } = op;
+  const root = editor.getSelected();
+  const upd = (patch, commit) => editor.updateOperand(rootId, path, patch, commit);
+  const def = PRIMITIVES[op.type];
+
+  // ruta: Operación › subop › pieza
+  const crumbs = [h('button', { class: 'crumb', onclick: () => editor.select(rootId) }, root.name)];
+  let node = root;
+  path.forEach((idx, d) => {
+    node = node.operands[idx];
+    const p = path.slice(0, d + 1);
+    crumbs.push(h('span', { class: 'crumb-sep' }, '›'));
+    crumbs.push(d === path.length - 1
+      ? h('span', { class: 'crumb current' }, nodeName(node))
+      : h('button', { class: 'crumb', onclick: () => editor.selectOperand(rootId, p) }, nodeName(node)));
+  });
+  const [, roleTitle] = roleOf(op.parentOp, path[path.length - 1], op);
+
+  const name = h('input', { class: 'text-input', value: op.helper ? 'Plano de corte' : (op.name || ''), spellcheck: 'false', disabled: !!op.helper });
+  name.addEventListener('change', () => upd({ name: name.value.trim() || typeLabel(op) }, true));
+  name.addEventListener('keydown', e => { if (e.key === 'Enter') name.blur(); });
+
+  let geo = [];
+  if (op.helper) {
+    geo = [h('p', { class: 'note' }, 'Es el plano que corta la pieza. Muévelo o gíralo (con el gizmo o con los valores) para cambiar por dónde se parte.')];
+  } else if (op.type === 'boolean') {
+    const opSel = h('select', { class: 'select-input' }, ['union', 'subtract', 'intersect'].map(k => {
+      const o = h('option', { value: k }, `${BOOLEAN_OPS[k].symbol}  ${BOOLEAN_OPS[k].label}`);
+      if (k === op.params.op) o.selected = true;
+      return o;
+    }));
+    opSel.onchange = () => upd({ params: { op: opSel.value } }, true);
+    geo = [row('Operación', opSel), h('p', { class: 'note' }, `Operación anidada con ${op.operands.length} piezas: despliégala en el árbol para editarlas.`)];
+  } else if (op.type === 'mesh') {
+    geo = [h('p', { class: 'note' }, `Malla importada${op.mesh?.source ? ` de «${op.mesh.source}»` : ''}.`)];
+  } else if (def) {
+    geo = def.params.map(p => {
+      if (p.bool) {
+        const chk = h('input', { type: 'checkbox' });
+        chk.checked = !!(op.params[p.key] ?? p.def);
+        chk.onchange = () => upd({ params: { [p.key]: chk.checked ? 1 : 0 } }, true);
+        return row(p.label, h('label', { class: 'toggle' }, chk, h('span', {}, chk.checked ? 'Sí' : 'No')));
+      }
+      return row(p.label, numberField({
+        label: '↔', value: op.params[p.key] ?? p.def, step: p.step, min: p.min, max: p.max, int: p.int,
+        onInput: v => upd({ params: { [p.key]: v } }, false),
+        onCommit: v => upd({ params: { [p.key]: v } }, true),
+      }));
+    });
+    if (def.usesShape) geo.unshift(h('p', { class: 'note' }, 'Para cambiar el perfil, extrae la pieza, edítalo y vuelve a combinarla.'));
+  }
+
+  box.replaceChildren(
+    h('div', { class: 'crumbs' }, crumbs),
+    h('div', { class: 'prop-section' },
+      h('h3', {}, 'Pieza de la operación'),
+      row('Nombre', name),
+      row('Tipo', h('span', {}, op.helper ? 'Plano de corte' : typeLabel(op))),
+      row('Papel', h('span', {}, roleTitle)),
+      h('p', { class: 'note' }, 'Se resalta en azul en el visor. Los cambios recalculan la operación al soltar el gizmo o confirmar el valor.')),
+    h('div', { class: 'prop-section' },
+      h('h3', {}, 'Transformación (dentro de la operación)'),
+      vec3Row('Posición', 'position', op.position, 0.05),
+      vec3Row('Rotación °', 'rotation', op.rotation, 1),
+      vec3Row('Escala', 'scale', op.scale, 0.05)),
+    geo.length ? h('div', { class: 'prop-section' }, h('h3', {}, 'Geometría'), geo) : null,
+    h('div', { class: 'prop-section' },
+      h('h3', {}, 'Acciones'),
+      h('div', { class: 'btn-row' },
+        op.helper ? null : h('button', { class: 'btn sm', title: 'La saca de la operación y la deja como objeto independiente', onclick: () => editor.removeOperand(rootId, path, { extract: true }) }, 'Extraer como objeto'),
+        h('button', { class: 'btn sm danger', title: 'La quita de la operación (Supr)', onclick: () => editor.removeOperand(rootId, path) }, 'Quitar de la operación')),
+      h('div', { class: 'btn-row', style: 'margin-top:4px' },
+        h('button', { class: 'btn sm', onclick: () => frameOperand() }, 'Encuadrar pieza'),
+        h('button', { class: 'btn sm', onclick: () => editor.select(rootId) }, 'Seleccionar la operación'))),
   );
 }
 
