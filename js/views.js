@@ -16,6 +16,7 @@ export const VIEWS = {
   left:   { label: 'Perfil izq.', dir: [-1, 0, 0] },
   top:    { label: 'Planta', dir: [0, 1, 0.0001] },
   bottom: { label: 'Inferior', dir: [0, -1, 0.0001] },
+  iso:    { label: 'Isométrica', dir: [1, 1, 1] },
   persp:  { label: 'Perspectiva', dir: [1, 0.8, 1.2] },
   free:   { label: 'Libre' },
 };

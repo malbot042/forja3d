@@ -88,3 +88,44 @@ export function makePdf({ jpeg, width, height, orientation = 'auto', title = '',
   for (const c of chunks) { out.set(c, o); o += c.length; }
   return out;
 }
+
+/**
+ * PDF vectorial de una página (para imprimir la hoja del plano a escala real).
+ * @param {object} o
+ * @param {number} o.width   ancho de la página en puntos
+ * @param {number} o.height  alto de la página en puntos
+ * @param {string} o.content flujo de contenido PDF (operadores de trazado; /F1 = Helvetica)
+ * @param {string} [o.title]
+ */
+export function makeVectorPdf({ width, height, content, title = '' }) {
+  const chunks = [];
+  const offsets = [];
+  let pos = 0;
+  const push = b => { chunks.push(b); pos += b.length; };
+  const obj = (n, body, stream) => {
+    offsets[n] = pos;
+    push(enc(`${n} 0 obj\n${body}\n`));
+    if (stream) { push(enc('stream\n')); push(stream); push(enc('\nendstream\n')); }
+    push(enc('endobj\n'));
+  };
+  push(enc('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'));
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width.toFixed(2)} ${height.toFixed(2)}] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>`);
+  const cbytes = enc(content);
+  obj(4, `<< /Length ${cbytes.length} >>`, cbytes);
+  obj(5, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  offsets[6] = pos;
+  push(enc(`6 0 obj\n<< /Title (${pdfText(title)}) /Producer (Forja 3D) >>\nendobj\n`));
+  const xref = pos;
+  let x = 'xref\n0 7\n0000000000 65535 f \n';
+  for (let i = 1; i <= 6; i++) x += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  x += `trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  push(enc(x));
+  const out = new Uint8Array(pos);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
+
+export { pdfText };

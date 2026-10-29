@@ -137,9 +137,12 @@
         <button class="v3d" data-cam="top" title="Planta / vista superior (7 · Mayús+7 inferior)">Planta</button>
         <button class="v3d" data-cam="back" title="Vista posterior (Mayús+1)">Post.</button>
         <button class="v3d" data-cam="bottom" title="Vista inferior (Mayús+7)">Inf.</button>
+        <button class="v3d" data-cam="iso" title="Isométrica: ortográfica con los tres ejes a 120° (9)">Iso</button>
         <button class="v3d" data-cam="persp" title="Perspectiva (0)">Persp</button>
         <span class="ops-sep v3d"></span>
         <button class="v3d" id="btn-proj" title="Alternar ortográfica / perspectiva (5)">Orto</button>
+        <button class="v2d" data-cadt="iso" title="Dibujo isométrico: rejilla a 30°, 90° y 150°, con forzado a sus nodos y orto por esos ejes">Isométrica</button>
+        <button id="btn-pan" title="Mano (pan): arrastra con el botón izquierdo para desplazarte libremente por la vista (H en 3D · P o PAN en 2D · Esc para salir en 2D)"><svg viewBox="0 0 24 24" class="pan-ico"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5v-8a1.5 1.5 0 0 1 3 0V12M14 11.5V5a1.5 1.5 0 0 1 3 0v7M17 8.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-2a6 6 0 0 1-4.6-2.2L4 14.5a1.6 1.6 0 0 1 2.3-2.2L8 14"/></svg>Mano</button>
         <button data-cam="focus" title="Encuadrar (F en 3D · Z + Intro o doble clic central en 2D)">Encuadrar</button>
       </div>
       <div class="hint" id="hint">Añade una primitiva desde la barra izquierda · clic para seleccionar (Mayús+clic: varios) · W/E/R mover/rotar/escalar</div>
@@ -190,6 +193,7 @@
           <button data-cadt="ortho" title="Orto: solo horizontal y vertical (F8)">Orto</button>
           <button data-cadt="gridSnap" title="Forzar el cursor a la rejilla (F9)">Forzar</button>
           <button data-cadt="grid" title="Mostrar la rejilla (F7)">Rejilla</button>
+          <button data-cadt="iso" title="Rejilla isométrica (ejes a 30°, 90° y 150°) para dibujar en perspectiva isométrica">Iso</button>
           <button data-cadt="pencil" title="Modo lápiz: lo que dibujes tendrá trazo a mano alzada, con la geometría exacta">✎ Lápiz</button>
         </span>
         <span class="cmd-coords" id="cmd-coords"></span>

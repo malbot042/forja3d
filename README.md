@@ -21,6 +21,10 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Modo escultor** con dos métodos a elegir: **Volumen (tallar)** — el objeto se convierte en un bloque de material y se pica con Cincel, Gubia, Arcilla, Lima y Aplanar (permite agujeros y túneles) — y **Malla (deformar)** — Dibujar, Inflar, Suavizar, Aplanar, Pellizcar y Arrastrar sobre una malla subdividida. Tamaño, fuerza, simetría X/Y/Z, presión del lápiz y deshacer por trazo.
 - **Editor 2D de planos** al estilo AutoCAD: línea de órdenes con alias (`L`, `PL`, `REC`, `C`, `A`, `T`, `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`…), coordenadas absolutas, relativas (`@dx,dy`), polares (`d<ángulo`) y distancia directa; referencias a objetos (final, medio, centro, cuadrante, intersección), Orto, forzar a rejilla, pinzamientos, selección por ventana/captura, rótulos junto al cursor que explican cada acción, copiar/pegar/duplicar y desplazamiento con flechas.
   - **Cotas** lineales, alineadas, de radio, diámetro y ángulo, y herramienta **Medir** (distancia, ΔX, ΔY, ángulo); longitudes, perímetros y áreas en Propiedades.
+  - **Hoja** A5, A4, A3, A2, A1 o A0, horizontal o vertical, a escala (10:1 … 1:1000), con recuadro y cajetín; **PDF vectorial a escala real** para imprimir.
+  - **Rejilla isométrica** (ejes a 30°, 90° y 150°) con forzado a sus nodos y orto isométrico; **Mano** (pan) para moverse por la hoja.
+  - **Hoja** A5, A4, A3, A2, A1 o A0, horizontal o vertical, a escala (10:1 … 1:1000), con recuadro y cajetín; **PDF vectorial a escala real** para imprimir.
+  - **Modo isométrico** en el plano: rejilla a 30°/90°/150°, forzado a sus nodos y orto isométrico. **Mano** (pan) para moverse libremente por la hoja.
   - **Tipos de línea** continua, trazos, oculta, eje, puntos y **lápiz** (trazo a mano alzada con la geometría exacta, sobre la rejilla), por capa o por objeto; botón *✎ Lápiz* para dibujar en ese estilo.
   - **Capas** con color, tipo de línea y grosor; unidades (mm, cm, m, pulgadas…) y estilo de cota configurables.
   - **Espacio de trabajo 2D independiente del 3D**: el selector 3D | 2D cambia toda la pantalla; cada espacio tiene sus herramientas, su deshacer/rehacer y su propia pantalla dividida (en 2D, 1-4 paneles del plano con zoom independiente). Ambos se guardan con el proyecto.
@@ -29,7 +33,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Pantalla dividida** en 1, 2, 3 o 4 vistas, cada una con su propia cámara, navegador de ejes y vista (perspectiva, alzado, planta, perfil…); se guarda con el proyecto.
 - **Panel lateral** redimensionable (arrastrando su borde) y ocultable (botón o tecla `N`).
 - **Capturar** lo que se ve en pantalla (todas las vistas) como **PNG** (también con fondo transparente), **JPG**, **PDF** A4 o **imprimir**, con o sin rejilla, a 1×, 2× o 4× de resolución.
-- **Vistas rápidas** con cámara ortográfica: alzado (frontal), perfil derecho e izquierdo (laterales), planta (superior), posterior, inferior y perspectiva; navegador de ejes clicable en la esquina del visor.
+- **Vistas rápidas** con cámara ortográfica: alzado (frontal), perfil derecho e izquierdo (laterales), planta (superior), posterior, inferior, **isométrica** y perspectiva; navegador de ejes clicable en la esquina del visor; herramienta **Mano** (pan) para desplazarse con el botón izquierdo.
 - **Transformaciones** con gizmo (mover / rotar / escalar) o con valores numéricos exactos. Arrastra la etiqueta X/Y/Z de un campo para cambiar el valor deslizando (Mayús = ajuste fino).
 - **Modos de vista**: Sólido y Wire (alámbrico).
 - **Materiales**: color con paleta rápida, metalizado, rugosidad, opacidad y sombreado plano.
@@ -70,6 +74,10 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `N` | Mostrar u ocultar el panel lateral |
 | `Ctrl+P` | Capturar imagen, PDF o imprimir |
 | `[` `]` / `Mayús+[` `]` | (Modo escultor) tamaño / fuerza del pincel |
+| `9` | Vista isométrica |
+| `H` | Mano: desplazar la vista con el botón izquierdo (en 2D, orden `P`) |
+| `9` | Vista isométrica |
+| `H` | Mano: desplazar la vista con el botón izquierdo (en 2D, orden `P`) |
 | `Esc` | Quitar selección |
 | `F3` / `F7` / `F8` / `F9` | (Editor 2D) Referencias / Rejilla / Orto / Forzar a rejilla |
 

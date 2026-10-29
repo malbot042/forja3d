@@ -714,3 +714,7 @@ kbd {
 .vp-layout[hidden] { display: none !important; }
 #viewport.ws-2d .gl-canvas { visibility: hidden; }
 .cad-layout.multi .vp.active::after { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--accent); pointer-events: none; z-index: 2; }
+.view-bar .pan-ico { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; margin-right: 3px; }
+#viewport.hand .vp, #viewport.hand .vp > .cad-canvas { cursor: grab; }
+#viewport.hand.panning .vp, #viewport.hand.panning .vp > .cad-canvas { cursor: grabbing; }
+#editor-screen:not(.mode-2d) .v2d { display: none !important; }

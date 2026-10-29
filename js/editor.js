@@ -187,11 +187,23 @@ export class Editor extends EventTarget {
         if (v._isNew && (defaults[i] !== 'persp' || i > 0)) v.setView(defaults[i]);
       }
       v._isNew = false;
+      v.orbit.mouseButtons.LEFT = this.hand ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
     });
     if (!this.views.includes(this.active)) this.setActiveView(this.views[0]);
     this._syncGizmo();
     this._resize();
     this.dispatchEvent(new CustomEvent('layout', { detail: this.layout }));
+  }
+
+  /** Herramienta mano: el botón izquierdo desplaza la vista (3D y 2D) en lugar de girar o seleccionar. */
+  setHand(on) {
+    this.hand = !!on;
+    this.cad.hand = this.hand;
+    this.container.classList.toggle('hand', this.hand);
+    for (const v of this.views) v.orbit.mouseButtons.LEFT = this.hand ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    this.gizmo.enabled = !this.hand;
+    this.cad.redraw();
+    this.dispatchEvent(new CustomEvent('hand', { detail: this.hand }));
   }
 
   setActiveView(view) {
@@ -339,7 +351,7 @@ export class Editor extends EventTarget {
 
   // ---------------------------------------------------------------- picking
   _pick(view, e) {
-    if (this.sculpt) return;
+    if (this.sculpt || this.hand) return;
     if (this.gizmo.dragging || this.gizmo.axis) return;
     const r = view.el.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);

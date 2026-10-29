@@ -7,6 +7,7 @@
 // · Capas con color y tipo de línea, deshacer/rehacer, DXF (exportar/importar) y SVG.
 // Cada panel 2D es una CadView con su propio encuadre que dibuja el mismo plano (Cad).
 import { cssVar } from './theme.js';
+import { makeVectorPdf, pdfText } from './pdf.js';
 
 const TAU = Math.PI * 2;
 const DEG = 180 / Math.PI;
@@ -66,6 +67,48 @@ export const LINETYPES = {
   dotted: { label: 'Puntos', dash: [0.1, 4], dxf: 'DOT' },
   pencil: { label: 'Lápiz (a mano alzada)', dash: [], dxf: 'CONTINUOUS', sketch: true },
 };
+
+// ------------------------------------------------------------------ hoja (papel)
+/** Formatos UNE-EN ISO 216, en mm (vertical). */
+export const PAPERS = { A5: [148, 210], A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
+export const PAPER_SCALES = ['10:1', '5:1', '2:1', '1:1', '1:2', '1:5', '1:10', '1:20', '1:50', '1:100', '1:200', '1:500', '1:1000'];
+const PAPER_MARGIN = 10;   // mm del recuadro al borde
+
+/**
+ * La hoja en coordenadas del plano, o null si no hay hoja.
+ * k = unidades del dibujo por mm de papel (con la escala: a 1:2, 1 mm de papel son 2 mm reales).
+ */
+export function sheetOf(D) {
+  const P = D.paper;
+  if (!P?.size || !PAPERS[P.size]) return null;
+  let [w, h] = PAPERS[P.size];
+  if (P.landscape !== false) [w, h] = [h, w];
+  const [a, b] = String(P.scale || '1:1').split(':').map(Number);
+  const k = (b / a) / (UNITS[D.units]?.mm || 1);
+  const x0 = P.ox ?? -PAPER_MARGIN * k, y0 = P.oy ?? -PAPER_MARGIN * k;
+  return { x0, y0, x1: x0 + w * k, y1: y0 + h * k, w, h, k, size: P.size, landscape: P.landscape !== false, scale: P.scale || '1:1' };
+}
+
+/** Recuadro y cajetín de la hoja como objetos del plano (sin id: no se seleccionan ni se exportan a DXF). */
+export function sheetDecor(D, title = '') {
+  const S = sheetOf(D);
+  if (!S || D.paper.frame === false) return [];
+  const { k } = S;
+  const at = (mx, my) => [S.x0 + mx * k, S.y0 + my * k];
+  const m = PAPER_MARGIN, W = S.w, H = S.h;
+  const out = [{ type: 'pline', closed: true, pts: [at(m, m), at(W - m, m), at(W - m, H - m), at(m, H - m)], lw: 'thick' }];
+  // cajetín 120 × 21 mm abajo a la derecha
+  const bw = Math.min(120, W - 2 * m), bh = 21, bx = W - m - bw, by = m;
+  out.push({ type: 'pline', closed: true, pts: [at(bx, by), at(bx + bw, by), at(bx + bw, by + bh), at(bx, by + bh)], lw: 'thick' });
+  out.push({ type: 'line', a: at(bx, by + 7), b: at(bx + bw, by + 7) }, { type: 'line', a: at(bx, by + 14), b: at(bx + bw, by + 14) },
+    { type: 'line', a: at(bx + bw / 2, by), b: at(bx + bw / 2, by + 14) });
+  const d = new Date();
+  const txt = (mx, my, text, hmm) => ({ type: 'text', p: at(mx, my), text, h: hmm * k });
+  out.push(txt(bx + 2.5, by + 16, title || 'Sin título', 3.2),
+    txt(bx + 2.5, by + 9, `Escala ${S.scale}`, 2.5), txt(bx + bw / 2 + 2.5, by + 9, `Formato ${S.size} ${S.landscape ? 'horizontal' : 'vertical'}`, 2.5),
+    txt(bx + 2.5, by + 2, `Fecha ${d.toLocaleDateString('es-ES')}`, 2.5), txt(bx + bw / 2 + 2.5, by + 2, `Unidades: ${D.units === 'u' ? '—' : D.units}`, 2.5));
+  return out;
+}
 
 /** Tipo de línea efectivo: el del objeto si lo tiene, si no el de su capa. */
 export const ltOf = (e, L) => (e.lt && LINETYPES[e.lt] ? e.lt : L?.lt) || 'continuous';
@@ -1067,6 +1110,99 @@ export function toSVG(D, entities = D.entities) {
   return out.join('\n');
 }
 
+// =================================================================== PDF de la hoja
+let _measureCtx = null;
+/** Ancho de un texto en Helvetica, en las mismas unidades que `size`. */
+function helvWidth(str, size) {
+  _measureCtx ||= document.createElement('canvas').getContext('2d');
+  _measureCtx.font = '100px Helvetica, Arial, sans-serif';
+  return _measureCtx.measureText(str).width / 100 * size;
+}
+
+const hexRGB = hex => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return [0, 0, 0];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+};
+
+/**
+ * La hoja en PDF vectorial a escala real: imprimiéndolo al 100 % las medidas en papel
+ * son las del dibujo multiplicadas por la escala de la hoja.
+ */
+export function toPDF(D, { title = '' } = {}) {
+  const S = sheetOf(D);
+  if (!S) throw new Error('el plano no tiene hoja');
+  const PT = 72 / 25.4;                                   // puntos por mm
+  const f = v => (Math.round(v * 100) / 100).toString();
+  const X = x => (x - S.x0) / S.k * PT, Y = y => (y - S.y0) / S.k * PT;
+  const out = ['1 J 1 j'];
+  const stroke = (col, wmm, dashMM) => {
+    const [r, g, b] = hexRGB(col);
+    out.push(`${f(r)} ${f(g)} ${f(b)} RG ${f(r)} ${f(g)} ${f(b)} rg ${f(wmm * PT)} w [${dashMM.map(v => f(v * PT)).join(' ')}] 0 d`);
+  };
+  const poly = (pts, closed) => {
+    if (pts.length < 2) return;
+    out.push(pts.map((p, i) => `${f(X(p[0]))} ${f(Y(p[1]))} ${i ? 'l' : 'm'}`).join(' ') + (closed ? ' h S' : ' S'));
+  };
+  const curve = (c, r, a0, sw) => {
+    const n = Math.max(16, Math.ceil(Math.abs(sw) / (2 * Math.PI / 180)));
+    return Array.from({ length: n + 1 }, (_, i) => polar(c, r, a0 + sw * i / n));
+  };
+  const text = (p, str, h, rot, center, col) => {
+    const size = h * FS / S.k * PT;
+    if (size < 0.5) return;
+    const [r, g, b] = hexRGB(col);
+    const c = Math.cos(rot || 0), sn = Math.sin(rot || 0);
+    let x = X(p[0]), y = Y(p[1]);
+    if (center) { const w = helvWidth(str, size) / 2; x -= c * w; y -= sn * w; }
+    out.push(`${f(r)} ${f(g)} ${f(b)} rg BT /F1 ${f(size)} Tf ${f(c)} ${f(sn)} ${f(-sn)} ${f(c)} ${f(x)} ${f(y)} Tm (${pdfText(str)}) Tj ET`);
+  };
+  const entity = (e, col, wmm, LT) => {
+    if (LT?.sketch && ['line', 'pline', 'circle', 'arc'].includes(e.type)) {
+      const seed = hashStr(e.id || e.type);
+      const base = sketchBase(e, seed, 1.2 * S.k).map(s0 => ({ ...s0, pts: s0.pts.map(q => [(q[0] - S.x0) / S.k, (q[1] - S.y0) / S.k]) }));
+      for (const s0 of sketchStrokes(base, seed, { amp: 0.2, step: 1.2, over: 1, bowMax: 0.7 })) {
+        // segunda pasada más clara (PDF 1.4 sin transparencias: se mezcla con el blanco del papel)
+        const lite = s0.pass ? '#' + hexRGB(col).map(v => Math.round((v * 0.45 + 0.55) * 255).toString(16).padStart(2, '0')).join('') : col;
+        stroke(lite, wmm * (s0.pass ? 0.75 : 1.05), []);
+        out.push(s0.pts.map((q, i) => `${f(q[0] * PT)} ${f(q[1] * PT)} ${i ? 'l' : 'm'}`).join(' ') + ' S');
+      }
+      return;
+    }
+    stroke(col, wmm, (LT?.dash || []).map(v => v * 0.5));
+    switch (e.type) {
+      case 'line': poly([e.a, e.b]); break;
+      case 'pline': poly(e.pts, e.closed); break;
+      case 'circle': poly(curve(e.c, e.r, 0, TAU), true); break;
+      case 'arc': poly(curve(e.c, e.r, e.a0, sweepOf(e.a0, e.a1))); break;
+      case 'text': text(e.p, e.text, e.h, e.rot || 0, false, col); break;
+      case 'dim': {
+        const g = dimGeom(e, D);
+        stroke(col, 0.18, []);
+        for (const [a, b] of g.lines) poly([a, b]);
+        for (const a of g.arcs) poly(curve(a.c, a.r, a.a0, sweepOf(a.a0, a.a1)));
+        for (const ar of g.arrows) {
+          const base = sub(ar.tip, mul(ar.dir, D.arrow)), n = mul(perp(ar.dir), D.arrow / 6);
+          const t = [ar.tip, add(base, n), sub(base, n)];
+          out.push(t.map((q, i) => `${f(X(q[0]))} ${f(Y(q[1]))} ${i ? 'l' : 'm'}`).join(' ') + ' h f');
+        }
+        if (g.text) text(g.text.p, g.text.str, g.text.h, g.text.rot, true, col);
+        break;
+      }
+    }
+  };
+  const layers = new Map(D.layers.map(l => [l.name, l]));
+  for (const e of sheetDecor(D, title)) entity(e, '#000000', e.lw === 'thick' ? 0.5 : 0.25, LINETYPES.continuous);
+  for (const e of D.entities) {
+    const L = layers.get(e.layer) || {};
+    if (L.visible === false) continue;
+    const col = !L.color || L.color === 'auto' ? '#000000' : L.color;
+    entity(e, col, L.lw === 'thick' ? 0.5 : 0.25, LINETYPES[ltOf(e, L)]);
+  }
+  return makeVectorPdf({ width: S.w * PT, height: S.h * PT, content: out.join('\n'), title });
+}
+
 // =================================================================== órdenes y herramientas
 export const CAD_TOOLS = {
   select: { label: 'Seleccionar', alias: [], icon: '<path d="M6 3l12 9-5.5 1.3L15 19l-2.5 1-2.6-5.7L6 18z"/>' },
@@ -1101,6 +1237,21 @@ export const CAD_OPS = {
 
 const SNAP_LABEL = { end: 'Punto final', mid: 'Punto medio', cen: 'Centro', quad: 'Cuadrante', int: 'Intersección', near: 'Cercano', ins: 'Inserción' };
 export const OSNAP_LABELS = { end: 'Punto final', mid: 'Punto medio', cen: 'Centro', quad: 'Cuadrante', int: 'Intersección', ins: 'Inserción de texto', near: 'Cercano' };
+
+const COS30 = Math.cos(Math.PI / 6);
+const ISO_AXES = [30, 90, 150, 210, 270, 330].map(a => a * Math.PI / 180);
+/** Punto de la red isométrica más cercano (nodos i·e1 + j·e2, con e1 a 30° y e2 a 150°). */
+function isoSnap(p, st) {
+  const w = st * COS30;
+  const a = p[0] / w, b = 2 * p[1] / st;          // a = i − j, b = i + j
+  const fi = (a + b) / 2, fj = (b - a) / 2;
+  let best = null, bd = Infinity;
+  for (const i of [Math.floor(fi), Math.ceil(fi)]) for (const j of [Math.floor(fj), Math.ceil(fj)]) {
+    const q = [(i - j) * w, (i + j) * st / 2], d = dist(q, p);
+    if (d < bd) { bd = d; best = q; }
+  }
+  return best.map(rnd);
+}
 
 const DRAW_TOOLS = new Set(['line', 'pline', 'rect', 'circle', 'arc']);
 
@@ -1833,6 +1984,7 @@ export class Cad extends EventTarget {
       if (name) { if (CAD_OPS[name]) this.runOp(name); else this.setTool(name); return; }
       if (['z', 'zoom', 'encuadrar', 'ze'].includes(low)) { this.zoomExtents(); return; }
       if (['u', 'deshacer', 'undo'].includes(low)) { this.undo(); return; }
+      if (['p', 'pan', 'mano', 'encuadre'].includes(low)) { this.emit('handrequest'); return; }
       this.message(`Orden desconocida: «${s}». Prueba L (línea), C (círculo), REC (rectángulo), DLI (cota), M (desplazar)…`);
       return;
     }
@@ -1877,6 +2029,7 @@ export class Cad extends EventTarget {
     const typing = document.activeElement === inp;
     if (k === 'Escape') {
       e.preventDefault();
+      if (this.hand && !inp.value) { this.emit('handrequest', false); inp.blur(); return true; }
       if (inp.value) inp.value = '';
       else if (this.T) this.cancel();
       else if (this.sel.size) this.setSel([]);
@@ -1941,6 +2094,18 @@ export class Cad extends EventTarget {
 
   toggle(key) {
     if (key === 'grid') { this.drawing.grid = !this.drawing.grid; this.commit(); this.message(`Rejilla ${this.drawing.grid ? 'visible' : 'oculta'}`); }
+    else if (key === 'iso') {
+      this.drawing.isoGrid = !this.drawing.isoGrid;
+      if (this.drawing.isoGrid) {
+        // como el modo isométrico de los programas de CAD: rejilla visible, forzado a sus nodos y orto por sus ejes
+        this.drawing.grid = true;
+        this.gridSnap = true;
+        this.ortho = true;
+        this.savePrefs();
+      }
+      this.commit();
+      this.message(this.drawing.isoGrid ? 'Modo isométrico: rejilla a 30°, 90° y 150°, el cursor salta a sus nodos (Forzar) y las líneas van por esos ejes (Orto, F8 para trazar libre).' : 'Modo isométrico desactivado: rejilla normal');
+    }
     else if (key === 'pencil') {
       this.drawing.curLt = this.drawing.curLt === 'pencil' ? null : 'pencil';
       this.commit();
@@ -1985,11 +2150,22 @@ export class Cad extends EventTarget {
     }
     if (best) return best;
     let p = raw;
-    if (this.gridSnap) { const st = view.gridStep(); p = [Math.round(p[0] / st) * st, Math.round(p[1] / st) * st].map(rnd); }
+    const iso = !!this.drawing.isoGrid;
+    if (this.gridSnap) {
+      const st = view.gridStep();
+      p = iso ? isoSnap(p, st) : [Math.round(p[0] / st) * st, Math.round(p[1] / st) * st].map(rnd);
+    }
     const last = this.T?.last?.();
     if (this.ortho && last) {
       const d = sub(p, last);
-      p = Math.abs(d[0]) >= Math.abs(d[1]) ? [p[0], last[1]] : [last[0], p[1]];
+      if (iso) {
+        // Orto isométrico: solo en las direcciones de los ejes (30°, 90°, 150° y opuestas)
+        let best = null, bd = -Infinity;
+        for (const a of ISO_AXES) { const u = [Math.cos(a), Math.sin(a)], k = dot(d, u); if (k > bd) { bd = k; best = u; } }
+        // con «Forzar», la longitud también va de nodo en nodo (los nodos están a un paso sobre cada eje)
+        if (this.gridSnap) { const st = view.gridStep(); bd = Math.round(bd / st) * st; }
+        p = add(last, mul(best, bd)).map(rnd);
+      } else p = Math.abs(d[0]) >= Math.abs(d[1]) ? [p[0], last[1]] : [last[0], p[1]];
     }
     return { p, k: null };
   }
@@ -2247,6 +2423,33 @@ export class Cad extends EventTarget {
     return Number.isFinite(bb[0]) ? bb : null;
   }
 
+  /** Lo que muestra «Encuadrar»: el dibujo y, si la hay, la hoja entera. */
+  fitBox() {
+    const bb = this.extents(), S = sheetOf(this.drawing);
+    if (!S) return bb;
+    if (!bb) return [S.x0, S.y0, S.x1, S.y1];
+    return [Math.min(bb[0], S.x0), Math.min(bb[1], S.y0), Math.max(bb[2], S.x1), Math.max(bb[3], S.y1)];
+  }
+
+  /** Cambia la hoja (tamaño, orientación, escala, recuadro). `null` la quita. */
+  setPaper(patch) {
+    const D = this.drawing;
+    if (patch === null) delete D.paper;
+    else D.paper = { landscape: true, scale: '1:1', frame: true, ...(D.paper || {}), ...patch };
+    this.commit();
+    this.zoomExtents();
+  }
+
+  /** Coloca la hoja centrada sobre lo dibujado. */
+  centerPaper() {
+    const S = sheetOf(this.drawing), bb = this.extents();
+    if (!S || !bb) return;
+    this.drawing.paper.ox = rnd((bb[0] + bb[2]) / 2 - (S.x1 - S.x0) / 2);
+    this.drawing.paper.oy = rnd((bb[1] + bb[3]) / 2 - (S.y1 - S.y0) / 2);
+    this.commit();
+    this.zoomExtents();
+  }
+
   zoomExtents(view) {
     for (const v of view ? [view] : this.views) if (v.visible) v.fit();
     this.redraw();
@@ -2265,11 +2468,11 @@ export class Cad extends EventTarget {
     const light = document.documentElement.dataset.theme === 'light';
     return white ? {
       bg: '#ffffff', fg: '#111111', grid: '#f0f0f0', major: '#dedede', sel: '#1f6fd1', accent: '#c8740c', axisX: 'rgba(229,97,79,.45)', axisY: 'rgba(63,160,80,.45)',
-      hover: '#1f6fd1', muted: '#666666',
+      hover: '#1f6fd1', muted: '#666666', desk: '#ffffff',
     } : {
       bg: cssVar('--cv-bg') || '#0f1114', fg: cssVar('--text') || '#e6e8eb', grid: cssVar('--cv-grid') || '#1a1d22', major: cssVar('--cv-grid-major') || '#2a2f36',
       sel: light ? '#1f6fd1' : '#5ab0ff', accent: cssVar('--accent') || '#f2a541', axisX: 'rgba(229,97,79,.4)', axisY: 'rgba(111,191,115,.4)',
-      hover: light ? '#3d8bf0' : '#8cc8ff', muted: cssVar('--muted') || '#9aa0a8',
+      hover: light ? '#3d8bf0' : '#8cc8ff', muted: cssVar('--muted') || '#9aa0a8', desk: light ? '#cfccc5' : '#08090b',
     };
   }
 
@@ -2283,7 +2486,37 @@ export class Cad extends EventTarget {
     const C = this._colors(white);
     if (opts.background === 'transparent') ctx.clearRect(0, 0, W, H);
     else { ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H); }
-    if (D.grid && opts.grid !== false) this._grid(view, ctx, W, H, C);
+    const sheet = sheetOf(D);
+    let sr = null;
+    if (sheet) {
+      // la mesa alrededor y la hoja encima, con su sombra
+      const a = view.toScreen([sheet.x0, sheet.y1]), b = view.toScreen([sheet.x1, sheet.y0]);
+      sr = [a[0], a[1], b[0] - a[0], b[1] - a[1]];
+      if (opts.background !== 'transparent') {
+        ctx.fillStyle = C.desk; ctx.fillRect(0, 0, W, H);
+        if (!white) { ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(sr[0] + 4, sr[1] + 5, sr[2], sr[3]); }
+        ctx.fillStyle = C.bg; ctx.fillRect(...sr);
+      }
+    }
+    if (D.grid && opts.grid !== false) {
+      ctx.save();
+      if (sr) { ctx.beginPath(); ctx.rect(...sr); ctx.clip(); }
+      this._grid(view, ctx, W, H, C);
+      ctx.restore();
+    }
+    if (sheet) {
+      ctx.strokeStyle = C.major; ctx.lineWidth = 1; ctx.setLineDash([]);
+      ctx.strokeRect(Math.round(sr[0]) + 0.5, Math.round(sr[1]) + 0.5, Math.round(sr[2]), Math.round(sr[3]));
+      for (const e of sheetDecor(D, this.title)) {
+        ctx.globalAlpha = 0.8;
+        drawEnt(ctx, view, e, D, { color: C.fg, dash: [], lw: e.lw === 'thick' ? 1.6 : 0.8 });
+        ctx.globalAlpha = 1;
+      }
+      if (!opts.print && sr[1] > 22) {
+        ctx.font = `11px ${FONT}`; ctx.fillStyle = C.muted; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(`Hoja ${sheet.size} ${sheet.landscape ? 'horizontal' : 'vertical'} · ${sheet.w} × ${sheet.h} mm · escala ${sheet.scale}`, sr[0], sr[1] - 8);
+      }
+    }
     const layers = new Map(D.layers.map(l => [l.name, l]));
     const interactive = !opts.print;
     for (const e of D.entities) {
@@ -2347,7 +2580,7 @@ export class Cad extends EventTarget {
       }
     }
     // cursor
-    if (view === this.activeView && view.screenCursor) {
+    if (view === this.activeView && view.screenCursor && !this.hand) {
       const [sx, sy] = view.screenCursor;
       ctx.strokeStyle = C.fg; ctx.globalAlpha = 0.45; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, Math.round(sy) + 0.5); ctx.lineTo(W, Math.round(sy) + 0.5); ctx.moveTo(Math.round(sx) + 0.5, 0); ctx.lineTo(Math.round(sx) + 0.5, H); ctx.stroke();
@@ -2375,6 +2608,7 @@ export class Cad extends EventTarget {
   }
 
   _grid(v, ctx, W, H, C) {
+    if (this.drawing.isoGrid) { this._isoGrid(v, ctx, W, H, C); return; }
     const st = v.gridStep();
     const [x0, y1] = v.toWorld(0, 0), [x1, y0] = v.toWorld(W, H);
     if ((x1 - x0) / st > 700 || (y1 - y0) / st > 700) return;
@@ -2396,6 +2630,32 @@ export class Cad extends EventTarget {
     }
     const o = v.toScreen([0, 0]);
     ctx.strokeStyle = C.axisX; ctx.beginPath(); ctx.moveTo(0, Math.round(o[1]) + 0.5); ctx.lineTo(W, Math.round(o[1]) + 0.5); ctx.stroke();
+    ctx.strokeStyle = C.axisY; ctx.beginPath(); ctx.moveTo(Math.round(o[0]) + 0.5, 0); ctx.lineTo(Math.round(o[0]) + 0.5, H); ctx.stroke();
+  }
+
+  /** Rejilla isométrica: líneas verticales y a ±30° (los tres ejes de la perspectiva isométrica). */
+  _isoGrid(v, ctx, W, H, C) {
+    const st = v.gridStep(), w = st * COS30, t = Math.tan(Math.PI / 6);
+    const [x0, y1] = v.toWorld(0, 0), [x1, y0] = v.toWorld(W, H);
+    if ((x1 - x0) / w > 500 || (y1 - y0) / st > 500) return;
+    ctx.lineWidth = 1; ctx.setLineDash([]);
+    const seg = (a, b) => { const p = v.toScreen(a), q = v.toScreen(b); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); };
+    for (const major of [false, true]) {
+      ctx.strokeStyle = major ? C.major : C.grid;
+      ctx.beginPath();
+      for (let i = Math.ceil(x0 / w); i <= Math.floor(x1 / w); i++) if ((i % 5 === 0) === major) seg([i * w, y0], [i * w, y1]);
+      // y = ±t·x + c, con c múltiplo del paso
+      for (const sgn of [1, -1]) {
+        const cs = [y0 - sgn * t * x0, y0 - sgn * t * x1, y1 - sgn * t * x0, y1 - sgn * t * x1];
+        for (let j = Math.ceil(Math.min(...cs) / st); j <= Math.floor(Math.max(...cs) / st); j++) {
+          if ((j % 5 === 0) !== major) continue;
+          const c = j * st;
+          seg([x0, sgn * t * x0 + c], [x1, sgn * t * x1 + c]);
+        }
+      }
+      ctx.stroke();
+    }
+    const o = v.toScreen([0, 0]);
     ctx.strokeStyle = C.axisY; ctx.beginPath(); ctx.moveTo(Math.round(o[0]) + 0.5, 0); ctx.lineTo(Math.round(o[0]) + 0.5, H); ctx.stroke();
   }
 
@@ -2530,8 +2790,9 @@ export class CadView {
       if (!this.visible) return;
       const [sx, sy] = local(e);
       c.setPointerCapture?.(e.pointerId);
-      if (e.button === 1 || e.button === 2) {
+      if (e.button === 1 || e.button === 2 || (e.button === 0 && cad.hand)) {
         e.preventDefault();
+        host.el.closest('#viewport')?.classList.add('panning');
         if (e.button === 1 && performance.now() - this._lastMiddle < 350) { this.fit(); cad.redraw(); }
         if (e.button === 1) this._lastMiddle = performance.now();
         this.pan = { sx, sy, cx: this.cx, cy: this.cy, button: e.button, moved: false };
@@ -2550,6 +2811,7 @@ export class CadView {
         cad.redraw();
         return;
       }
+      if (cad.hand) { cad.emit('cursor', this.toWorld(sx, sy)); cad.redraw(); return; }
       cad.onMove(this, this.toWorld(sx, sy), e);
     });
     c.addEventListener('pointerup', e => {
@@ -2557,6 +2819,8 @@ export class CadView {
       if (this.pan) {
         if (this.pan.button === 2 && !this.pan.moved) cad.enter();
         this.pan = null;
+        host.el.closest('#viewport')?.classList.remove('panning');
+        this.cad.emit('viewchange');
         return;
       }
       if (e.button === 0) cad.onUp(this, this.toWorld(sx, sy), e);
@@ -2600,7 +2864,7 @@ export class CadView {
   }
 
   fit() {
-    const bb = this.cad.extents();
+    const bb = this.cad.fitBox();
     const W = this.W || 600, H = this.H || 400;
     if (!bb) { this.cx = 50; this.cy = 30; this.zoom = Math.max(0.01, W / 300); }
     else {

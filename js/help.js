@@ -351,6 +351,8 @@ const SECTIONS = [
       <h4>Moverse por la escena</h4>
       <ul>
         <li><b>Botón izquierdo</b> arrastrando: orbitar · <b>botón derecho</b>: desplazar · <b>rueda</b>: zoom.</li>
+        <li><b>Mano</b> (botón de la barra de vistas o ${k('H')}): el botón izquierdo pasa a desplazar la vista libremente, sin girar ni seleccionar. Vuelve a pulsarlo para salir.</li>
+        <li><b>Mano</b> (botón de la barra de vistas o ${k('H')}): el botón izquierdo pasa a desplazar la vista libremente, sin girar ni seleccionar. Vuelve a pulsarlo para salir.</li>
         <li>${k('F')} <b>Encuadrar</b>: centra la vista en la selección (o en toda la escena).</li>
       </ul>
       <h4>Vistas rápidas</h4>
@@ -359,6 +361,8 @@ const SECTIONS = [
         <tr><td>${k('3')}</td><td><b>Perfil derecho</b> (lateral)</td><td>${k('Mayús', '3')}</td><td>Perfil izquierdo</td></tr>
         <tr><td>${k('7')}</td><td><b>Planta</b> (vista superior)</td><td>${k('Mayús', '7')}</td><td>Inferior</td></tr>
         <tr><td>${k('5')}</td><td>Ortográfica ⇄ perspectiva</td><td>${k('0')}</td><td>Perspectiva</td></tr>
+        <tr><td>${k('9')}</td><td>Isométrica (los tres ejes a 120°)</td><td>${k('H')}</td><td>Mano (desplazar)</td></tr>
+        <tr><td>${k('9')}</td><td>Isométrica (los tres ejes a 120°)</td><td>${k('H')}</td><td>Mano (desplazar)</td></tr>
       </table>
       <p>Funcionan en la fila de números y en el teclado numérico. También tienes los botones de la barra inferior del visor y el <b>navegador de ejes</b> (arriba a la derecha): haz clic en X, Y, Z o en los círculos opuestos.</p>
       <p>Las vistas predefinidas usan cámara <b>ortográfica</b>: sin deformación por la distancia, ideal para alinear piezas y comprobar medidas. Al orbitar con el ratón la vista pasa a «Libre».</p>
@@ -538,6 +542,8 @@ const SECTIONS = [
         <li>Los botones de diseño (1, 2, 3 o 4 vistas) se aplican al espacio en el que estás. En 2D, cada panel muestra el mismo plano con su propio zoom y encuadre: por ejemplo, la pieza entera en uno y un detalle ampliado en otro.</li>
         <li>Al cambiar de espacio no se pierde nada: cada uno vuelve exactamente como lo dejaste, y se guarda con el proyecto.</li>
         <li>Rueda: zoom hacia el cursor. Botón central o derecho arrastrando: desplazar. Doble clic con el central (o <b>Encuadrar</b>, o la orden <code>Z</code>): ver todo.</li>
+        <li><b>Mano</b> (botón de la barra de vistas, u orden <code>P</code> / <code>PAN</code>): arrastra con el botón izquierdo para moverte libremente por la hoja. <kbd>Esc</kbd> o el mismo botón para salir.</li>
+        <li><b>Mano</b> (botón de la barra de vistas, u orden <code>P</code> / <code>PAN</code>): arrastra con el botón izquierdo para moverte libremente por la hoja. <kbd>Esc</kbd> o el mismo botón para salir.</li>
       </ul>
       <h4>La línea de órdenes</h4>
       <p>En la barra de estado hay una <b>línea de órdenes</b>: escribe una orden y pulsa <kbd>Intro</kbd> (no hace falta hacer clic en ella; basta con teclear). El texto de la izquierda indica qué espera cada paso. <kbd>Intro</kbd> o <kbd>Espacio</kbd> sin texto termina la orden (o repite la última); <kbd>Esc</kbd> la cancela; el clic derecho equivale a <kbd>Intro</kbd>.</p>
@@ -587,6 +593,33 @@ const SECTIONS = [
         <li>Durante una orden, el rótulo junto al cursor muestra qué pide y lo que vas tecleando, para no tener que mirar la barra de estado.</li>
         <li>En <b>Propiedades</b> se editan las coordenadas, el radio, la longitud, el texto o la capa con valores exactos; con varios objetos se ve la longitud total y se puede cambiar la capa de todos.</li>
         <li>Seleccionando primero y escribiendo después la orden (por ejemplo <code>M</code>), la orden usa la selección directamente.</li>
+      </ul>
+      <h4>Hoja (A5, A4, A3, A2, A1, A0)</h4>
+      <ul>
+        <li>Sin nada seleccionado, en Propiedades → <b>Hoja (papel)</b> elige el formato, la <b>orientación</b> y la <b>escala</b> (1:1 tamaño real, 1:2, 1:5… o 2:1, 5:1 para piezas pequeñas). La hoja aparece en el plano con su <b>recuadro</b> (margen de 10 mm) y un <b>cajetín</b> con el nombre del proyecto, la escala, el formato y la fecha.</li>
+        <li>La escala define cuánto dibujo cabe: a 1:2, una A4 horizontal tiene un área útil de 554 × 380 mm. Dibuja siempre con las medidas reales; la escala solo afecta al papel.</li>
+        <li>El origen (0,0) queda en la esquina inferior izquierda del recuadro. <b>Centrar en el dibujo</b> coloca la hoja sobre lo que ya has dibujado; <b>Ver la hoja</b> (o <b>Encuadrar</b>) la muestra entera.</li>
+        <li><b>PDF a escala</b> (también en Exportar) genera un PDF vectorial del tamaño exacto del papel. Imprímelo al <b>100 %</b> (sin «ajustar a la página») y las medidas en papel serán las del dibujo por la escala.</li>
+        <li>La altura de los textos y cotas está en unidades del dibujo: a escala 1:2 se imprimen a la mitad, así que conviene subir la <b>Altura texto</b>.</li>
+      </ul>
+      <h4>Rejilla isométrica</h4>
+      <ul>
+        <li>El botón <b>Iso</b> de la barra de estado cambia la rejilla a <b>isométrica</b>: líneas verticales y a ±30°, las de la perspectiva isométrica del dibujo técnico.</li>
+        <li>Con <b>Forzar</b> el cursor salta a los nodos de esa red y con <b>Orto</b> los trazos van solo por los tres ejes (30°, 90° y 150°), con longitudes de nodo en nodo. Así se dibujan cubos, piezas en L, etc. en isométrica a mano alzada o con el lápiz.</li>
+      </ul>
+      <h4>Dibujo isométrico</h4>
+      <ul>
+        <li>El botón <b>Isométrica</b> de la barra de vistas (o <b>Iso</b> en la barra de estado) activa el modo isométrico del plano: la rejilla pasa a tener líneas verticales y a ±30°, los tres ejes de la perspectiva isométrica del dibujo técnico.</li>
+        <li>Al activarlo se encienden <b>Forzar</b> (el cursor salta a los nodos de la red) y <b>Orto</b> (los trazos van solo por los ejes a 30°, 90° y 150°, con longitudes de nodo en nodo). Con <kbd>F8</kbd> quitas Orto para trazos libres.</li>
+        <li>Así se dibujan cubos, piezas en L, soportes… en isométrica, con línea normal o con el <b>lápiz</b>. Las coordenadas polares también sirven: <code>@40&lt;30</code>, <code>@40&lt;150</code>, <code>@40&lt;90</code>.</li>
+      </ul>
+      <h4>Hoja (A5, A4, A3, A2, A1, A0)</h4>
+      <ul>
+        <li>Sin nada seleccionado, en Propiedades → <b>Hoja (papel)</b> elige el formato, la <b>orientación</b> y la <b>escala</b> (1:1 tamaño real, 1:2, 1:5… o 2:1, 5:1 para piezas pequeñas). La hoja aparece en el plano con su <b>recuadro</b> (margen de 10 mm) y un <b>cajetín</b> con el nombre del proyecto, la escala, el formato y la fecha.</li>
+        <li>La escala define cuánto dibujo cabe: a 1:2, una A4 horizontal tiene un área útil de 554 × 380 mm. Dibuja siempre con las medidas reales; la escala solo afecta al papel.</li>
+        <li>El origen (0,0) queda en la esquina inferior izquierda del recuadro. <b>Centrar en el dibujo</b> coloca la hoja sobre lo que ya has dibujado; <b>Ver la hoja</b> (o <b>Encuadrar</b>) la muestra entera.</li>
+        <li><b>PDF a escala</b> (también en Exportar) genera un PDF vectorial del tamaño exacto del papel. Imprímelo al <b>100 %</b> (sin «ajustar a la página») y las medidas en papel serán las del dibujo por la escala.</li>
+        <li>La altura de textos y cotas está en unidades del dibujo: a escala 1:2 se imprimen a la mitad, así que conviene subir la <b>Altura texto</b>.</li>
       </ul>
       <h4>Tipos de línea y modo lápiz</h4>
       <ul>
@@ -651,6 +684,10 @@ const SECTIONS = [
         <tr><td>${k('3')} · ${k('Mayús', '3')}</td><td>Perfil derecho · Perfil izquierdo</td></tr>
         <tr><td>${k('7')} · ${k('Mayús', '7')}</td><td>Planta (superior) · Inferior</td></tr>
         <tr><td>${k('5')} · ${k('0')}</td><td>Ortográfica ⇄ perspectiva · Perspectiva</td></tr>
+        <tr><td>${k('9')}</td><td>Vista isométrica</td></tr>
+        <tr><td>${k('H')}</td><td>Mano: desplazar la vista con el botón izquierdo (en 2D: orden <code>P</code>)</td></tr>
+        <tr><td>${k('9')}</td><td>Vista isométrica</td></tr>
+        <tr><td>${k('H')}</td><td>Mano: desplazar la vista con el botón izquierdo (en 2D: orden <code>P</code>)</td></tr>
         <tr><td>${k('F')}</td><td>Encuadrar selección</td></tr>
         <tr><td>${k('Z')}</td><td>Alternar Sólido ⇄ Wire</td></tr>
         <tr><td>${k('N')}</td><td>Mostrar u ocultar el panel lateral</td></tr>

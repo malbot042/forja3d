@@ -8,7 +8,7 @@ import { toggleTheme } from './theme.js';
 import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
 import { makePdf } from './pdf.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -226,7 +226,8 @@ function exportDialog() {
   const nSel = editor.selection.filter(id => editor.objects.get(id)?.visible).length;
   const cadFormats = editor.cad.isEmpty() ? [] : [
     ['dxf', { label: 'Plano 2D · DXF', ext: 'dxf', desc: 'Para AutoCAD, LibreCAD, FreeCAD, QCAD, DraftSight o corte láser/CNC. Conserva capas, colores y tipos de línea; las cotas se exportan como líneas y texto.' }],
-    ['svg', { label: 'Plano 2D · SVG', ext: 'svg', desc: 'Dibujo vectorial a escala real para Inkscape, Illustrator, la web o el corte láser.' }]];
+    ['svg', { label: 'Plano 2D · SVG', ext: 'svg', desc: 'Dibujo vectorial a escala real para Inkscape, Illustrator, la web o el corte láser.' }],
+    ...(sheetOf(editor.cad.drawing) ? [['pdf', { label: `Hoja ${editor.cad.drawing.paper.size} · PDF a escala`, ext: 'pdf', desc: 'La hoja con su recuadro y cajetín, en PDF vectorial del tamaño del papel. Imprímela al 100 % para que las medidas sean exactas.' }]] : [])];
   const formats = [['json', { label: 'Proyecto Forja 3D', ext: 'json', desc: 'Todo el proyecto, editable: primitivas, perfiles, booleanas y el plano 2D. Para copias de seguridad o compartir con otro usuario de Forja 3D.' }],
     ...(is2D() ? [...cadFormats, ...Object.entries(EXPORT_FORMATS)] : [...Object.entries(EXPORT_FORMATS), ...cadFormats])];
   const wrap = h('div', { class: 'modal-backdrop' });
@@ -238,13 +239,13 @@ function exportDialog() {
   const mtlRow = h('label', { class: 'toggle' }, mtl, h('span', {}, 'Descargar también el .mtl con los colores'));
   const selRow = h('label', { class: 'toggle' }, selOnly, h('span', {}, nSel ? `Solo la selección (${nSel} objeto${nSel === 1 ? '' : 's'})` : 'Solo la selección (no hay nada seleccionado)'));
   const fmt = () => wrap.querySelector('input[name=fmt]:checked').value;
-  const sync = () => { mtlRow.hidden = fmt() !== 'obj'; selRow.hidden = ['json', 'dxf', 'svg'].includes(fmt()); };
+  const sync = () => { mtlRow.hidden = fmt() !== 'obj'; selRow.hidden = ['json', 'dxf', 'svg', 'pdf'].includes(fmt()); };
   const close = () => { document.removeEventListener('keydown', onKey, true); wrap.remove(); };
   const go = async () => {
     const f = fmt();
     close();
     if (f === 'json') { snapshotProject(); saveNow(); exportProject(project); return; }
-    if (f === 'dxf' || f === 'svg') { exportCad(f); return; }
+    if (f === 'dxf' || f === 'svg' || f === 'pdf') { exportCad(f); return; }
     try {
       const n = await exportModel(editor, f, { name: project.name, selectionOnly: selOnly.checked, withMtl: mtl.checked });
       toast(`${EXPORT_FORMATS[f].label} exportado (${n} objeto${n === 1 ? '' : 's'})`);
@@ -290,6 +291,7 @@ async function openProject(id) {
   if (!editor) initEditor();
 
   editor.cad.setDrawing(p.drawing);
+  editor.cad.title = p.name;
   const skipped = editor.load(p.objects, p.camera, p.settings?.viewports);
   refreshLayoutButtons();
   if (skipped.length) toast(`Se ignoraron tipos desconocidos: ${[...new Set(skipped)].join(', ')}`, true);
@@ -411,6 +413,8 @@ function initEditor() {
   $('#btn-delete').onclick = () => editor.remove();
   $('#project-name').addEventListener('change', e => {
     project.name = e.target.value.trim() || 'Proyecto sin título';
+    editor.cad.title = project.name;
+    editor.cad.redraw();
     e.target.value = project.name;
     document.title = `${project.name} · Forja 3D`;
     scheduleSave();
@@ -438,6 +442,11 @@ function initEditor() {
     });
   }
   $('#btn-capture').onclick = () => captureDialog();
+  $('#btn-pan').onclick = () => editor.setHand(!editor.hand);
+  editor.addEventListener('hand', e => {
+    $('#btn-pan').classList.toggle('active', e.detail);
+    if (e.detail) toast(is2D() ? 'Mano: arrastra para desplazarte por la hoja · rueda: zoom · Esc o el botón Mano para salir' : 'Mano: arrastra para desplazar la vista · rueda: zoom · H o el botón Mano para salir');
+  });
   $('#btn-side').onclick = () => toggleSidebar();
   $('#btn-tree-open').onclick = () => setTreeOpen(true);
   $('#btn-tree-close').onclick = () => setTreeOpen(false);
@@ -675,7 +684,7 @@ function refreshOps() {
   set('drop', sel.length > 0);
 }
 
-const VIEW_NAMES = { front: 'Alzado', back: 'Posterior', right: 'Perfil dcho.', left: 'Perfil izq.', top: 'Planta', bottom: 'Inferior', persp: 'Perspectiva', free: 'Libre' };
+const VIEW_NAMES = { iso: 'Isométrica', front: 'Alzado', back: 'Posterior', right: 'Perfil dcho.', left: 'Perfil izq.', top: 'Planta', bottom: 'Inferior', persp: 'Perspectiva', free: 'Libre' };
 function refreshCamera({ projection, view }) {
   for (const b of document.querySelectorAll('#view-bar [data-cam]')) b.classList.toggle('active', b.dataset.cam === view);
   const proj = $('#btn-proj');
@@ -744,7 +753,8 @@ function refreshCadToggles() {
   const c = editor.cad;
   for (const b of document.querySelectorAll('[data-cadt]')) {
     const k = b.dataset.cadt;
-    b.classList.toggle('on', k === 'grid' ? !!c.drawing.grid : k === 'pencil' ? c.drawing.curLt === 'pencil' : !!c[k]);
+    const on = k === 'grid' ? !!c.drawing.grid : k === 'pencil' ? c.drawing.curLt === 'pencil' : k === 'iso' ? !!c.drawing.isoGrid : !!c[k];
+    b.classList.toggle(b.closest('#view-bar') ? 'active' : 'on', on);
   }
 }
 
@@ -796,6 +806,8 @@ function initCadUI() {
   });
   cad.addEventListener('history', () => { if (is2D()) refreshHistoryButtons(); });
   cad.addEventListener('settings', refreshCadToggles);
+  cad.addEventListener('handrequest', e => editor.setHand(e.detail ?? !editor.hand));
+  cad.addEventListener('viewchange', scheduleSave);
   cad.addEventListener('editrequest', () => setTimeout(() => $('#props .cad-text')?.focus(), 40));
   for (const b of document.querySelectorAll('[data-cadt]')) b.addEventListener('click', () => cad.toggle(b.dataset.cadt));
   cad.inputEl = $('#cmd-input');
@@ -852,6 +864,33 @@ function renderLayers() {
 const DEGR = 180 / Math.PI;
 
 /** Propiedades en modo 2D: ajustes del plano, una entidad o varias. */
+/** Sección «Hoja»: formato A5-A0, orientación, escala, recuadro y PDF a escala. */
+function paperSection(cad, D, { select, btn, info }) {
+  const P = D.paper, S = sheetOf(D);
+  const sec = h('div', { class: 'prop-section' }, h('h3', {}, 'Hoja (papel)'),
+    row('Formato', select([['', 'Sin hoja'], ...Object.entries(PAPERS).map(([k, [w, hh]]) => [k, `${k} · ${w} × ${hh} mm`])], P?.size || '',
+      v => cad.setPaper(v ? { size: v } : null))));
+  if (!S) {
+    sec.append(h('p', { class: 'muted small cad-hint' }, 'Elige un formato para ver la hoja con su recuadro y cajetín, dibujar dentro de ella y sacar un PDF a escala real.'));
+    return sec;
+  }
+  const chk = h('input', { type: 'checkbox' });
+  chk.checked = P.frame !== false;
+  chk.onchange = () => cad.setPaper({ frame: chk.checked });
+  const u = D.units === 'u' ? 'unidades' : D.units;
+  const F = v => fmtNum(v, D);
+  sec.append(
+    row('Orientación', select([['h', 'Horizontal'], ['v', 'Vertical']], S.landscape ? 'h' : 'v', v => cad.setPaper({ landscape: v === 'h' }))),
+    row('Escala', select(PAPER_SCALES.map(k => [k, k === '1:1' ? '1:1 (tamaño real)' : k]), S.scale, v => cad.setPaper({ scale: v }))),
+    h('label', { class: 'toggle', style: 'margin:4px 0 6px' }, chk, h('span', {}, 'Recuadro y cajetín')),
+    info([['Área útil', `${F((S.w - 20) * S.k)} × ${F((S.h - 20) * S.k)} ${u} del dibujo`]]),
+    h('div', { class: 'btn-row' },
+      btn('Ver la hoja', () => cad.zoomExtents()),
+      btn('Centrar en el dibujo', () => cad.centerPaper()),
+      btn('PDF a escala', () => exportCad('pdf'), 'btn-primary')));
+  return sec;
+}
+
 function renderCadProps(box) {
   const cad = editor.cad, D = cad.drawing;
   const ents = cad.selEnts();
@@ -896,6 +935,7 @@ function renderCadProps(box) {
         row('Separador', select([[',', 'Coma (12,50)'], ['.', 'Punto (12.50)']], D.decimal, v => cad.setSetting('decimal', v))),
         num('Altura texto', D.textH, v => { if (v > 0) cad.setSetting('textH', v); }, { min: 0.01 }),
         num('Flechas', D.arrow, v => { if (v > 0) cad.setSetting('arrow', v); }, { min: 0.01, step: 0.25 })),
+      paperSection(cad, D, { select, btn, info }),
       h('div', { class: 'prop-section' },
         h('h3', {}, 'Referencias a objetos'),
         h('div', { class: 'cap-checks-list' }, osnaps)),
@@ -1061,8 +1101,14 @@ function renderCadProps(box) {
 
 function exportCad(kind) {
   const D = editor.cad.drawing;
-  if (editor.cad.isEmpty()) { toast('El plano 2D está vacío', true); return; }
+  if (editor.cad.isEmpty() && kind !== 'pdf') { toast('El plano 2D está vacío', true); return; }
   const base = `${store.slug(project.name)}-plano`;
+  if (kind === 'pdf') {
+    if (!sheetOf(D)) { toast('Elige primero un formato de hoja (Propiedades del plano → Hoja)', true); return; }
+    downloadBlob(new Blob([toPDF(D, { title: project.name })], { type: 'application/pdf' }), `${base}-${D.paper.size}.pdf`);
+    toast(`Hoja ${D.paper.size} exportada a PDF a escala ${D.paper.scale || '1:1'} (imprímela al 100 %, sin «ajustar a la página»)`, 5000);
+    return;
+  }
   if (kind === 'dxf') downloadBlob(new Blob([toDXF(D)], { type: 'application/dxf' }), `${base}.dxf`);
   else downloadBlob(new Blob([toSVG(D)], { type: 'image/svg+xml' }), `${base}.svg`);
   toast(`Plano exportado a ${kind.toUpperCase()}`);
@@ -1365,7 +1411,7 @@ function setView(mode) {
 }
 
 // Vistas por tecla (fila de números o teclado numérico, estilo Blender)
-const VIEW_KEYS = { 1: ['front', 'back'], 3: ['right', 'left'], 7: ['top', 'bottom'] };
+const VIEW_KEYS = { 1: ['front', 'back'], 3: ['right', 'left'], 7: ['top', 'bottom'], 9: ['iso', 'iso'] };
 
 function onKey(e) {
   if ($('#editor-screen').hidden || document.querySelector('.modal-backdrop')) return;
@@ -1391,6 +1437,7 @@ function onKey(e) {
   else if (digit === '0') { editor.setView('persp'); scheduleSave(); }
   else if (e.code === 'NumpadDecimal' || k === 'f') editor.frame();
   else if (k === 'n') toggleSidebar();
+  else if (k === 'h') editor.setHand(!editor.hand);
   else if (k === 'w') setTransform('translate');
   else if (k === 'e') setTransform('rotate');
   else if (k === 'r') setTransform('scale');
