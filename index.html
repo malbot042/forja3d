@@ -65,22 +65,27 @@
         <button class="icon-btn" id="btn-redo" title="Rehacer (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
       </div>
 
-      <div class="seg" id="transform-mode" role="group" aria-label="Herramienta">
+      <div class="seg mode-seg" id="mode-seg" role="group" aria-label="Tipo de vista del panel activo">
+        <button data-m="3d" class="active" title="Panel activo en 3D">3D</button>
+        <button data-m="2d" title="Panel activo como plano 2D (editor CAD)">2D</button>
+      </div>
+
+      <div class="seg only3d" id="transform-mode" role="group" aria-label="Herramienta">
         <button data-mode="translate" class="active" title="Mover (W)">Mover</button>
         <button data-mode="rotate" title="Rotar (E)">Rotar</button>
         <button data-mode="scale" title="Escalar (R)">Escalar</button>
       </div>
 
-      <div class="seg" id="view-mode" role="group" aria-label="Modo de visualización">
+      <div class="seg only3d" id="view-mode" role="group" aria-label="Modo de visualización">
         <button data-view="solid" class="active" title="Sólido (Z alterna)">Sólido</button>
         <button data-view="wire" title="Alámbrico (Z alterna)">Wire</button>
       </div>
 
       <div class="topbar-group right">
-        <label class="toggle" title="Ajuste a rejilla (G)"><input type="checkbox" id="chk-snap"><span>Snap</span></label>
-        <label class="toggle" title="Mostrar rejilla"><input type="checkbox" id="chk-grid" checked><span>Rejilla</span></label>
-        <button class="btn" id="btn-import" title="Importar un modelo (.glb, .gltf, .obj, .stl) o un proyecto (.json) a esta escena. También puedes arrastrar el archivo al visor.">Importar</button>
-        <button class="btn" id="btn-export" title="Exportar a JSON, glTF, GLB, OBJ o STL">Exportar</button>
+        <label class="toggle only3d" title="Ajuste a rejilla (G)"><input type="checkbox" id="chk-snap"><span>Snap</span></label>
+        <label class="toggle only3d" title="Mostrar rejilla"><input type="checkbox" id="chk-grid" checked><span>Rejilla</span></label>
+        <button class="btn" id="btn-import" title="Importar un modelo (.glb, .gltf, .obj, .stl), un plano DXF o un proyecto (.json). También puedes arrastrar el archivo al visor.">Importar</button>
+        <button class="btn" id="btn-export" title="Exportar a JSON, glTF, GLB, OBJ, STL, o el plano 2D a DXF / SVG">Exportar</button>
         <button class="icon-btn" id="btn-capture" title="Capturar imagen (PNG/JPG) o imprimir / PDF (Ctrl+P)"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         <button class="icon-btn" id="btn-side" title="Mostrar u ocultar el panel lateral (N)"><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M15 4.5v15"/></svg></button>
         <button class="icon-btn theme-btn" data-theme-toggle title="Cambiar entre modo claro y oscuro"><svg viewBox="0 0 24 24"><g class="moon"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></g><g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg></button>
@@ -116,6 +121,7 @@
       </div>
 
 
+      <div class="ops-bar cad-bar" id="cad-bar" role="toolbar" aria-label="Edición 2D" hidden></div>
       <div class="sculpt-bar" id="sculpt-bar" hidden></div>
       <div class="view-bar" id="view-bar" role="toolbar" aria-label="Vistas">
         <span class="layout-seg" role="group" aria-label="División de pantalla">
@@ -123,25 +129,37 @@
           <button data-layout="2" title="2 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M10 1v12"/></svg></button>
           <button data-layout="3" title="3 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M12 1v12M12 7h7"/></svg></button>
           <button data-layout="4" title="4 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M10 1v12M1 7h18"/></svg></button>
+          <button data-layout="2d3d" title="Plano 2D a la izquierda y vista 3D a la derecha"><svg viewBox="0 0 30 14"><rect x="1" y="1" width="28" height="12" rx="1.5"/><path d="M15 1v12"/><text x="8" y="10" font-size="7" text-anchor="middle" fill="currentColor" stroke="none">2D</text><text x="22" y="10" font-size="7" text-anchor="middle" fill="currentColor" stroke="none">3D</text></svg></button>
         </span>
         <span class="ops-sep"></span>
-        <button data-cam="front" title="Alzado / vista frontal (1 · Mayús+1 posterior)">Alzado</button>
-        <button data-cam="right" title="Perfil derecho / vista lateral (3)">Perfil D</button>
-        <button data-cam="left" title="Perfil izquierdo (Mayús+3)">Perfil I</button>
-        <button data-cam="top" title="Planta / vista superior (7 · Mayús+7 inferior)">Planta</button>
-        <button data-cam="back" title="Vista posterior (Mayús+1)">Post.</button>
-        <button data-cam="bottom" title="Vista inferior (Mayús+7)">Inf.</button>
-        <button data-cam="persp" title="Perspectiva (0)">Persp</button>
-        <span class="ops-sep"></span>
-        <button id="btn-proj" title="Alternar ortográfica / perspectiva (5)">Orto</button>
-        <button data-cam="focus" title="Encuadrar selección (F)">Encuadrar</button>
+        <button class="v3d" data-cam="front" title="Alzado / vista frontal (1 · Mayús+1 posterior)">Alzado</button>
+        <button class="v3d" data-cam="right" title="Perfil derecho / vista lateral (3)">Perfil D</button>
+        <button class="v3d" data-cam="left" title="Perfil izquierdo (Mayús+3)">Perfil I</button>
+        <button class="v3d" data-cam="top" title="Planta / vista superior (7 · Mayús+7 inferior)">Planta</button>
+        <button class="v3d" data-cam="back" title="Vista posterior (Mayús+1)">Post.</button>
+        <button class="v3d" data-cam="bottom" title="Vista inferior (Mayús+7)">Inf.</button>
+        <button class="v3d" data-cam="persp" title="Perspectiva (0)">Persp</button>
+        <span class="ops-sep v3d"></span>
+        <button class="v3d" id="btn-proj" title="Alternar ortográfica / perspectiva (5)">Orto</button>
+        <button data-cam="focus" title="Encuadrar (F en 3D · Z + Intro o doble clic central en 2D)">Encuadrar</button>
       </div>
       <div class="hint" id="hint">Añade una primitiva desde la barra izquierda · clic para seleccionar (Mayús+clic: varios) · W/E/R mover/rotar/escalar</div>
     </main>
 
     <aside class="sidebar">
       <div class="side-resizer" id="side-resizer" title="Arrastra para cambiar el ancho · doble clic: ancho por defecto"></div>
-      <div class="panel">
+      <div class="panel" id="layers-panel" hidden>
+        <div class="panel-head">
+          <h2>Capas del plano</h2>
+          <span class="count" id="layer-count">0</span>
+        </div>
+        <ul class="outliner layers" id="layers-list"></ul>
+        <div class="panel-actions">
+          <button class="btn sm" id="btn-layer-add" title="Crear una capa nueva y hacerla actual">+ Capa</button>
+          <button class="btn sm" id="btn-cad-extrude" title="Convierte los contornos cerrados del plano (o de la selección) en piezas 3D">Extruir a 3D…</button>
+        </div>
+      </div>
+      <div class="panel" id="scene-panel">
         <div class="panel-head">
           <h2>Escena</h2>
           <span class="tree-tools">
@@ -162,12 +180,26 @@
       </div>
     </aside>
 
-    <footer class="statusbar" id="statusbar"></footer>
+    <footer class="statusbar" id="statusbar">
+      <div class="status-3d" id="status-3d"></div>
+      <div class="status-2d" id="status-2d" hidden>
+        <span class="cmd-prompt" id="cmd-prompt">Orden:</span>
+        <input class="cmd-input" id="cmd-input" autocomplete="off" spellcheck="false" placeholder="escribe una orden o un valor…" aria-label="Línea de órdenes">
+        <span class="cmd-msg" id="cmd-msg"></span>
+        <span class="cad-toggles">
+          <button data-cadt="osnapOn" title="Referencias a objetos: punto final, medio, centro, cuadrante, intersección (F3)">Referencias</button>
+          <button data-cadt="ortho" title="Orto: solo horizontal y vertical (F8)">Orto</button>
+          <button data-cadt="gridSnap" title="Forzar el cursor a la rejilla (F9)">Forzar</button>
+          <button data-cadt="grid" title="Mostrar la rejilla (F7)">Rejilla</button>
+        </span>
+        <span class="cmd-coords" id="cmd-coords"></span>
+      </div>
+    </footer>
   </section>
 
-  <input type="file" id="file-input" accept=".json,.glb,.gltf,.obj,.stl,application/json,model/gltf-binary,model/gltf+json,model/stl" hidden>
-  <input type="file" id="model-input" accept=".json,.glb,.gltf,.obj,.mtl,.stl,application/json,model/gltf-binary,model/gltf+json,model/stl" multiple hidden>
-  <div class="drop-hint" id="drop-hint" hidden><div>Suelta el archivo para importarlo<small>.glb · .gltf · .obj · .stl · .json</small></div></div>
+  <input type="file" id="file-input" accept=".json,.glb,.gltf,.obj,.stl,.dxf,application/json,model/gltf-binary,model/gltf+json,model/stl,image/vnd.dxf" hidden>
+  <input type="file" id="model-input" accept=".json,.glb,.gltf,.obj,.mtl,.stl,.dxf,application/json,model/gltf-binary,model/gltf+json,model/stl,image/vnd.dxf" multiple hidden>
+  <div class="drop-hint" id="drop-hint" hidden><div>Suelta el archivo para importarlo<small>.glb · .gltf · .obj · .stl · .dxf · .json</small></div></div>
   <div id="print-sheet" class="print-sheet" aria-hidden="true"></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 

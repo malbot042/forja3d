@@ -19,6 +19,12 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Selección múltiple** con Mayús/Ctrl + clic (en el visor o en la lista); el gizmo mueve, gira y escala todo el grupo.
 - **Reflejar** en X/Y/Z y **Apoyar en el suelo**.
 - **Modo escultor** con dos métodos a elegir: **Volumen (tallar)** — el objeto se convierte en un bloque de material y se pica con Cincel, Gubia, Arcilla, Lima y Aplanar (permite agujeros y túneles) — y **Malla (deformar)** — Dibujar, Inflar, Suavizar, Aplanar, Pellizcar y Arrastrar sobre una malla subdividida. Tamaño, fuerza, simetría X/Y/Z, presión del lápiz y deshacer por trazo.
+- **Editor 2D de planos** al estilo AutoCAD: línea de órdenes con alias (`L`, `PL`, `REC`, `C`, `A`, `T`, `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`…), coordenadas absolutas, relativas (`@dx,dy`), polares (`d<ángulo`) y distancia directa; referencias a objetos (final, medio, centro, cuadrante, intersección), Orto, forzar a rejilla, pinzamientos y selección por ventana/captura.
+  - **Cotas** lineales, alineadas, de radio, diámetro y ángulo, y herramienta **Medir** (distancia, ΔX, ΔY, ángulo); longitudes, perímetros y áreas en Propiedades.
+  - **Capas** con color, tipo de línea (eje, oculta, trazos…) y grosor; unidades (mm, cm, m, pulgadas…) y estilo de cota configurables.
+  - **Cambio 2D/3D por panel**: cada vista de la pantalla dividida puede ser plano 2D o vista 3D; diseño *Plano 2D + vista 3D* para trabajar con ambos a la vez.
+  - **Extruir a 3D**: los contornos cerrados del plano se convierten en una pieza 3D, con los contornos interiores como huecos.
+  - **DXF** (exportar e importar, compatible con AutoCAD, LibreCAD, FreeCAD y cortadoras láser) y **SVG**.
 - **Pantalla dividida** en 1, 2, 3 o 4 vistas, cada una con su propia cámara, navegador de ejes y vista (perspectiva, alzado, planta, perfil…); se guarda con el proyecto.
 - **Panel lateral** redimensionable (arrastrando su borde) y ocultable (botón o tecla `N`).
 - **Capturar** lo que se ve en pantalla (todas las vistas) como **PNG** (también con fondo transparente), **JPG**, **PDF** A4 o **imprimir**, con o sin rejilla, a 1×, 2× o 4× de resolución.
@@ -38,7 +44,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 
 ## Ayuda integrada y ejemplos
 
-El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en la pantalla de proyectos abren una guía con todas las funcionalidades y seis ejemplos guiados (taza, dado, tuerca y tornillo, casa, piezas de torno y naranja partida). Cada ejemplo se puede abrir con un clic como proyecto nuevo y desmontar con *Separar* para ver cómo está hecho.
+El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en la pantalla de proyectos abren una guía con todas las funcionalidades una sección del editor 2D con todas las órdenes y seis ejemplos guiados (taza, dado, tuerca y tornillo, casa, piezas de torno y naranja partida). Cada ejemplo se puede abrir con un clic como proyecto nuevo y desmontar con *Separar* para ver cómo está hecho.
 
 ## Atajos de teclado
 
@@ -64,6 +70,9 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `Ctrl+P` | Capturar imagen, PDF o imprimir |
 | `[` `]` / `Mayús+[` `]` | (Modo escultor) tamaño / fuerza del pincel |
 | `Esc` | Quitar selección |
+| `F3` / `F7` / `F8` / `F9` | (Editor 2D) Referencias / Rejilla / Orto / Forzar a rejilla |
+
+En el editor 2D basta con teclear: lo escrito va a la línea de órdenes y se confirma con `Intro`, `Espacio` o clic derecho.
 
 Las teclas de vista funcionan tanto en la fila de números como en el teclado numérico (mismo esquema que Blender).
 
@@ -104,6 +113,7 @@ js/storage.js           Persistencia en IndexedDB (con migración), import/expor
 js/sculpt.js            Modo escultor: malla (deformar) y volumen (tallar con vóxeles)
 js/csg.js               Operaciones booleanas (CSG) y caché de resultados
 js/sketch.js            Editor de perfiles 2D para extrusión y revolución
+js/cad2d.js             Editor 2D de planos: entidades, órdenes, referencias, cotas, capas, DXF/SVG
 js/help.js              Ayuda integrada y proyectos de ejemplo
 js/theme.js             Modo claro / oscuro
 js/io.js                Exportar/importar glTF, GLB, OBJ y STL

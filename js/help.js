@@ -529,6 +529,85 @@ const SECTIONS = [
       <div class="ex-row">${exBtn('taza')} ${exBtn('dado')} ${exBtn('casa')} ${exBtn('naranja')}</div>`,
   },
   {
+    id: 'cad2d', title: 'Editor 2D (planos y cotas)',
+    html: `
+      <p>Un editor de planos al estilo AutoCAD para diseñar <b>piezas 2D</b> con medidas exactas, acotarlas y, si quieres, convertirlas en piezas 3D. Cada proyecto tiene <b>un plano</b> que se guarda junto a la escena 3D.</p>
+      <h4>Pasar de 3D a 2D</h4>
+      <ul>
+        <li>El selector <b>3D | 2D</b> de la barra superior cambia el <b>panel activo</b>. Cada panel de la pantalla dividida tiene su propio modo: puedes tener el plano a un lado y la pieza 3D al otro.</li>
+        <li>El diseño <b>Plano 2D + vista 3D</b> (último botón de diseños) abre directamente las dos vistas lado a lado. Con 3 o 4 vistas puedes poner varios paneles en 2D, cada uno con su propio zoom.</li>
+        <li>Rueda: zoom hacia el cursor. Botón central o derecho arrastrando: desplazar. Doble clic con el central (o <b>Encuadrar</b>, o la orden <code>Z</code>): ver todo.</li>
+      </ul>
+      <h4>La línea de órdenes</h4>
+      <p>En la barra de estado hay una <b>línea de órdenes</b>: escribe una orden y pulsa <kbd>Intro</kbd> (no hace falta hacer clic en ella; basta con teclear). El texto de la izquierda indica qué espera cada paso. <kbd>Intro</kbd> o <kbd>Espacio</kbd> sin texto termina la orden (o repite la última); <kbd>Esc</kbd> la cancela; el clic derecho equivale a <kbd>Intro</kbd>.</p>
+      <table class="keys wide">
+        <tr><th colspan="2">Dibujo</th></tr>
+        <tr><td><code>L</code></td><td>Línea (segmentos encadenados; <code>C</code> cierra, <code>H</code> deshace el último)</td></tr>
+        <tr><td><code>PL</code></td><td>Polilínea (un solo objeto; <code>C</code> la cierra, <code>H</code> deshace el último punto)</td></tr>
+        <tr><td><code>REC</code></td><td>Rectángulo por dos esquinas (<code>@100,60</code> o <code>100x60</code> para medidas exactas)</td></tr>
+        <tr><td><code>C</code></td><td>Círculo: centro y radio (o <code>d16</code> para dar el diámetro)</td></tr>
+        <tr><td><code>A</code></td><td>Arco por tres puntos</td></tr>
+        <tr><td><code>T</code></td><td>Texto</td></tr>
+        <tr><th colspan="2">Cotas y medidas</th></tr>
+        <tr><td><code>DLI</code> · <code>DAL</code></td><td>Cota lineal (horizontal o vertical) · alineada: dos puntos y la posición de la línea de cota</td></tr>
+        <tr><td><code>DRA</code> · <code>DDI</code></td><td>Cota de radio · diámetro: clic en el círculo o arco y luego dónde poner el texto</td></tr>
+        <tr><td><code>DAN</code></td><td>Cota angular entre dos líneas</td></tr>
+        <tr><td><code>DI</code></td><td>Medir: distancia, ΔX, ΔY y ángulo entre dos puntos (no dibuja nada)</td></tr>
+        <tr><th colspan="2">Modificar</th></tr>
+        <tr><td><code>M</code> · <code>CO</code></td><td>Desplazar · Copiar (punto base y destino)</td></tr>
+        <tr><td><code>RO</code> · <code>SC</code> · <code>MI</code></td><td>Girar · Escalar · Simetría</td></tr>
+        <tr><td><code>O</code></td><td>Desfase (equidistancia): distancia, objeto y lado</td></tr>
+        <tr><td><code>TR</code></td><td>Recortar: clic en la parte que sobra; corta en las intersecciones con el resto</td></tr>
+        <tr><td><code>X</code> · <code>E</code></td><td>Descomponer (rectángulo/polilínea → líneas) · Borrar</td></tr>
+        <tr><td><code>Z</code> · <code>U</code></td><td>Encuadrar todo · Deshacer</td></tr>
+      </table>
+      <h4>Coordenadas</h4>
+      <ul>
+        <li><code>30,20</code>: punto <b>absoluto</b> (x, y).</li>
+        <li><code>@50,0</code>: <b>relativo</b> al último punto.</li>
+        <li><code>@40&lt;30</code> o <code>40&lt;30</code>: <b>polar</b>, 40 de distancia con 30° de ángulo.</li>
+        <li><code>25</code>: <b>distancia directa</b> en la dirección en la que apunta el cursor (muy útil con Orto).</li>
+        <li>Los decimales se pueden escribir con punto o con coma (<code>12.5</code> o <code>12,5</code>).</li>
+      </ul>
+      <h4>Ayudas al dibujo</h4>
+      <ul>
+        <li><b>Referencias</b> (<kbd>F3</kbd>): el cursor se engancha a puntos finales, medios, centros, cuadrantes, intersecciones e inserción de texto. Se eligen en Propiedades (sin nada seleccionado).</li>
+        <li><b>Orto</b> (<kbd>F8</kbd>): solo horizontal o vertical. <b>Forzar</b> (<kbd>F9</kbd>): el cursor salta a la rejilla. <b>Rejilla</b> (<kbd>F7</kbd>).</li>
+        <li>Los botones de la barra de estado activan y desactivan lo mismo; a la derecha se ven las coordenadas del cursor.</li>
+      </ul>
+      <h4>Seleccionar y editar</h4>
+      <ul>
+        <li>Clic para seleccionar, <kbd>Mayús</kbd>+clic para añadir o quitar. Arrastrando: de izquierda a derecha <b>ventana</b> (solo lo que queda dentro, azul); de derecha a izquierda <b>captura</b> (todo lo que toca, verde).</li>
+        <li>Los <b>pinzamientos</b> (cuadrados azules) se arrastran para estirar extremos, mover centros o cambiar radios.</li>
+        <li>En <b>Propiedades</b> se editan las coordenadas, el radio, la longitud, el texto o la capa con valores exactos; con varios objetos se ve la longitud total y se puede cambiar la capa de todos.</li>
+        <li>Seleccionando primero y escribiendo después la orden (por ejemplo <code>M</code>), la orden usa la selección directamente.</li>
+      </ul>
+      <h4>Capas</h4>
+      <p>El panel <b>Capas del plano</b> muestra las capas con su color, tipo de línea (continua, eje, oculta, trazos…) y grosor; el círculo marca la <b>capa actual</b>, donde se dibuja. Vienen preparadas <i>Contorno</i>, <i>Ejes</i>, <i>Ocultas</i>, <i>Cotas</i>, <i>Texto</i> y <i>Construcción</i>; el ojo las oculta y la cruz las elimina.</p>
+      <h4>Unidades y estilo de cota</h4>
+      <p>Sin nada seleccionado, Propiedades muestra el plano: unidades (mm, cm, m, pulgadas…), decimales, separador decimal, altura de texto y tamaño de flecha de las cotas.</p>
+      <h4>Del plano a la pieza 3D</h4>
+      <ul>
+        <li><b>Extruir a 3D</b> busca los <b>contornos cerrados</b> del plano (o de la selección): rectángulos, círculos, polilíneas cerradas y cadenas de líneas y arcos que se cierran. Los contornos que quedan dentro de otro se convierten en <b>huecos</b>.</li>
+        <li>Se ignoran las capas de cotas, texto, ejes y construcción. Elige el grosor y la escala (por defecto, 100 mm = 1 unidad 3D) y la pieza aparece en la escena 3D; se abre la vista <b>Plano 2D + vista 3D</b> para verlas juntas.</li>
+      </ul>
+      <h4>Exportar, importar e imprimir</h4>
+      <ul>
+        <li><b>Exportar</b> en modo 2D propone <b>DXF</b> (AutoCAD, LibreCAD, FreeCAD, cortadoras láser…) o <b>SVG</b>. El DXF conserva capas, colores, tipos de línea y unidades; las cotas se guardan como líneas y texto.</li>
+        <li><b>Importar</b> un <code>.dxf</code> lo añade al plano (líneas, polilíneas, círculos, arcos, elipses, splines y textos).</li>
+        <li><b>Capturar</b> (<kbd>Ctrl</kbd>+<kbd>P</kbd>) incluye los paneles 2D tal como se ven, con o sin rejilla, y con fondo blanco quedan como un plano impreso.</li>
+      </ul>
+      <h4>Ejemplo: placa con dos taladros</h4>
+      <ol class="steps">
+        <li>Pulsa <b>2D</b>. Escribe <code>REC</code> ${k('Intro')}, <code>0,0</code> ${k('Intro')}, <code>@100,60</code> ${k('Intro')}.</li>
+        <li><code>C</code> ${k('Intro')} <code>25,30</code> ${k('Intro')} <code>10</code> ${k('Intro')} y <code>C</code> ${k('Intro')} <code>75,30</code> ${k('Intro')} <code>d16</code> ${k('Intro')}. Escribe <code>Z</code> para encuadrar.</li>
+        <li>Acota: <code>DLI</code>, clic en las dos esquinas inferiores (las referencias las enganchan) y clic debajo para situar la cota. <code>DRA</code> y clic en el primer taladro.</li>
+        <li>Mide con <code>DI</code> la diagonal: la barra de estado muestra la distancia y el ángulo.</li>
+        <li>Pulsa <b>Extruir a 3D</b>, grosor 8 mm: aparece la placa con sus dos agujeros junto al plano.</li>
+        <li>Exporta el plano a <b>DXF</b> para cortarlo o abrirlo en otro programa de CAD.</li>
+      </ol>`,
+  },
+  {
     id: 'ejemplos', title: 'Ejemplos guiados',
     html: () => `
       <p>Cada ejemplo se abre como un <b>proyecto nuevo</b> (no toca los tuyos). Ábrelo, selecciona una pieza y pulsa <b>Separar</b> para ver cómo está hecha, o sigue los pasos para construirla desde cero.</p>
@@ -561,6 +640,12 @@ const SECTIONS = [
         <tr><td>${k('F')}</td><td>Encuadrar selección</td></tr>
         <tr><td>${k('Z')}</td><td>Alternar Sólido ⇄ Wire</td></tr>
         <tr><td>${k('N')}</td><td>Mostrar u ocultar el panel lateral</td></tr>
+        <tr><th colspan="2">Editor 2D</th></tr>
+        <tr><td>Teclear + ${k('Intro')}</td><td>Orden o valor en la línea de órdenes (L, PL, REC, C, A, T, DLI, DRA, DI, M, CO, RO, O, TR…)</td></tr>
+        <tr><td>${k('Intro')} · ${k('Espacio')} · clic derecho</td><td>Terminar la orden (sin orden activa: repetir la última)</td></tr>
+        <tr><td>${k('Esc')}</td><td>Cancelar la orden · quitar la selección</td></tr>
+        <tr><td>${k('F3')} · ${k('F7')} · ${k('F8')} · ${k('F9')}</td><td>Referencias · Rejilla · Orto · Forzar a rejilla</td></tr>
+        <tr><td>Doble clic central</td><td>Encuadrar todo el plano</td></tr>
         <tr><th colspan="2">Modo escultor</th></tr>
         <tr><td>${k('[')} ${k(']')}</td><td>Tamaño del pincel</td></tr>
         <tr><td>${k('Mayús', '[')} ${k('Mayús', ']')}</td><td>Fuerza del pincel</td></tr>

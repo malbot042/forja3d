@@ -525,7 +525,7 @@ export class SculptSession {
   // ---------------------------------------------------------- utilidades
   _viewAt(e) {
     if (e.target.closest?.('.nav-gizmo')) return null;
-    return this.editor.views.find(v => v.el === e.target || v.el.contains(e.target));
+    return this.editor.views.find(v => v.mode !== '2d' && (v.el === e.target || v.el.contains(e.target)));
   }
 
   /** Raycast en coordenadas locales del objeto. */

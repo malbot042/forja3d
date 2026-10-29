@@ -8,6 +8,7 @@ import { toggleTheme } from './theme.js';
 import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
 import { makePdf } from './pdf.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
+import { CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -121,7 +122,10 @@ function showHelp(section) {
 }
 $('#btn-help-home').onclick = () => showHelp();
 for (const b of document.querySelectorAll('[data-theme-toggle]')) {
-  b.addEventListener('click', () => toast(toggleTheme() === 'light' ? 'Modo claro' : 'Modo oscuro'));
+  b.addEventListener('click', () => {
+    toast(toggleTheme() === 'light' ? 'Modo claro' : 'Modo oscuro');
+    if (editor?.cad) { editor.cad.redraw(); if (is2D()) renderLayers(); }
+  });
 }
 document.addEventListener('keydown', e => {
   if (document.querySelector('.modal-backdrop') || e.target.closest('input, textarea, select')) return;
@@ -142,8 +146,8 @@ $('#file-input').onchange = async e => {
   e.target.value = '';
   if (!file) return;
   const ext = file.name.split('.').pop().toLowerCase();
-  if (IMPORT_EXTENSIONS.includes(ext)) {
-    // modelo 3D: proyecto nuevo con el nombre del archivo y el modelo dentro
+  if (IMPORT_EXTENSIONS.includes(ext) || ext === 'dxf') {
+    // modelo 3D o plano DXF: proyecto nuevo con el nombre del archivo y el contenido dentro
     const p = store.createProject(file.name.replace(/\.[^.]+$/, ''));
     pendingImport = [file];
     location.hash = `#/p/${p.id}`;
@@ -180,6 +184,14 @@ async function importFiles(files) {
   for (const file of files) {
     const ext = file.name.split('.').pop().toLowerCase();
     try {
+      if (ext === 'dxf') {
+        const r = editor.cad.importDXF(await file.text());
+        ensure2D();
+        editor.cad.zoomExtents();
+        const sk = Object.entries(r.skipped).map(([k, v]) => `${v} ${k}`).join(', ');
+        toast(`«${file.name}»: ${r.count} objetos importados al plano 2D${sk ? ` · ignorados: ${sk}` : ''}`);
+        continue;
+      }
       if (ext === 'json') {
         const data = JSON.parse(await file.text());
         const objects = data.format === 'forja3d-bundle' ? data.projects.flatMap(p => p.objects || []) : data.objects;
@@ -210,8 +222,11 @@ async function importFiles(files) {
 
 function exportDialog() {
   const nSel = editor.selection.filter(id => editor.objects.get(id)?.visible).length;
-  const formats = [['json', { label: 'Proyecto Forja 3D', ext: 'json', desc: 'Todo el proyecto, editable: primitivas, perfiles y booleanas con sus parámetros. Para copias de seguridad o compartir con otro usuario de Forja 3D.' }],
-    ...Object.entries(EXPORT_FORMATS)];
+  const cadFormats = editor.cad.isEmpty() ? [] : [
+    ['dxf', { label: 'Plano 2D · DXF', ext: 'dxf', desc: 'Para AutoCAD, LibreCAD, FreeCAD, QCAD, DraftSight o corte láser/CNC. Conserva capas, colores y tipos de línea; las cotas se exportan como líneas y texto.' }],
+    ['svg', { label: 'Plano 2D · SVG', ext: 'svg', desc: 'Dibujo vectorial a escala real para Inkscape, Illustrator, la web o el corte láser.' }]];
+  const formats = [['json', { label: 'Proyecto Forja 3D', ext: 'json', desc: 'Todo el proyecto, editable: primitivas, perfiles, booleanas y el plano 2D. Para copias de seguridad o compartir con otro usuario de Forja 3D.' }],
+    ...(is2D() ? [...cadFormats, ...Object.entries(EXPORT_FORMATS)] : [...Object.entries(EXPORT_FORMATS), ...cadFormats])];
   const wrap = h('div', { class: 'modal-backdrop' });
   const choices = formats.map(([key, f], i) => h('label', { class: 'format-card' },
     h('input', { type: 'radio', name: 'fmt', value: key, checked: i === 1 }),
@@ -221,12 +236,13 @@ function exportDialog() {
   const mtlRow = h('label', { class: 'toggle' }, mtl, h('span', {}, 'Descargar también el .mtl con los colores'));
   const selRow = h('label', { class: 'toggle' }, selOnly, h('span', {}, nSel ? `Solo la selección (${nSel} objeto${nSel === 1 ? '' : 's'})` : 'Solo la selección (no hay nada seleccionado)'));
   const fmt = () => wrap.querySelector('input[name=fmt]:checked').value;
-  const sync = () => { mtlRow.hidden = fmt() !== 'obj'; selRow.hidden = fmt() === 'json'; };
+  const sync = () => { mtlRow.hidden = fmt() !== 'obj'; selRow.hidden = ['json', 'dxf', 'svg'].includes(fmt()); };
   const close = () => { document.removeEventListener('keydown', onKey, true); wrap.remove(); };
   const go = async () => {
     const f = fmt();
     close();
     if (f === 'json') { snapshotProject(); saveNow(); exportProject(project); return; }
+    if (f === 'dxf' || f === 'svg') { exportCad(f); return; }
     try {
       const n = await exportModel(editor, f, { name: project.name, selectionOnly: selOnly.checked, withMtl: mtl.checked });
       toast(`${EXPORT_FORMATS[f].label} exportado (${n} objeto${n === 1 ? '' : 's'})`);
@@ -271,6 +287,7 @@ async function openProject(id) {
   $('#editor-screen').hidden = false;
   if (!editor) initEditor();
 
+  editor.cad.setDrawing(p.drawing);
   const skipped = editor.load(p.objects, p.camera, p.settings?.viewports);
   refreshLayoutButtons();
   if (skipped.length) toast(`Se ignoraron tipos desconocidos: ${[...new Set(skipped)].join(', ')}`, true);
@@ -291,6 +308,7 @@ async function openProject(id) {
   refreshOutliner();
   refreshStatus();
   requestAnimationFrame(() => editor._resize());
+  applyMode();
   if (pendingImport) {
     const files = pendingImport;
     pendingImport = null;
@@ -303,6 +321,7 @@ function snapshotProject() {
   project.objects = editor.serialize();
   project.camera = editor.getCamera();
   project.settings = { view: editor.viewMode, grid: $('#chk-grid').checked, snap: $('#chk-snap').checked, viewports: editor.getViewState() };
+  project.drawing = editor.cad.getDrawing();
 }
 
 function scheduleSave() {
@@ -345,20 +364,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) flush
 function initEditor() {
   editor = new Editor($('#viewport'));
 
-  // barra de primitivas
-  const bar = $('#primitives');
-  for (const type of TOOLBAR_ORDER) {
-    if (type === '|') { bar.append(h('div', { class: 'tool-sep' })); continue; }
-    const def = PRIMITIVES[type];
-    const btn = h('button', { class: 'tool-btn', title: `Añadir ${def.label.toLowerCase()}`, onclick: async () => {
-      const id = editor.addPrimitive(type);
-      $('#hint').hidden = true;
-      if (def.usesShape) await editProfile(id);
-    } });
-    btn.innerHTML = `<svg viewBox="0 0 24 24">${def.icon}</svg>`;
-    btn.append(def.label);
-    bar.append(btn);
-  }
+  window.forja = { editor };   // acceso desde la consola del navegador (depuración)
+  renderToolbar();
+  initCadUI();
 
   editor.addEventListener('change', () => { scheduleSave(); refreshStatus(); });
   editor.addEventListener('objects', () => { refreshOutliner(); refreshStatus(); refreshOps(); });
@@ -368,17 +376,19 @@ function initEditor() {
   editor.addEventListener('sculpt', e => { renderSculptBar(); renderProps(); refreshOps(); refreshStatus(); });
   editor.addEventListener('camera', e => refreshCamera(e.detail));
   editor.addEventListener('history', e => {
+    if (is2D()) return;
     $('#btn-undo').disabled = !e.detail.canUndo;
     $('#btn-redo').disabled = !e.detail.canRedo;
   });
+  editor.addEventListener('viewmode', applyMode);
   editor.addEventListener('cameraend', scheduleSave);
   editor.addEventListener('layout', () => { refreshLayoutButtons(); scheduleSave(); });
 
   // barra superior
   $('#btn-back').onclick = () => (location.hash = '');
   $('#btn-help').onclick = () => showHelp();
-  $('#btn-undo').onclick = () => editor.undo();
-  $('#btn-redo').onclick = () => editor.redo();
+  $('#btn-undo').onclick = () => (is2D() ? editor.cad.undo() : editor.undo());
+  $('#btn-redo').onclick = () => (is2D() ? editor.cad.redo() : editor.redo());
   $('#btn-export').onclick = () => exportDialog();
   $('#btn-import').onclick = () => $('#model-input').click();
   $('#model-input').onchange = e => { const files = [...e.target.files]; e.target.value = ''; importFiles(files); };
@@ -413,11 +423,14 @@ function initEditor() {
   // vistas y operaciones
   $('#view-bar').onclick = e => {
     const b = e.target.closest('button[data-cam]');
-    if (b) { editor.setView(b.dataset.cam); scheduleSave(); }
+    if (!b) return;
+    if (is2D()) { if (b.dataset.cam === 'focus') editor.cad.zoomExtents(editor.active.cadView); scheduleSave(); return; }
+    editor.setView(b.dataset.cam);
+    scheduleSave();
   };
   $('#btn-proj').onclick = () => { editor.toggleProjection(); scheduleSave(); };
   for (const b of document.querySelectorAll('button[data-layout]')) {
-    b.addEventListener('click', () => { editor.setLayout(+b.dataset.layout); editor.frame(true); });
+    b.addEventListener('click', () => { editor.setLayout(b.dataset.layout); editor.frame(true); });
   }
   $('#btn-capture').onclick = () => captureDialog();
   $('#btn-side').onclick = () => toggleSidebar();
@@ -579,7 +592,7 @@ const TOOL_ICONS = {
 function renderSculptBar() {
   const bar = $('#sculpt-bar');
   const ses = editor.sculpt;
-  $('#ops-bar').hidden = !!ses;
+  $('#ops-bar').hidden = !!ses || is2D();
   bar.hidden = !ses;
   $('#viewport').classList.toggle('is-sculpting', !!ses);
   if (!ses) { bar.replaceChildren(); return; }
@@ -666,8 +679,417 @@ function refreshCamera({ projection, view }) {
   const name = view === 'persp' && projection === 'ortho' ? 'Libre' : VIEW_NAMES[view] || 'Libre';
 }
 
+// ============================================================== editor 2D (CAD)
+const is2D = () => editor?.active?.mode === '2d';
+const SHORT = { select: 'Selecc.', pline: 'Polilín.', rect: 'Rectáng.', dimlin: 'Lineal', dimali: 'Alineada', dimrad: 'Radio', dimdia: 'Diám.', dimang: 'Ángulo' };
+
+function renderToolbar() {
+  const bar = $('#primitives');
+  bar.replaceChildren();
+  if (is2D()) {
+    const cad = editor.cad;
+    for (const [key, def] of Object.entries(CAD_TOOLS)) {
+      if (!def) { bar.append(h('div', { class: 'tool-sep' })); continue; }
+      const btn = h('button', {
+        class: `tool-btn${cad.toolName === key ? ' active' : ''}`, 'data-cad': key,
+        title: `${def.label}${def.alias[0] ? ` · escribe ${def.alias[0].toUpperCase()} e Intro` : ' (Esc)'}`,
+        onclick: () => cad.setTool(key),
+      });
+      btn.innerHTML = `<svg viewBox="0 0 24 24">${def.icon}</svg>`;
+      btn.append(SHORT[key] || def.label);
+      bar.append(btn);
+    }
+    return;
+  }
+  for (const type of TOOLBAR_ORDER) {
+    if (type === '|') { bar.append(h('div', { class: 'tool-sep' })); continue; }
+    const def = PRIMITIVES[type];
+    const btn = h('button', { class: 'tool-btn', title: `Añadir ${def.label.toLowerCase()}`, onclick: async () => {
+      const id = editor.addPrimitive(type);
+      $('#hint').hidden = true;
+      if (def.usesShape) await editProfile(id);
+    } });
+    btn.innerHTML = `<svg viewBox="0 0 24 24">${def.icon}</svg>`;
+    btn.append(def.label);
+    bar.append(btn);
+  }
+}
+
+function renderCadBar() {
+  const cad = editor.cad;
+  const mk = (key, def, onclick) => {
+    const b = h('button', { 'data-cadop': key, class: cad.toolName === key ? 'active' : '', title: def.title || `${def.label} · escribe ${def.alias?.[0]?.toUpperCase() || ''} e Intro`, onclick });
+    b.innerHTML = `<svg viewBox="0 0 24 24">${def.icon}</svg>`;
+    b.append(def.label);
+    return b;
+  };
+  $('#cad-bar').replaceChildren(
+    ...Object.entries(CAD_OPS).map(([k, d]) => mk(k, d, () => cad.runOp(k))),
+    h('span', { class: 'ops-sep' }),
+    mk('extrude3d', { label: 'Extruir a 3D', title: 'Convierte los contornos cerrados (o la selección) en piezas 3D', icon: '<path d="M4 19h12l4-3.5H8z" class="fill"/><path d="M4 19h12l4-3.5H8zM12 13V4M9 7l3-3 3 3"/>' }, () => extrude2DDialog()));
+}
+
+function refreshCadTool() {
+  const t = editor.cad.toolName;
+  for (const b of document.querySelectorAll('#primitives [data-cad]')) b.classList.toggle('active', b.dataset.cad === t);
+  for (const b of document.querySelectorAll('#cad-bar [data-cadop]')) b.classList.toggle('active', b.dataset.cadop === t);
+}
+
+function refreshCadToggles() {
+  const c = editor.cad;
+  for (const b of document.querySelectorAll('[data-cadt]')) {
+    const k = b.dataset.cadt;
+    b.classList.toggle('on', k === 'grid' ? !!c.drawing.grid : !!c[k]);
+  }
+}
+
+function refreshHistoryButtons() {
+  const c = editor.cad;
+  const [u, r] = is2D() ? [c.hi > 0, c.hi < c.hist.length - 1] : [editor.historyIndex > 0, editor.historyIndex < editor.history.length - 1];
+  $('#btn-undo').disabled = !u;
+  $('#btn-redo').disabled = !r;
+}
+
+/** Ajusta toda la interfaz al tipo (2D o 3D) del panel activo. */
+function applyMode() {
+  if (!editor) return;
+  const two = is2D();
+  if (two && editor.sculpt) editor.endSculpt();
+  $('#editor-screen').classList.toggle('mode-2d', two);
+  for (const b of document.querySelectorAll('#mode-seg button')) b.classList.toggle('active', b.dataset.m === (two ? '2d' : '3d'));
+  $('#ops-bar').hidden = two || !!editor.sculpt;
+  $('#cad-bar').hidden = !two;
+  $('#status-3d').hidden = two;
+  $('#status-2d').hidden = !two;
+  $('#scene-panel').hidden = two;
+  $('#layers-panel').hidden = !two;
+  renderToolbar();
+  if (two) { renderCadBar(); renderLayers(); refreshCadToggles(); editor.cad.emitPrompt(); }
+  else editor.cad.cancel(true);
+  renderProps();
+  refreshStatus();
+  refreshHistoryButtons();
+}
+
+/** Asegura que hay un panel 2D visible y lo activa. */
+function ensure2D() {
+  if (!editor.views.some(v => v.mode === '2d')) {
+    if (editor.objects.size && editor.layout === 1) editor.setLayout('2d3d');
+    else editor.active.setMode('2d');
+  }
+  editor.setActiveView(editor.views.find(v => v.mode === '2d'));
+  applyMode();
+}
+
+function initCadUI() {
+  const cad = editor.cad;
+  cad.addEventListener('change', () => { scheduleSave(); if (is2D()) { renderLayers(); renderProps(); refreshCadToggles(); } });
+  cad.addEventListener('select', () => { if (is2D()) renderProps(); });
+  cad.addEventListener('tool', refreshCadTool);
+  cad.addEventListener('prompt', e => { $('#cmd-prompt').textContent = e.detail; $('#cmd-prompt').title = e.detail; });
+  cad.addEventListener('message', e => { const m = $('#cmd-msg'); m.textContent = e.detail; m.title = e.detail; });
+  cad.addEventListener('cursor', e => {
+    if (e.detail) $('#cmd-coords').textContent = `X ${fmtNum(e.detail[0], cad.drawing)}   Y ${fmtNum(e.detail[1], cad.drawing)}`;
+  });
+  cad.addEventListener('history', () => { if (is2D()) refreshHistoryButtons(); });
+  cad.addEventListener('settings', refreshCadToggles);
+  cad.addEventListener('editrequest', () => setTimeout(() => $('#props .cad-text')?.focus(), 40));
+  for (const b of document.querySelectorAll('[data-cadt]')) b.addEventListener('click', () => cad.toggle(b.dataset.cadt));
+  $('#mode-seg').addEventListener('click', e => {
+    const b = e.target.closest('button[data-m]');
+    if (!b) return;
+    editor.active.setMode(b.dataset.m);
+    scheduleSave();
+  });
+  $('#btn-layer-add').onclick = () => {
+    const n = prompt('Nombre de la nueva capa', `Capa ${cad.drawing.layers.length + 1}`);
+    if (n) cad.addLayer(n);
+  };
+  $('#btn-cad-extrude').onclick = () => extrude2DDialog();
+}
+
+function renderLayers() {
+  const cad = editor.cad, D = cad.drawing;
+  const ul = $('#layers-list');
+  ul.replaceChildren();
+  $('#layer-count').textContent = D.layers.length;
+  const autoColor = document.documentElement.dataset.theme === 'light' ? '#111111' : '#e6e8eb';
+  for (const L of D.layers) {
+    const radio = h('input', { type: 'radio', name: 'cur-layer', class: 'lay-radio', title: 'Capa actual: los objetos nuevos se dibujan en ella' });
+    radio.checked = D.current === L.name;
+    radio.onchange = () => cad.setCurrentLayer(L.name);
+    const col = h('input', { type: 'color', title: L.color === 'auto' ? 'Color automático (blanco/negro según el fondo) · clic para elegir' : 'Color de la capa', value: L.color === 'auto' ? autoColor : L.color });
+    col.onchange = () => cad.updateLayer(L.name, { color: col.value });
+    const name = h('span', { class: 'lay-name', title: `${L.name} · doble clic para renombrar` }, L.name);
+    name.ondblclick = () => { const n = prompt('Nombre de la capa', L.name); if (n && n.trim()) cad.updateLayer(L.name, { name: n.trim() }); };
+    const lt = h('select', { title: 'Tipo de línea' }, Object.entries(LINETYPES).map(([k, v]) => {
+      const o = h('option', { value: k }, v.label);
+      if (k === L.lt) o.selected = true;
+      return o;
+    }));
+    lt.onchange = () => cad.updateLayer(L.name, { lt: lt.value });
+    const lw = h('button', { class: 'lay-btn', title: L.lw === 'thick' ? 'Línea gruesa (clic: fina)' : 'Línea fina (clic: gruesa)', onclick: () => cad.updateLayer(L.name, { lw: L.lw === 'thick' ? 'thin' : 'thick' }) });
+    lw.innerHTML = `<svg viewBox="0 0 24 24"><path d="M4 12h16" stroke-width="${L.lw === 'thick' ? 4 : 1.5}"/></svg>`;
+    const vis = h('button', { class: 'lay-btn', title: L.visible === false ? 'Mostrar la capa' : 'Ocultar la capa', onclick: () => cad.updateLayer(L.name, { visible: L.visible === false }) });
+    vis.innerHTML = L.visible === false ? EYE_OFF : EYE;
+    const del = h('button', { class: 'lay-btn', title: 'Eliminar la capa', onclick: () => {
+      if (D.layers.length <= 1) { toast('Debe quedar al menos una capa', true); return; }
+      const n = cad.layerCount(L.name);
+      if (n && !confirm(`La capa «${L.name}» tiene ${n} objeto${n > 1 ? 's' : ''}. Se moverán a la capa actual. ¿Eliminarla?`)) return;
+      cad.removeLayer(L.name);
+    } });
+    del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    ul.append(h('li', { class: [D.current === L.name && 'current', L.visible === false && 'hidden-layer'].filter(Boolean).join(' ') },
+      radio, col, name, h('span', { class: 'lay-count', title: 'Objetos en la capa' }, cad.layerCount(L.name)), lt, lw, vis, del));
+  }
+}
+
+const DEGR = 180 / Math.PI;
+
+/** Propiedades en modo 2D: ajustes del plano, una entidad o varias. */
+function renderCadProps(box) {
+  const cad = editor.cad, D = cad.drawing;
+  const ents = cad.selEnts();
+  const F = v => fmtNum(v, D);
+  const U = D.units === 'u' ? '' : ` ${D.units}`;
+  const info = pairs => h('div', { class: 'info-grid' }, pairs.filter(Boolean).flatMap(([k, v]) => [h('span', {}, k), h('span', {}, v)]));
+  const select = (options, value, onchange) => {
+    const s = h('select', { class: 'select-input' }, options.map(([v, l]) => { const o = h('option', { value: v }, l); if (String(v) === String(value)) o.selected = true; return o; }));
+    s.onchange = () => onchange(s.value);
+    return s;
+  };
+  const num = (label, value, onCommit, o = {}) => row(label, numberField({
+    label: '↔', value, step: o.step ?? 0.5, min: o.min ?? -1e9, max: o.max ?? 1e9,
+    onInput: o.onInput || (() => {}), onCommit,
+  }));
+  const xy = (label, p, set) => row(label, h('div', { class: 'vec2' }, [0, 1].map(i => numberField({
+    label: 'XY'[i], cls: 'xy'[i], value: p[i], step: 0.5,
+    onInput: v => { const q = [...p]; q[i] = v; set(q, false); },
+    onCommit: v => { const q = [...p]; q[i] = v; set(q, true); },
+  }))));
+  const layerSel = (value, onchange) => select(D.layers.map(l => [l.name, l.name]), value, onchange);
+  const btn = (label, onclick, cls = '') => h('button', { class: `btn sm ${cls}`, onclick }, label);
+
+  if (!ents.length) {
+    const osnaps = Object.entries(OSNAP_LABELS).map(([k, l]) => {
+      const c = h('input', { type: 'checkbox' });
+      c.checked = cad.osnap[k] !== false;
+      c.onchange = () => { cad.osnap[k] = c.checked; cad.savePrefs(); };
+      return h('label', { class: 'toggle' }, c, h('span', {}, l));
+    });
+    box.replaceChildren(
+      h('div', { class: 'prop-section' },
+        h('h3', {}, 'Plano 2D'),
+        info([['Objetos', String(D.entities.length)], ['Capa actual', D.current]]),
+        row('Unidades', select(Object.entries(UNITS).map(([k, u]) => [k, u.label]), D.units, v => cad.setSetting('units', v))),
+        row('Decimales', select([0, 1, 2, 3, 4].map(n => [n, n]), D.precision, v => cad.setSetting('precision', +v))),
+        row('Separador', select([[',', 'Coma (12,50)'], ['.', 'Punto (12.50)']], D.decimal, v => cad.setSetting('decimal', v))),
+        num('Altura texto', D.textH, v => { if (v > 0) cad.setSetting('textH', v); }, { min: 0.01 }),
+        num('Flechas', D.arrow, v => { if (v > 0) cad.setSetting('arrow', v); }, { min: 0.01, step: 0.25 })),
+      h('div', { class: 'prop-section' },
+        h('h3', {}, 'Referencias a objetos'),
+        h('div', { class: 'cap-checks-list' }, osnaps)),
+      h('div', { class: 'prop-section' },
+        h('h3', {}, 'Acciones'),
+        h('div', { class: 'btn-row' },
+          btn('Encuadrar todo', () => cad.zoomExtents()),
+          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary')),
+        h('div', { class: 'btn-row', style: 'margin-top:4px' },
+          btn('Exportar DXF', () => exportCad('dxf')),
+          btn('Exportar SVG', () => exportCad('svg')),
+          btn('Importar DXF', () => $('#model-input').click()))),
+      h('div', { class: 'prop-section' },
+        h('h3', {}, 'Cómo dibujar'),
+        (() => {
+          const ul = h('ul', { class: 'kbd-list' });
+          ul.innerHTML = [
+            '<b>L</b> línea · <b>PL</b> polilínea · <b>REC</b> rectángulo · <b>C</b> círculo · <b>A</b> arco · <b>T</b> texto',
+            '<b>DLI</b> cota · <b>DAL</b> alineada · <b>DRA</b>/<b>DDI</b> radio/diámetro · <b>DAN</b> ángulo · <b>DI</b> medir',
+            '<b>M</b> desplazar · <b>CO</b> copiar · <b>RO</b> girar · <b>SC</b> escala · <b>MI</b> simetría · <b>O</b> desfase · <b>TR</b> recortar',
+            'Coordenadas: <b>x,y</b> · <b>@dx,dy</b> · <b>dist&lt;ángulo</b> · o una distancia',
+            '<b>Intro</b>, <b>Espacio</b> o clic derecho: terminar / repetir · <b>Esc</b>: cancelar',
+            'Rueda: zoom · botón central o derecho: desplazar · doble clic central: encuadrar',
+          ].map(t => `<li>${t}</li>`).join('');
+          return ul;
+        })()),
+    );
+    return;
+  }
+
+  if (ents.length > 1) {
+    const byType = {};
+    let length = 0;
+    for (const e of ents) {
+      const k = e.type === 'dim' ? 'Cota' : TYPE_LABELS[e.type];
+      byType[k] = (byType[k] || 0) + 1;
+      length += entityInfo(e, D).length || 0;
+    }
+    box.replaceChildren(
+      h('div', { class: 'prop-section' },
+        h('h3', {}, `${ents.length} objetos seleccionados`),
+        info([...Object.entries(byType).map(([k, n]) => [k, String(n)]), length ? ['Longitud total', `${F(length)}${U}`] : null]),
+        row('Capa', layerSel(ents.every(e => e.layer === ents[0].layer) ? ents[0].layer : '', v => {
+          for (const e of ents) e.layer = v;
+          cad.commit();
+        }))),
+      h('div', { class: 'prop-section' },
+        h('h3', {}, 'Acciones'),
+        h('div', { class: 'btn-row' },
+          btn('Desplazar', () => cad.runOp('move')), btn('Copiar', () => cad.runOp('copy')), btn('Girar', () => cad.runOp('rotate'))),
+        h('div', { class: 'btn-row', style: 'margin-top:4px' },
+          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary'), btn('Borrar', () => cad.eraseSel(), 'danger'))),
+    );
+    return;
+  }
+
+  const e = ents[0], id = e.id;
+  const upd = (patch, commit = true) => cad.updateEntity(id, patch, commit);
+  const inf = entityInfo(e, D);
+  const geo = [];
+  switch (e.type) {
+    case 'line': {
+      const setLen = v => upd(x => { const dx = x.b[0] - x.a[0], dy = x.b[1] - x.a[1], L = Math.hypot(dx, dy) || 1; x.b = [x.a[0] + dx / L * v, x.a[1] + dy / L * v]; return x; });
+      const setAng = v => upd(x => { const L = Math.hypot(x.b[0] - x.a[0], x.b[1] - x.a[1]); x.b = [x.a[0] + Math.cos(v / DEGR) * L, x.a[1] + Math.sin(v / DEGR) * L]; return x; });
+      geo.push(xy('Inicio', e.a, (q, c) => upd({ a: q }, c)), xy('Fin', e.b, (q, c) => upd({ b: q }, c)),
+        num('Longitud', inf.length, v => { if (v > 0) setLen(v); }, { min: 0 }),
+        num('Ángulo °', inf.angle, setAng, { step: 1 }),
+        info([['ΔX', F(inf.dx)], ['ΔY', F(inf.dy)]]));
+      break;
+    }
+    case 'pline': {
+      if (isRect(e)) {
+        const xs = e.pts.map(p => p[0]), ys = e.pts.map(p => p[1]);
+        const x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0, hh = Math.max(...ys) - y0;
+        const rect = (W, H, X = x0, Y = y0) => upd({ pts: [[X, Y], [X + W, Y], [X + W, Y + H], [X, Y + H]] });
+        geo.push(xy('Esquina', [x0, y0], (q, c) => { if (c) rect(w, hh, q[0], q[1]); }),
+          num('Ancho', w, v => { if (v > 0) rect(v, hh); }, { min: 0 }),
+          num('Alto', hh, v => { if (v > 0) rect(w, v); }, { min: 0 }));
+      } else {
+        e.pts.slice(0, 24).forEach((p, i) => geo.push(xy(`Vértice ${i + 1}`, p, (q, c) => upd(x => { x.pts[i] = q; return x; }, c))));
+        if (e.pts.length > 24) geo.push(h('p', { class: 'note' }, `… y ${e.pts.length - 24} vértices más (edítalos con los pinzamientos).`));
+      }
+      const chk = h('input', { type: 'checkbox' });
+      chk.checked = !!e.closed;
+      chk.onchange = () => upd({ closed: chk.checked });
+      geo.push(row('Cerrada', h('label', { class: 'toggle' }, chk, h('span', {}, chk.checked ? 'Sí' : 'No'))),
+        info([['Vértices', String(e.pts.length)], ['Longitud', `${F(inf.length)}${U}`], inf.area != null ? ['Área', `${F(inf.area)}${U ? `${U}²` : ''}`] : null]));
+      break;
+    }
+    case 'circle':
+      geo.push(xy('Centro', e.c, (q, c) => upd({ c: q }, c)),
+        num('Radio', e.r, v => { if (v > 0) upd({ r: v }); }, { min: 0 }),
+        num('Diámetro', 2 * e.r, v => { if (v > 0) upd({ r: v / 2 }); }, { min: 0 }),
+        info([['Perímetro', `${F(inf.length)}${U}`], ['Área', `${F(inf.area)}${U ? `${U}²` : ''}`]]));
+      break;
+    case 'arc':
+      geo.push(xy('Centro', e.c, (q, c) => upd({ c: q }, c)),
+        num('Radio', e.r, v => { if (v > 0) upd({ r: v }); }, { min: 0 }),
+        num('Inicio °', e.a0 * DEGR, v => upd({ a0: ((v / DEGR) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) }), { step: 1 }),
+        num('Fin °', e.a1 * DEGR, v => upd({ a1: ((v / DEGR) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) }), { step: 1 }),
+        info([['Longitud', `${F(inf.length)}${U}`], ['Ángulo incluido', `${fmtNum(inf.sweep, D, 2)}°`]]));
+      break;
+    case 'text': {
+      const t = h('input', { class: 'text-input cad-text', value: e.text, spellcheck: 'false' });
+      t.onchange = () => { if (t.value.trim()) upd({ text: t.value }); };
+      t.onkeydown = ev => { if (ev.key === 'Enter') t.blur(); };
+      geo.push(row('Texto', t), xy('Posición', e.p, (q, c) => upd({ p: q }, c)),
+        num('Altura', e.h, v => { if (v > 0) upd({ h: v }); }, { min: 0.01 }),
+        num('Rotación °', (e.rot || 0) * DEGR, v => upd({ rot: v / DEGR }), { step: 1 }));
+      break;
+    }
+    case 'dim': {
+      const t = h('input', { class: 'text-input cad-text', value: e.text || '', placeholder: '<> = la medida', spellcheck: 'false' });
+      t.onchange = () => upd({ text: t.value.trim() || undefined });
+      t.onkeydown = ev => { if (ev.key === 'Enter') t.blur(); };
+      const val = e.kind === 'angle' ? `${fmtNum(inf.value, D, 2)}°` : `${F(inf.value)}${U}`;
+      geo.push(info([['Medida', val]]), row('Texto', t),
+        h('p', { class: 'note' }, 'Deja el texto vacío para mostrar la medida. Usa <> para añadir algo a la medida, p. ej. «2x <>» o «<> h7».'));
+      if (e.a) geo.push(xy('Origen 1', e.a, (q, c) => upd({ a: q }, c)), xy('Origen 2', e.b, (q, c) => upd({ b: q }, c)));
+      geo.push(xy('Posición', e.p, (q, c) => upd({ p: q }, c)));
+      if (e.a) geo.push(row('Tipo', select([['horizontal', 'Horizontal'], ['vertical', 'Vertical'], ['aligned', 'Alineada']], e.kind, v => upd({ kind: v }))));
+      break;
+    }
+  }
+  box.replaceChildren(
+    h('div', { class: 'prop-section' },
+      h('h3', {}, e.type === 'dim' ? DIM_LABELS[e.kind] : isRect(e) ? 'Rectángulo' : TYPE_LABELS[e.type]),
+      row('Capa', layerSel(e.layer, v => upd({ layer: v })))),
+    h('div', { class: 'prop-section' }, h('h3', {}, 'Geometría'), geo),
+    h('div', { class: 'prop-section' },
+      h('h3', {}, 'Acciones'),
+      h('div', { class: 'btn-row' },
+        btn('Desplazar', () => cad.runOp('move')), btn('Copiar', () => cad.runOp('copy')),
+        ['line', 'pline', 'circle', 'arc'].includes(e.type) ? btn('Desfase', () => cad.setTool('offset')) : null),
+      h('div', { class: 'btn-row', style: 'margin-top:4px' },
+        ['pline', 'circle'].includes(e.type) && (e.type === 'circle' || e.closed) ? btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary') : null,
+        e.type === 'pline' ? btn('Descomponer', () => cad.explodeSel()) : null,
+        btn('Borrar', () => cad.eraseSel(), 'danger'))),
+  );
+}
+
+function exportCad(kind) {
+  const D = editor.cad.drawing;
+  if (editor.cad.isEmpty()) { toast('El plano 2D está vacío', true); return; }
+  const base = `${store.slug(project.name)}-plano`;
+  if (kind === 'dxf') downloadBlob(new Blob([toDXF(D)], { type: 'application/dxf' }), `${base}.dxf`);
+  else downloadBlob(new Blob([toSVG(D)], { type: 'image/svg+xml' }), `${base}.svg`);
+  toast(`Plano exportado a ${kind.toUpperCase()}`);
+}
+
+/** Convierte contornos cerrados del plano en piezas 3D (extrusiones con huecos). */
+function extrude2DDialog() {
+  const cad = editor.cad, D = cad.drawing;
+  const sel = cad.selEnts();
+  const ents = sel.length ? sel : cad.visibleEntities().filter(e => !['Cotas', 'Texto', 'Ejes', 'Construcción'].includes(e.layer));
+  const { shapes, open } = buildShapes(ents);
+  if (!shapes.length) {
+    toast('No hay contornos cerrados que extruir: dibuja rectángulos, círculos, polilíneas cerradas o líneas y arcos que formen un contorno.', true);
+    return;
+  }
+  const holes = shapes.reduce((n, s) => n + s.holes.length, 0);
+  const unit = D.units === 'u' ? 'unidades' : D.units;
+  const per3D0 = D.per3D || UNITS[D.units]?.per3D || 100;
+  const field = (label, input, hint) => h('label', { class: 'field' }, h('span', {}, label), input, hint ? h('small', { class: 'muted' }, hint) : null);
+  const depth = h('input', { type: 'number', class: 'text-input', value: D.lastDepth || +(10 / (UNITS[D.units]?.mm || 1)).toPrecision(3), step: 'any', min: 0 });
+  const per3D = h('input', { type: 'number', class: 'text-input', value: per3D0, step: 'any', min: 0 });
+  const center = h('input', { type: 'checkbox', checked: true });
+  const wrap = h('div', { class: 'modal-backdrop' });
+  const close = () => { document.removeEventListener('keydown', onKey2, true); wrap.remove(); };
+  const go = () => {
+    const d = parseFloat(depth.value), k = parseFloat(per3D.value);
+    if (!(d > 0) || !(k > 0)) { toast('La altura y la escala deben ser mayores que 0', true); return; }
+    close();
+    const ids = editor.addExtrusions(shapes, { depth: d, scale: 1 / k, center: center.checked });
+    D.lastDepth = d;
+    if (D.per3D !== k) cad.setSetting('per3D', k); else cad.commit();
+    if (!editor.views.some(v => v.mode === '3d')) editor.setLayout('2d3d');
+    editor.frame(true);
+    toast(`${ids.length} pieza${ids.length > 1 ? 's' : ''} 3D creada${ids.length > 1 ? 's' : ''}${holes ? ` con ${holes} hueco${holes > 1 ? 's' : ''}` : ''}. Están en la lista de Escena (panel 3D).`);
+  };
+  const onKey2 = ev => {
+    if (ev.key === 'Escape') { ev.stopPropagation(); close(); }
+    else if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); go(); }
+    else ev.stopPropagation();
+  };
+  document.addEventListener('keydown', onKey2, true);
+  wrap.append(h('div', { class: 'modal convert', role: 'dialog', 'aria-modal': 'true' },
+    h('header', { class: 'modal-head' }, h('h2', {}, 'Extruir el plano a 3D'),
+      h('span', { class: 'muted' }, `${shapes.length} contorno${shapes.length > 1 ? 's' : ''} exterior${shapes.length > 1 ? 'es' : ''}${holes ? ` · ${holes} hueco${holes > 1 ? 's' : ''} interior${holes > 1 ? 'es' : ''}` : ''}${open ? ` · ${open} trazo${open > 1 ? 's' : ''} abierto${open > 1 ? 's' : ''} ignorado${open > 1 ? 's' : ''}` : ''} · ${sel.length ? 'de la selección' : 'de todo el plano (salvo cotas, texto, ejes y construcción)'}`)),
+    h('div', { class: 'convert-body' },
+      field(`Altura (${unit})`, depth),
+      field(`Escala: ${unit} del plano por unidad 3D`, per3D, `Con ${per3D0} ${unit} = 1 unidad 3D, una pieza de ${per3D0} ${unit} mide como el cubo por defecto.`),
+      h('label', { class: 'toggle' }, center, h('span', {}, 'Centrar las piezas en el origen de la escena 3D'))),
+    h('footer', { class: 'modal-foot' },
+      h('button', { class: 'btn', onclick: close }, 'Cancelar'),
+      h('button', { class: 'btn btn-primary', onclick: go }, 'Crear piezas 3D'))));
+  wrap.addEventListener('pointerdown', ev => { if (ev.target === wrap) close(); });
+  document.body.append(wrap);
+  depth.focus();
+  depth.select();
+}
+
 function refreshLayoutButtons() {
-  for (const b of document.querySelectorAll('button[data-layout]')) b.classList.toggle('active', +b.dataset.layout === editor.layout);
+  for (const b of document.querySelectorAll('button[data-layout]')) b.classList.toggle('active', String(b.dataset.layout) === String(editor.layout));
 }
 
 // ----------------------------------------------------------- panel lateral
@@ -920,6 +1342,10 @@ function onKey(e) {
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveNow(); toast('Guardado'); return; }
   if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); captureDialog('print'); return; }
+  if (is2D()) {
+    if (e.target.id === 'cmd-input' || !e.target.closest('input, textarea, select')) editor.cad.handleKey(e, $('#cmd-input'));
+    return;
+  }
   if (typing) return;
   const k = e.key.toLowerCase();
   const digit = (e.code.match(/^(?:Digit|Numpad)(\d)$/) || [])[1];
@@ -1062,7 +1488,7 @@ function refreshStatus() {
   const s = editor.stats();
   const sel = editor.getSelected();
   const n = editor.selection.length;
-  $('#statusbar').innerHTML =
+  $('#status-3d').innerHTML =
     `<span>Objetos <b>${s.objects}</b></span><span>Triángulos <b>${s.tris.toLocaleString('es-ES')}</b></span>` +
     `<span>Vértices <b>${s.verts.toLocaleString('es-ES')}</b></span>` +
     `<span>Vista <b>${VIEW_LABEL[editor.viewMode]}</b></span><span>Snap <b>${editor.snap ? 'sí' : 'no'}</b></span>` +
@@ -1157,6 +1583,7 @@ function rangeRow(label, value, onInput, onCommit) {
 function renderProps() {
   const box = $('#props');
   vecFields = {};
+  if (is2D()) return renderCadProps(box);
   if (editor.selection.length > 1) return renderMultiProps(box);
   if (editor.subSel) return renderOperandProps(box);
   const sel = editor.getSelected();

@@ -9,6 +9,7 @@ import { encodeGeometry, meshDataSize } from './io.js';
 import { createSculpt, SculptSession } from './sculpt.js';
 import { cssVar, currentTheme } from './theme.js';
 import { View, LAYOUTS } from './views.js';
+import { Cad } from './cad2d.js';
 
 const DEG = THREE.MathUtils.DEG2RAD;
 const RAD = THREE.MathUtils.RAD2DEG;
@@ -43,6 +44,7 @@ export class Editor extends EventTarget {
     this.historyIndex = -1;
     this.views = [];
     this.layout = 1;
+    this.cad = new Cad();          // plano 2D compartido por los paneles en modo 2D
 
     // --- renderer / escena (un solo lienzo; cada panel se dibuja con viewport + scissor)
     const renderer = this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -147,9 +149,11 @@ export class Editor extends EventTarget {
   set currentView(v) { this.active.currentView = v; this.active.updateLabel(); }
 
   /** Divide el visor en 1, 2, 3 o 4 paneles, cada uno con su propia cámara. */
-  setLayout(n, states) {
-    n = LAYOUTS[n] ? +n : 1;
-    const defaults = LAYOUTS[n].views;
+  setLayout(layout, states) {
+    const key = LAYOUTS[layout] ? String(layout) : '1';
+    const L = LAYOUTS[key];
+    const n = L.n ?? +key;
+    const defaults = L.views;
     const prevTarget = this.views[0]?.target.clone();
     while (this.views.length > n) {
       const v = this.views.pop();
@@ -164,25 +168,44 @@ export class Editor extends EventTarget {
       v.persp.position.copy(v.target).add(new THREE.Vector3(5, 4, 6));
       v._isNew = true;
     }
-    this.layout = n;
+    this.layout = key === '2d3d' ? '2d3d' : +key;
     this.layoutEl.dataset.layout = n;
     this.layoutEl.classList.toggle('multi', n > 1);
     this._resize();
     this.views.forEach((v, i) => {
       if (states?.[i]) v.setState(states[i]);
-      else if (v._isNew && (defaults[i] !== 'persp' || i > 0)) v.setView(defaults[i]);
+      else {
+        if (L.modes) v.setMode(L.modes[i] || '3d', true);
+        if (v._isNew && (defaults[i] !== 'persp' || i > 0)) v.setView(defaults[i]);
+      }
       v._isNew = false;
     });
     if (!this.views.includes(this.active)) this.setActiveView(this.views[0]);
-    if (!this.gizmoView || !this.views.includes(this.gizmoView)) this._hoverView(this.views[0]);
-    this.dispatchEvent(new CustomEvent('layout', { detail: n }));
+    if (!this.gizmoView || !this.views.includes(this.gizmoView)) this._hoverView(this.views.find(v => v.mode === '3d') || this.views[0]);
+    this._resize();
+    this.dispatchEvent(new CustomEvent('layout', { detail: this.layout }));
+    this.dispatchEvent(new CustomEvent('viewmode'));
   }
 
   setActiveView(view) {
     if (this.active === view) return;
+    const prevMode = this.active?.mode;
     this.active = view;
     for (const v of this.views) v.el.classList.toggle('active', v === view);
     this._emitCamera(view);
+    if (prevMode !== view.mode) this.dispatchEvent(new CustomEvent('viewmode'));
+  }
+
+  /** Un panel ha cambiado entre 2D y 3D. */
+  _viewModeChanged(view) {
+    if (view.mode === '2d' && this.sculpt) this.endSculpt();
+    if (this.gizmoView === view && view.mode === '2d') {
+      const other = this.views.find(v => v.mode === '3d');
+      if (other) this._hoverView(other);
+    }
+    this._resize();
+    this.dispatchEvent(new CustomEvent('viewmode'));
+    this.dispatchEvent(new CustomEvent('layout', { detail: this.layout }));
   }
 
   _emitCamera(view) {
@@ -192,7 +215,7 @@ export class Editor extends EventTarget {
 
   /** El gizmo trabaja en el panel que está bajo el ratón. */
   _hoverView(view) {
-    if (!view || this.gizmo.dragging || this.gizmoView === view) return;
+    if (!view || view.mode === '2d' || this.gizmo.dragging || this.gizmoView === view) return;
     if (this.gizmo.domElement) this.gizmo.disconnect();
     this.gizmo.domElement = view.el;
     this.gizmo.connect();
@@ -214,6 +237,7 @@ export class Editor extends EventTarget {
     r.setClearColor(opts.sepColor ?? (this._sepColor ??= new THREE.Color(cssVar('--line') || '#2e333a')), opts.sepAlpha ?? 1);
     r.clear();
     for (const v of opts.only ? [opts.only] : this.views) {
+      if (v.mode === '2d') continue;
       const rc = opts.only ? { x: 0, y: 0, w: W, h: H } : v.rect();
       if (rc.w < 2 || rc.h < 2) continue;
       if (!opts.only) v.setAspect(rc.w / rc.h);
@@ -278,6 +302,7 @@ export class Editor extends EventTarget {
     for (const v of this.views) {
       const rc = v.rect();
       if (rc.w && rc.h) v.setAspect(rc.w / rc.h);
+      v.cadView.resize();
     }
   }
 
@@ -626,6 +651,37 @@ export class Editor extends EventTarget {
     this.setSelection(ids);
     this._commit();
     return { ids, scaled: s !== 1, scale: s, size: maxDim, bytes };
+  }
+
+  /**
+   * Crea objetos «Extrusión» a partir de contornos del plano 2D.
+   * shapes: [{points, holes}] en unidades del plano · depth: altura en unidades del plano
+   * scale: unidades 3D por unidad del plano · center: centrar el conjunto en el origen
+   */
+  addExtrusions(shapes, { depth, scale, center = true, name = 'Pieza', material } = {}) {
+    let ox = 0, oy = 0;
+    if (center) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const s of shapes) for (const p of s.points) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+      ox = (x0 + x1) / 2; oy = (y0 + y1) / 2;
+    }
+    const t = p => [round((p[0] - ox) * scale, 6), round((p[1] - oy) * scale, 6)];
+    const ids = [];
+    for (const s of shapes) {
+      const shape = { smooth: false, points: s.points.map(t), holes: (s.holes || []).map(h => h.map(t)) };
+      const params = { ...defaultParams('extrude'), depth: Math.min(100, Math.max(0.001, round(depth * scale, 6))) };
+      const c = profileCenterOffset('extrude', params, shape);
+      const data = {
+        id: uid(), type: 'extrude', name: this._nextName(name), params, shape,
+        position: [round(c.x), round(c.y), round(c.z)], rotation: [0, 0, 0], scale: [1, 1, 1],
+        material: { ...DEFAULT_MATERIAL, ...material }, visible: true,
+      };
+      this._insert(data);
+      ids.push(data.id);
+    }
+    this.setSelection(ids);
+    this._commit();
+    return ids;
   }
 
   /** Añade a la escena los objetos de otro proyecto (con ids y nombres nuevos). */
@@ -1260,8 +1316,21 @@ export class Editor extends EventTarget {
 
   /** Miniatura JPEG del primer panel (sin ayudas ni gizmo). */
   thumbnail(w = 320, h = 200) {
+    const v2 = this.views.find(v => v.mode === '2d');
+    if (v2 && (!this.objects.size || this.views[0] === v2) && !this.cad.isEmpty()) {
+      const rc = v2.rect();
+      if (!rc.w || !rc.h) return null;
+      const tmp = document.createElement('canvas');
+      tmp.width = rc.w; tmp.height = rc.h;
+      this.cad.render(v2.cadView, tmp.getContext('2d'), rc.w, rc.h, { print: true });
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const k = Math.max(w / rc.w, h / rc.h), sw = w / k, sh = h / k;
+      c.getContext('2d').drawImage(tmp, (rc.w - sw) / 2, (rc.h - sh) / 2, sw, sh, 0, 0, w, h);
+      return c.toDataURL('image/jpeg', 0.72);
+    }
     if (!this.objects.size) return null;
-    const v = this.views[0];
+    const v = this.views.find(x => x.mode === '3d') || this.views[0];
     const rc = v.rect();
     return this._withCleanScene(() => {
       this.renderViews({ only: v, noNav: true });
@@ -1310,6 +1379,16 @@ export class Editor extends EventTarget {
         c.width = src.width; c.height = src.height;
         const ctx = c.getContext('2d');
         ctx.drawImage(src, 0, 0);
+        for (const v of this.views) {
+          if (v.mode !== '2d') continue;
+          const rc = v.rect(), k = c.width / W;
+          ctx.save();
+          ctx.scale(k, k);
+          ctx.translate(rc.x, rc.y);
+          ctx.beginPath(); ctx.rect(0, 0, rc.w, rc.h); ctx.clip();
+          this.cad.render(v.cadView, ctx, rc.w, rc.h, { print: true, grid, background });
+          ctx.restore();
+        }
         if (labels && this.views.length > 1) {
           const k = c.width / W;
           ctx.font = `${Math.round(12 * k)}px system-ui, sans-serif`;
