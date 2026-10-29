@@ -2,6 +2,7 @@
 import { Editor } from './editor.js';
 import { PRIMITIVES, TOOLBAR_ORDER, PALETTE, BOOLEAN_OPS, typeLabel } from './primitives.js';
 import { editShape } from './sketch.js';
+import { openHelp, EXAMPLES, createExampleProject } from './help.js';
 import * as store from './storage.js';
 
 const $ = sel => document.querySelector(sel);
@@ -58,7 +59,12 @@ function renderProjectList() {
   if (!list.length) {
     grid.append(h('div', { class: 'empty-projects' },
       h('strong', {}, 'Aún no hay proyectos'),
-      'Crea uno nuevo o importa un archivo .json exportado previamente.'));
+      h('p', {}, 'Crea uno nuevo, importa un archivo .json o empieza por un ejemplo terminado:'),
+      h('div', { class: 'example-chips' }, EXAMPLES.map(ex => h('button', { class: 'btn sm', title: ex.summary, onclick: () => {
+        const p = createExampleProject(ex.key);
+        if (p) location.hash = `#/p/${p.id}`;
+      } }, ex.name))),
+      h('p', {}, h('a', { href: '#', onclick: e => { e.preventDefault(); showHelp(); } }, 'Abrir la guía de uso'))));
   }
   for (const p of list) {
     const thumb = h('button', { class: 'project-thumb', title: 'Abrir', onclick: () => (location.hash = `#/p/${p.id}`) });
@@ -101,6 +107,15 @@ $('#btn-new-project').onclick = () => {
   const p = store.createProject(name.trim() || 'Proyecto sin título');
   location.hash = `#/p/${p.id}`;
 };
+
+function showHelp(section) {
+  openHelp(section, { onExample: p => { flushSave(); location.hash = `#/p/${p.id}`; toast(`Ejemplo «${p.name.replace('Ejemplo · ', '')}» abierto como proyecto nuevo`); } });
+}
+$('#btn-help-home').onclick = () => showHelp();
+document.addEventListener('keydown', e => {
+  if (document.querySelector('.modal-backdrop') || e.target.closest('input, textarea, select')) return;
+  if (e.key === 'F1' || (e.key === '?' && !e.ctrlKey && !e.metaKey)) { e.preventDefault(); showHelp(); }
+});
 
 $('#btn-export-all').onclick = () => {
   const projects = store.listProjects().map(p => store.loadProject(p.id)).filter(Boolean);
@@ -243,6 +258,7 @@ function initEditor() {
 
   // barra superior
   $('#btn-back').onclick = () => (location.hash = '');
+  $('#btn-help').onclick = () => showHelp();
   $('#btn-undo').onclick = () => editor.undo();
   $('#btn-redo').onclick = () => editor.redo();
   $('#btn-export').onclick = () => { snapshotProject(); saveNow(); exportProject(project); };

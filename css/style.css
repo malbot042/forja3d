@@ -345,6 +345,62 @@ button, input, select { font: inherit; color: inherit; }
   .ops-bar { max-width: calc(100% - 20px); }
 }
 
+/* ---------- ayuda ---------- */
+.help-btn { color: var(--muted); }
+.help-btn:hover { color: var(--accent); }
+.empty-projects p { margin: 6px 0; }
+.example-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 12px 0; }
+.empty-projects a { color: var(--accent); }
+.modal.help { width: min(1080px, 100%); height: min(760px, 100%); }
+.help-head { display: flex; align-items: center; justify-content: space-between; }
+.help-body { display: grid; grid-template-columns: 210px 1fr; min-height: 0; flex: 1; }
+.help-nav { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; border-right: 1px solid var(--line); overflow-y: auto; background: var(--bg-2); }
+.help-nav button {
+  text-align: left; background: none; border: 0; border-radius: 5px; padding: 7px 10px; cursor: pointer; color: var(--muted);
+}
+.help-nav button:hover { color: var(--text); background: var(--panel-2); }
+.help-nav button.active { color: var(--accent); background: var(--sel); }
+.help-content { overflow-y: auto; padding: 18px 26px 32px; line-height: 1.6; font-size: 13.5px; outline: none; }
+.help-content h3 { margin: 0 0 10px; font-size: 19px; }
+.help-content h4 { margin: 22px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.help-content p { margin: 8px 0; max-width: 72ch; }
+.help-content ul, .help-content ol { padding-left: 20px; margin: 6px 0; max-width: 76ch; }
+.help-content li { margin: 3px 0; }
+.help-content a { color: var(--accent); }
+.help-content code { font: 12px var(--mono); background: var(--bg-2); padding: 1px 5px; border-radius: 3px; }
+.help-content .lead { font-size: 15px; color: var(--text); }
+kbd {
+  display: inline-block; min-width: 20px; text-align: center;
+  font: 11px/1.6 var(--mono); padding: 0 5px; border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--line-2); border-bottom-width: 2px; color: var(--text);
+}
+.steps li::marker { color: var(--accent); font-weight: 600; }
+.areas { list-style: none; padding-left: 0 !important; }
+.areas li { margin: 6px 0; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent-ink); background: var(--accent); border-radius: 3px; padding: 0 6px; margin-right: 6px; }
+.callout { border-left: 3px solid var(--accent); background: var(--sel); padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 12px 0; max-width: 72ch; }
+.keys { border-collapse: collapse; margin: 8px 0; }
+.keys td, .keys th { padding: 5px 12px 5px 0; vertical-align: middle; border-bottom: 1px solid var(--line); text-align: left; }
+.keys th { padding-top: 16px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.keys.wide td:first-child { white-space: nowrap; width: 220px; }
+.ops-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: 12px 0; }
+.ops-grid div { background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.ops-grid > div > b { display: block; color: var(--accent); margin-bottom: 2px; }
+.ops-grid span b { color: var(--text); font-weight: 600; }
+.ops-grid span { color: var(--muted); font-size: 12.5px; }
+.btn-example { margin: 6px 6px 0 0; }
+.ex-row { display: flex; flex-wrap: wrap; }
+.example { border: 1px solid var(--line); border-radius: 10px; padding: 4px 16px 10px; margin: 14px 0; background: var(--bg-2); }
+.example header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.example h4 { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 15px; margin: 12px 0 0; }
+.example .btn-example { margin: 10px 0 0; }
+@media (max-width: 720px) {
+  .help-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .help-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .help-nav button { white-space: nowrap; }
+  .help-content { padding: 14px 16px 28px; }
+}
+
 /* ---------- toast ---------- */
 .toast {
   position: fixed; left: 50%; bottom: 40px; transform: translate(-50%, 20px);

@@ -26,6 +26,10 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Guardado automático** en `localStorage`.
 - **Descargar JSON** de un proyecto o de todos, e **importar JSON** (un proyecto o un paquete completo).
 
+## Ayuda integrada y ejemplos
+
+El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en la pantalla de proyectos abren una guía con todas las funcionalidades y seis ejemplos guiados (taza, dado, tuerca y tornillo, casa, piezas de torno y naranja partida). Cada ejemplo se puede abrir con un clic como proyecto nuevo y desmontar con *Separar* para ver cómo está hecho.
+
 ## Atajos de teclado
 
 | Tecla | Acción |
@@ -45,6 +49,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 | `Ctrl+D` | Duplicar |
 | `Ctrl+Z` / `Ctrl+Y` (o `Ctrl+Mayús+Z`) | Deshacer / Rehacer |
 | `Ctrl+S` | Guardar ahora |
+| `?` / `F1` | Abrir la ayuda |
 | `Esc` | Quitar selección |
 
 Las teclas de vista funcionan tanto en la fila de números como en el teclado numérico (mismo esquema que Blender).
@@ -85,6 +90,7 @@ js/primitives.js        Catálogo de primitivas y sus parámetros
 js/storage.js           Persistencia en localStorage, import/export JSON
 js/csg.js               Operaciones booleanas (CSG) y caché de resultados
 js/sketch.js            Editor de perfiles 2D para extrusión y revolución
+js/help.js              Ayuda integrada y proyectos de ejemplo
 lib/three/              three.js r170 (copia local, licencia MIT) y controles
 lib/three-bvh-csg/      three-bvh-csg 0.0.17 (MIT) · booleanas
 lib/three-mesh-bvh/     three-mesh-bvh 0.8.3 (MIT) · dependencia de la anterior
