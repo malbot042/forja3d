@@ -22,8 +22,6 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Editor 2D de planos** al estilo AutoCAD: línea de órdenes con alias (`L`, `PL`, `REC`, `C`, `A`, `T`, `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`…), coordenadas absolutas, relativas (`@dx,dy`), polares (`d<ángulo`) y distancia directa; referencias a objetos (final, medio, centro, cuadrante, intersección), Orto, forzar a rejilla, pinzamientos, selección por ventana/captura, rótulos junto al cursor que explican cada acción, copiar/pegar/duplicar y desplazamiento con flechas.
   - **Cotas** lineales, alineadas, de radio, diámetro y ángulo, y herramienta **Medir** (distancia, ΔX, ΔY, ángulo); longitudes, perímetros y áreas en Propiedades.
   - **Hoja** A5, A4, A3, A2, A1 o A0, horizontal o vertical, a escala (10:1 … 1:1000), con recuadro y cajetín; **PDF vectorial a escala real** para imprimir.
-  - **Rejilla isométrica** (ejes a 30°, 90° y 150°) con forzado a sus nodos y orto isométrico; **Mano** (pan) para moverse por la hoja.
-  - **Hoja** A5, A4, A3, A2, A1 o A0, horizontal o vertical, a escala (10:1 … 1:1000), con recuadro y cajetín; **PDF vectorial a escala real** para imprimir.
   - **Modo isométrico** en el plano: rejilla a 30°/90°/150°, forzado a sus nodos y orto isométrico. **Mano** (pan) para moverse libremente por la hoja.
   - **Tipos de línea** continua, trazos, oculta, eje, puntos y **lápiz** (trazo a mano alzada con la geometría exacta, sobre la rejilla), por capa o por objeto; botón *✎ Lápiz* para dibujar en ese estilo.
   - **Capas** con color, tipo de línea y grosor; unidades (mm, cm, m, pulgadas…) y estilo de cota configurables.
@@ -74,8 +72,6 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `N` | Mostrar u ocultar el panel lateral |
 | `Ctrl+P` | Capturar imagen, PDF o imprimir |
 | `[` `]` / `Mayús+[` `]` | (Modo escultor) tamaño / fuerza del pincel |
-| `9` | Vista isométrica |
-| `H` | Mano: desplazar la vista con el botón izquierdo (en 2D, orden `P`) |
 | `9` | Vista isométrica |
 | `H` | Mano: desplazar la vista con el botón izquierdo (en 2D, orden `P`) |
 | `Esc` | Quitar selección |
