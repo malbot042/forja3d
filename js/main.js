@@ -744,7 +744,7 @@ function refreshCadToggles() {
   const c = editor.cad;
   for (const b of document.querySelectorAll('[data-cadt]')) {
     const k = b.dataset.cadt;
-    b.classList.toggle('on', k === 'grid' ? !!c.drawing.grid : !!c[k]);
+    b.classList.toggle('on', k === 'grid' ? !!c.drawing.grid : k === 'pencil' ? c.drawing.curLt === 'pencil' : !!c[k]);
   }
 }
 
@@ -874,6 +874,11 @@ function renderCadProps(box) {
   }))));
   const layerSel = (value, onchange) => select(D.layers.map(l => [l.name, l.name]), value, onchange);
   const btn = (label, onclick, cls = '') => h('button', { class: `btn sm ${cls}`, onclick }, label);
+  // '' = el de la capa; '-' = varios distintos (selección múltiple)
+  const ltSel = (value, layerLt, onchange) => select([
+    ...(value === '-' ? [['-', 'Varios']] : []),
+    ['', `Por capa${layerLt ? ` (${LINETYPES[layerLt]?.label || layerLt})` : ''}`],
+    ...Object.entries(LINETYPES).map(([k, v]) => [k, v.label])], value, v => { if (v !== '-') onchange(v); });
 
   if (!ents.length) {
     const osnaps = Object.entries(OSNAP_LABELS).map(([k, l]) => {
@@ -949,6 +954,10 @@ function renderCadProps(box) {
         info([...Object.entries(byType).map(([k, n]) => [k, String(n)]), length ? ['Longitud total', `${F(length)}${U}`] : null]),
         row('Capa', layerSel(ents.every(e => e.layer === ents[0].layer) ? ents[0].layer : '', v => {
           for (const e of ents) e.layer = v;
+          cad.commit();
+        })),
+        row('Tipo de línea', ltSel(ents.every(e => (e.lt || '') === (ents[0].lt || '')) ? ents[0].lt || '' : '-', null, v => {
+          for (const e of ents) if (v) e.lt = v; else delete e.lt;
           cad.commit();
         }))),
       h('div', { class: 'prop-section' },
@@ -1033,7 +1042,10 @@ function renderCadProps(box) {
     h('div', { class: 'prop-section' },
       h('h3', {}, e.type === 'dim' ? DIM_LABELS[e.kind] : isRect(e) ? 'Rectángulo' : TYPE_LABELS[e.type]),
       h('p', { class: 'muted small cad-hint' }, 'Escribe aquí valores exactos (Intro aplica) o, en el plano, arrastra los pinzamientos ■ azules. Esc: deseleccionar.'),
-      row('Capa', layerSel(e.layer, v => upd({ layer: v })))),
+      row('Capa', layerSel(e.layer, v => upd({ layer: v }))),
+      ['line', 'pline', 'circle', 'arc'].includes(e.type)
+        ? row('Tipo de línea', ltSel(e.lt || '', cad.layer(e.layer)?.lt, v => cad.updateEntity(id, n => { if (v) n.lt = v; else delete n.lt; return n; })))
+        : null),
     h('div', { class: 'prop-section' }, h('h3', {}, 'Geometría'), geo),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Acciones'),

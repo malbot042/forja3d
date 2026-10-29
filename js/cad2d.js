@@ -63,7 +63,96 @@ export const LINETYPES = {
   dashed: { label: 'Trazos', dash: [9, 5], dxf: 'DASHED' },
   hidden: { label: 'Oculta', dash: [4, 3], dxf: 'HIDDEN' },
   center: { label: 'Eje', dash: [16, 4, 3, 4], dxf: 'CENTER' },
+  dotted: { label: 'Puntos', dash: [0.1, 4], dxf: 'DOT' },
+  pencil: { label: 'Lápiz (a mano alzada)', dash: [], dxf: 'CONTINUOUS', sketch: true },
 };
+
+/** Tipo de línea efectivo: el del objeto si lo tiene, si no el de su capa. */
+export const ltOf = (e, L) => (e.lt && LINETYPES[e.lt] ? e.lt : L?.lt) || 'continuous';
+
+// ---------------------------------------------------------- trazo «a mano alzada»
+// Solo cambia el dibujo: la geometría sigue siendo exacta (rejilla, referencias, cotas).
+// Es determinista (semilla = id del objeto) para que el trazo no «tiemble» al redibujar.
+function hashStr(str) {
+  let h = 2166136261;
+  for (const ch of String(str)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function rand1(seed, i) {
+  let x = Math.imul(seed ^ Math.imul(i + 1, 0x9E3779B1), 0x85EBCA6B);
+  x ^= x >>> 13; x = Math.imul(x, 0xC2B2AE35); x ^= x >>> 16;
+  return (x >>> 0) / 4294967296 * 2 - 1;
+}
+function noise1(seed, t) {
+  const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f);
+  return rand1(seed, i) * (1 - u) + rand1(seed, i + 1) * u;
+}
+
+/** Trazos base (en coordenadas del plano) de un objeto: cada tramo recto por separado, curvas muestreadas. */
+function sketchBase(e, seed, step) {
+  const curve = (c, r, a0, sw) => {
+    const n = Math.max(12, Math.ceil(Math.abs(sw) * r / step));
+    return Array.from({ length: n + 1 }, (_, k) => polar(c, r, a0 + sw * k / n));
+  };
+  switch (e.type) {
+    case 'line': return [{ pts: [e.a, e.b], open: true }];
+    case 'pline': {
+      const out = [];
+      const n = e.pts.length;
+      for (let i = 0; i < n - 1 + (e.closed ? 1 : 0); i++) out.push({ pts: [e.pts[i], e.pts[(i + 1) % n]], open: true });
+      return out;
+    }
+    case 'circle': {
+      // un círculo a mano empieza en cualquier sitio y se cierra pasándose un poco
+      const a0 = (rand1(seed, 99) + 1) * Math.PI;
+      return [{ pts: curve(e.c, e.r, a0, TAU + 0.18 + 0.12 * rand1(seed, 98)), open: false }];
+    }
+    case 'arc': return [{ pts: curve(e.c, e.r, e.a0, sweepOf(e.a0, e.a1)), open: true }];
+    default: return [];
+  }
+}
+
+/**
+ * Convierte trazos (ya en el espacio de dibujo: píxeles o unidades del SVG) en dos pasadas
+ * temblorosas, con los extremos rectos pasados de largo como al dibujar con lápiz.
+ * opts: { amp: desviación, step: separación entre puntos, over: cuánto se pasa en los extremos }
+ */
+export function sketchStrokes(strokes, seed, { amp, step, over, bowMax = 0 }) {
+  const out = [];
+  strokes.forEach((s, si) => {
+    if (s.pts.length < 2) return;
+    for (let pass = 0; pass < 2; pass++) {
+      const sd = (seed + si * 7919 + pass * 104729) >>> 0;
+      let pts = s.pts.map(p => [...p]);
+      if (s.open && over > 0) {
+        const d0 = norm(sub(pts[0], pts[1])), d1 = norm(sub(pts[pts.length - 1], pts[pts.length - 2]));
+        pts[0] = add(pts[0], mul(d0, over * (0.35 + 0.65 * Math.abs(rand1(sd, 1)))));
+        pts[pts.length - 1] = add(pts[pts.length - 1], mul(d1, over * (0.35 + 0.65 * Math.abs(rand1(sd, 2)))));
+      }
+      const bias = pass ? amp * 0.7 * rand1(sd, 3) : 0;
+      // los trazos largos se curvan un poco, como cuando se dibuja sin regla
+      let total = 0;
+      for (let i = 0; i < pts.length - 1; i++) total += dist(pts[i], pts[i + 1]);
+      const bow = s.open ? rand1(sd, 4) * Math.min(total * 0.012, bowMax) : 0;
+      const res = [];
+      let acc = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1], L = dist(a, b);
+        if (L < 1e-12) continue;
+        const n = perp(norm(sub(b, a)));
+        const k = Math.max(1, Math.ceil(L / step));
+        for (let j = i === 0 ? 0 : 1; j <= k; j++) {
+          const t = j / k, sArc = acc + L * t;
+          const off = bias + bow * Math.sin(Math.PI * Math.min(1, sArc / total)) + amp * (0.7 * noise1(sd, sArc / (step * 7)) + 0.3 * noise1(sd + 1, sArc / (step * 1.6)));
+          res.push(add(lerp(a, b, t), mul(n, off)));
+        }
+        acc += L;
+      }
+      if (res.length > 1) out.push({ pts: res, pass });
+    }
+  });
+  return out;
+}
 
 export const TYPE_LABELS = { line: 'Línea', pline: 'Polilínea', circle: 'Círculo', arc: 'Arco', text: 'Texto', dim: 'Cota' };
 export const DIM_LABELS = { horizontal: 'Cota horizontal', vertical: 'Cota vertical', aligned: 'Cota alineada', radius: 'Cota de radio', diameter: 'Cota de diámetro', angle: 'Cota angular' };
@@ -695,7 +784,7 @@ export function toDXF(D) {
   w(9, '$INSUNITS'); w(70, UNITS[D.units]?.dxf ?? 0);
   w(0, 'ENDSEC');
   w(0, 'SECTION'); w(2, 'TABLES');
-  const lts = [['CONTINUOUS', 'Solid line', []], ['DASHED', 'Dashed __ __ __', [6, -3]], ['HIDDEN', 'Hidden _ _ _', [3, -1.5]], ['CENTER', 'Center ____ _ ____', [12, -3, 3, -3]]];
+  const lts = [['CONTINUOUS', 'Solid line', []], ['DASHED', 'Dashed __ __ __', [6, -3]], ['HIDDEN', 'Hidden _ _ _', [3, -1.5]], ['CENTER', 'Center ____ _ ____', [12, -3, 3, -3]], ['DOT', 'Dot . . . .', [0, -2]]];
   w(0, 'TABLE'); w(2, 'LTYPE'); w(70, lts.length);
   for (const [name, desc, pat] of lts) {
     w(0, 'LTYPE'); w(2, name); w(70, 0); w(3, desc); w(72, 65); w(73, pat.length);
@@ -719,8 +808,11 @@ export function toDXF(D) {
     if (rot) w(50, num(rot * DEG));
     if (center) { w(72, 1); w(11, num(p[0])); w(21, num(p[1])); w(31, 0); }
   };
+  const lyr = new Map(D.layers.map(L => [L.name, L]));
   for (const e of D.entities) {
     const l = dxfName(e.layer);
+    const ov = e.lt && e.type !== 'dim' && e.type !== 'text' && LINETYPES[e.lt] && LINETYPES[e.lt].dxf !== (LINETYPES[lyr.get(e.layer)?.lt]?.dxf || 'CONTINUOUS') ? LINETYPES[e.lt].dxf : null;
+    const at = out.length;
     switch (e.type) {
       case 'line': line(l, e.a, e.b); break;
       case 'pline':
@@ -748,6 +840,7 @@ export function toDXF(D) {
         break;
       }
     }
+    if (ov) { let k = at; while (k < out.length && out[k] !== '8') k += 2; if (k < out.length) out.splice(k + 2, 0, '6', ov); }
   }
   w(0, 'ENDSEC'); w(0, 'EOF');
   return out.join('\r\n') + '\r\n';
@@ -786,6 +879,7 @@ function vertsToEntities(verts, closed, layer) {
 
 const ltFromName = n => {
   const s = String(n || '').toUpperCase();
+  if (s.startsWith('DOT')) return 'dotted';
   if (s.includes('CENTER') || s.includes('DASHDOT')) return 'center';
   if (s.includes('HIDDEN')) return 'hidden';
   if (s.includes('DASH')) return 'dashed';
@@ -827,7 +921,8 @@ export function parseDXF(text) {
       const { obj, list, next } = readObj(i + 1);
       i = next;
       const layer = (obj[8]?.[0] || '0').trim();
-      const push = e => res.entities.push({ ...e, layer });
+      const elt = obj[6]?.[0] && !/^BY(LAYER|BLOCK)$/i.test(obj[6][0].trim()) ? ltFromName(obj[6][0]) : null;
+      const push = e => res.entities.push({ ...e, layer, ...(elt ? { lt: elt } : {}) });
       switch (type) {
         case 'LINE': push({ type: 'line', a: P([f(obj, 10), f(obj, 20)]), b: P([f(obj, 11), f(obj, 21)]) }); break;
         case 'CIRCLE': push({ type: 'circle', c: P([f(obj, 10), f(obj, 20)]), r: rnd(f(obj, 40)) }); break;
@@ -934,8 +1029,19 @@ export function toSVG(D, entities = D.entities) {
     const L = layers.get(e.layer) || {};
     const col = !L.color || L.color === 'auto' ? '#000000' : L.color;
     const sw = rnd((L.lw === 'thick' ? 0.5 : 0.25) * mmU);
-    const dash = (LINETYPES[L.lt]?.dash || []).map(v => rnd(v * 0.5 * mmU)).join(' ');
+    const LT = LINETYPES[ltOf(e, L)] || LINETYPES.continuous;
+    const dash = LT.dash.map(v => rnd(v * 0.5 * mmU)).join(' ');
     const st = ` stroke="${col}" stroke-width="${sw}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+    if (LT.sketch && ['line', 'pline', 'circle', 'arc'].includes(e.type)) {
+      const seed = hashStr(e.id || e.type);
+      const base = sketchBase(e, seed, 1.2 * mmU).map(s0 => ({ ...s0, pts: s0.pts.map(p => [X(p[0]), Y(p[1])]) }));
+      for (const s0 of sketchStrokes(base, seed, { amp: 0.2 * mmU, step: 1.2 * mmU, over: 1 * mmU, bowMax: 0.7 * mmU })) {
+        const r3 = x => Math.round(x * 1000) / 1000;
+        const d = s0.pts.map((p, i) => `${i ? 'L' : 'M'}${r3(p[0])} ${r3(p[1])}`).join('');
+        out.push(`<path d="${d}" stroke="${col}" stroke-width="${rnd(sw * (s0.pass ? 0.75 : 1.05))}"${s0.pass ? ' stroke-opacity="0.45"' : ''}/>`);
+      }
+      continue;
+    }
     switch (e.type) {
       case 'line': out.push(`<line x1="${X(e.a[0])}" y1="${Y(e.a[1])}" x2="${X(e.b[0])}" y2="${Y(e.b[1])}"${st}`); break;
       case 'pline': out.push(`<${e.closed ? 'polygon' : 'polyline'} points="${e.pts.map(p => `${X(p[0])},${Y(p[1])}`).join(' ')}"${st}`); break;
@@ -995,6 +1101,8 @@ export const CAD_OPS = {
 
 const SNAP_LABEL = { end: 'Punto final', mid: 'Punto medio', cen: 'Centro', quad: 'Cuadrante', int: 'Intersección', near: 'Cercano', ins: 'Inserción' };
 export const OSNAP_LABELS = { end: 'Punto final', mid: 'Punto medio', cen: 'Centro', quad: 'Cuadrante', int: 'Intersección', ins: 'Inserción de texto', near: 'Cercano' };
+
+const DRAW_TOOLS = new Set(['line', 'pline', 'rect', 'circle', 'arc']);
 
 function aliasToCmd(s) {
   for (const [k, v] of Object.entries(CAD_TOOLS)) if (v && v.alias.includes(s)) return k;
@@ -1395,7 +1503,7 @@ const TOOLS = {
         if (!target) return;
         const r = offsetEntity(target, d, p);
         if (!r) cad.message('No se puede desfasar hacia ese lado (el radio sería negativo)');
-        else { cad.add({ ...r, layer: target.layer }); cad.commit(); }
+        else { cad.add({ ...r, layer: target.layer, ...(target.lt ? { lt: target.lt } : {}) }); cad.commit(); }
         target = null;
       },
       preview() { if (!target || !cad.cur) return null; const r = offsetEntity(target, d, cad.cur); return r ? { ents: [r] } : null; },
@@ -1512,6 +1620,8 @@ export class Cad extends EventTarget {
   add(e) {
     const n = { ...e, id: eid() };
     if (!n.layer || !this.layer(n.layer)) n.layer = this.layerFor(n.type);
+    // estilo de línea activo al dibujar (p. ej. Lápiz): solo para lo que se dibuja ahora, no para copias ni recortes
+    if (!n.lt && this.drawing.curLt && DRAW_TOOLS.has(this.toolName) && ['line', 'pline', 'circle', 'arc'].includes(n.type)) n.lt = this.drawing.curLt;
     this.drawing.entities.push(n);
     return n;
   }
@@ -1635,7 +1745,7 @@ export class Cad extends EventTarget {
     for (const e of this.selEnts()) {
       if (e.type !== 'pline') continue;
       this.remove([e.id]);
-      for (const s of prims(e)) this.add({ type: 'line', a: [...s.a], b: [...s.b], layer: e.layer });
+      for (const s of prims(e)) this.add({ type: 'line', a: [...s.a], b: [...s.b], layer: e.layer, ...(e.lt ? { lt: e.lt } : {}) });
       n++;
     }
     this.sel.clear();
@@ -1656,7 +1766,7 @@ export class Cad extends EventTarget {
     const r = trimCompute(e, raw, this.others(e));
     if (!r) return false;
     this.remove([e.id]);
-    for (const p of r.pieces) this.add({ ...p, layer: e.layer });
+    for (const p of r.pieces) this.add({ ...p, layer: e.layer, ...(e.lt ? { lt: e.lt } : {}) });
     this.hover = null;
     return true;
   }
@@ -1831,6 +1941,11 @@ export class Cad extends EventTarget {
 
   toggle(key) {
     if (key === 'grid') { this.drawing.grid = !this.drawing.grid; this.commit(); this.message(`Rejilla ${this.drawing.grid ? 'visible' : 'oculta'}`); }
+    else if (key === 'pencil') {
+      this.drawing.curLt = this.drawing.curLt === 'pencil' ? null : 'pencil';
+      this.commit();
+      this.message(this.drawing.curLt ? 'Lápiz activado: lo que dibujes ahora tendrá trazo a mano alzada (la geometría sigue siendo exacta). Para cambiar objetos ya dibujados, selecciónalos y elige el tipo de línea en Propiedades.' : 'Lápiz desactivado: se vuelve al tipo de línea de cada capa');
+    }
     else {
       this[key] = !this[key];
       const names = { osnapOn: 'Referencias a objetos', ortho: 'Orto', gridSnap: 'Forzar a la rejilla' };
@@ -2174,9 +2289,10 @@ export class Cad extends EventTarget {
     for (const e of D.entities) {
       const L = layers.get(e.layer) || D.layers[0];
       if (L.visible === false) continue;
-      const st = { color: !L.color || L.color === 'auto' ? C.fg : L.color, dash: LINETYPES[L.lt]?.dash || [], lw: L.lw === 'thick' ? 1.8 : 1 };
+      const LT = LINETYPES[ltOf(e, L)] || LINETYPES.continuous;
+      const st = { color: !L.color || L.color === 'auto' ? C.fg : L.color, dash: LT.dash, lw: L.lw === 'thick' ? 1.8 : 1, sketch: !!LT.sketch };
       const hov = interactive && this.hover && this.hover.id === e.id;
-      if (interactive && this.sel.has(e.id)) Object.assign(st, { color: C.sel, dash: [7, 4], lw: st.lw + (hov ? 1.8 : 0.6) });
+      if (interactive && this.sel.has(e.id)) Object.assign(st, { color: C.sel, dash: [7, 4], lw: st.lw + (hov ? 1.8 : 0.6), sketch: false });
       else if (hov) Object.assign(st, { color: C.hover, lw: st.lw + 1.4 });
       drawEnt(ctx, view, e, D, st);
     }
@@ -2330,6 +2446,7 @@ function drawEnt(ctx, v, e, D, st) {
   const S = q => v.toScreen(q), z = v.zoom;
   ctx.strokeStyle = st.color; ctx.fillStyle = st.color; ctx.lineWidth = st.lw;
   ctx.setLineDash(st.dash); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (st.sketch && ['line', 'pline', 'circle', 'arc'].includes(e.type)) { drawSketch(ctx, v, e, st); return; }
   switch (e.type) {
     case 'line': { const a = S(e.a), b = S(e.b); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); break; }
     case 'pline': {
@@ -2359,6 +2476,23 @@ function drawEnt(ctx, v, e, D, st) {
       break;
     }
   }
+}
+
+/** Dibuja un objeto con trazo de lápiz (en píxeles de pantalla: el temblor no depende del zoom). */
+function drawSketch(ctx, v, e, st) {
+  const seed = hashStr(e.id || `${e.type}${JSON.stringify(e.a || e.c || e.pts?.[0])}`);
+  const base = sketchBase(e, seed, 5 / v.zoom).map(s => ({ ...s, pts: s.pts.map(p => v.toScreen(p)) }));
+  const strokes = sketchStrokes(base, seed, { amp: 0.9 + 0.35 * st.lw, step: 5, over: 3 + 1.5 * st.lw, bowMax: 3.5 });
+  ctx.setLineDash([]);
+  const a0 = ctx.globalAlpha;
+  for (const s of strokes) {
+    ctx.globalAlpha = a0 * (s.pass ? 0.45 : 0.92);
+    ctx.lineWidth = st.lw * (s.pass ? 0.75 : 1.05);
+    ctx.beginPath();
+    s.pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = a0;
 }
 
 function drawText(ctx, v, p, str, h, rot, align) {

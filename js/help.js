@@ -588,8 +588,16 @@ const SECTIONS = [
         <li>En <b>Propiedades</b> se editan las coordenadas, el radio, la longitud, el texto o la capa con valores exactos; con varios objetos se ve la longitud total y se puede cambiar la capa de todos.</li>
         <li>Seleccionando primero y escribiendo después la orden (por ejemplo <code>M</code>), la orden usa la selección directamente.</li>
       </ul>
+      <h4>Tipos de línea y modo lápiz</h4>
+      <ul>
+        <li>Tipos disponibles: <b>Continua</b>, <b>Trazos</b>, <b>Oculta</b>, <b>Eje</b>, <b>Puntos</b> y <b>Lápiz (a mano alzada)</b>.</li>
+        <li><b>Lápiz</b> solo cambia cómo se dibuja la línea: un trazo tembloroso que se pasa un poco en las esquinas, como un boceto a mano. La <b>geometría sigue siendo exacta</b>: los puntos caen en la rejilla, las referencias enganchan los extremos y centros reales, y las cotas y medidas no cambian.</li>
+        <li>El botón <b>✎ Lápiz</b> de la barra de estado activa el modo lápiz: lo que dibujes a partir de entonces (líneas, polilíneas, rectángulos, círculos y arcos) sale a mano alzada. Vuelve a pulsarlo para dibujar con el tipo de línea de la capa.</li>
+        <li>Cada objeto puede tener su propio tipo de línea: selecciónalo y cámbialo en Propiedades (<i>Por capa</i> usa el de su capa). También vale para varios objetos a la vez. O pon una capa entera en Lápiz.</li>
+        <li>El trazo de lápiz se ve igual en las capturas, el PDF y el <b>SVG</b>. En <b>DXF</b> se exporta como línea continua (los programas de CAD no tienen ese estilo); los demás tipos sí se conservan.</li>
+      </ul>
       <h4>Capas</h4>
-      <p>El panel <b>Capas del plano</b> muestra las capas con su color, tipo de línea (continua, eje, oculta, trazos…) y grosor; el círculo marca la <b>capa actual</b>, donde se dibuja. Vienen preparadas <i>Contorno</i>, <i>Ejes</i>, <i>Ocultas</i>, <i>Cotas</i>, <i>Texto</i> y <i>Construcción</i>; el ojo las oculta y la cruz las elimina.</p>
+      <p>El panel <b>Capas del plano</b> muestra las capas con su color, tipo de línea (continua, eje, oculta, trazos, puntos, lápiz…) y grosor; el círculo marca la <b>capa actual</b>, donde se dibuja. Vienen preparadas <i>Contorno</i>, <i>Ejes</i>, <i>Ocultas</i>, <i>Cotas</i>, <i>Texto</i> y <i>Construcción</i>; el ojo las oculta y la cruz las elimina.</p>
       <h4>Unidades y estilo de cota</h4>
       <p>Sin nada seleccionado, Propiedades muestra el plano: unidades (mm, cm, m, pulgadas…), decimales, separador decimal, altura de texto y tamaño de flecha de las cotas.</p>
       <h4>Del plano a la pieza 3D</h4>
