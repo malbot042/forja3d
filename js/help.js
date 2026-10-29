@@ -532,10 +532,11 @@ const SECTIONS = [
     id: 'cad2d', title: 'Editor 2D (planos y cotas)',
     html: `
       <p>Un editor de planos al estilo AutoCAD para diseñar <b>piezas 2D</b> con medidas exactas, acotarlas y, si quieres, convertirlas en piezas 3D. Cada proyecto tiene <b>un plano</b> que se guarda junto a la escena 3D.</p>
-      <h4>Pasar de 3D a 2D</h4>
+      <h4>Dos espacios de trabajo independientes</h4>
       <ul>
-        <li>El selector <b>3D | 2D</b> de la barra superior cambia el <b>panel activo</b>. Cada panel de la pantalla dividida tiene su propio modo: puedes tener el plano a un lado y la pieza 3D al otro.</li>
-        <li>El diseño <b>Plano 2D + vista 3D</b> (último botón de diseños) abre directamente las dos vistas lado a lado. Con 3 o 4 vistas puedes poner varios paneles en 2D, cada uno con su propio zoom.</li>
+        <li>El selector <b>3D | 2D</b> de la barra superior cambia <b>toda la pantalla</b> entre la escena 3D y el plano 2D. Son independientes: cada uno tiene sus herramientas, su panel lateral (Escena o Capas), su <b>deshacer/rehacer</b> y su propia <b>pantalla dividida</b>.</li>
+        <li>Los botones de diseño (1, 2, 3 o 4 vistas) se aplican al espacio en el que estás. En 2D, cada panel muestra el mismo plano con su propio zoom y encuadre: por ejemplo, la pieza entera en uno y un detalle ampliado en otro.</li>
+        <li>Al cambiar de espacio no se pierde nada: cada uno vuelve exactamente como lo dejaste, y se guarda con el proyecto.</li>
         <li>Rueda: zoom hacia el cursor. Botón central o derecho arrastrando: desplazar. Doble clic con el central (o <b>Encuadrar</b>, o la orden <code>Z</code>): ver todo.</li>
       </ul>
       <h4>La línea de órdenes</h4>
@@ -594,7 +595,7 @@ const SECTIONS = [
       <h4>Del plano a la pieza 3D</h4>
       <ul>
         <li><b>Extruir a 3D</b> busca los <b>contornos cerrados</b> del plano (o de la selección): rectángulos, círculos, polilíneas cerradas y cadenas de líneas y arcos que se cierran. Los contornos que quedan dentro de otro se convierten en <b>huecos</b>.</li>
-        <li>Se ignoran las capas de cotas, texto, ejes y construcción. Elige el grosor y la escala (por defecto, 100 mm = 1 unidad 3D) y la pieza aparece en la escena 3D; se abre la vista <b>Plano 2D + vista 3D</b> para verlas juntas.</li>
+        <li>Se ignoran las capas de cotas, texto, ejes y construcción. Elige el grosor y la escala (por defecto, 100 mm = 1 unidad 3D) y la pieza se añade a la escena 3D sin salir del plano; pulsa <b>3D</b> para verla. El plano no cambia: puedes seguir editándolo y volver a extruir.</li>
       </ul>
       <h4>Exportar, importar e imprimir</h4>
       <ul>

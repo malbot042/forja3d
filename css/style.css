@@ -711,3 +711,6 @@ kbd {
 :root[data-theme="light"] .tool-btn:hover { background: var(--panel-2); }
 :root[data-theme="light"] .ops-bar svg .fill { opacity: .3; }
 .cad-hint { margin: 0 0 8px; line-height: 1.45; font-size: 11.5px; }
+.vp-layout[hidden] { display: none !important; }
+#viewport.ws-2d .gl-canvas { visibility: hidden; }
+.cad-layout.multi .vp.active::after { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--accent); pointer-events: none; z-index: 2; }

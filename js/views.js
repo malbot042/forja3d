@@ -26,7 +26,6 @@ export const LAYOUTS = {
   2: { label: '2 vistas', views: ['persp', 'front'] },
   3: { label: '3 vistas', views: ['persp', 'front', 'top'] },
   4: { label: '4 vistas', views: ['persp', 'top', 'front', 'right'] },
-  '2d3d': { label: 'Plano 2D + vista 3D', views: ['persp', 'persp'], modes: ['2d', '3d'], n: 2 },
 };
 
 const NAV_AXES = [
@@ -85,7 +84,7 @@ export class View {
       if (!down || e.button !== 0) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
-      if (moved <= 4 && this.mode === '3d') this.editor._pick(this, e);
+      if (moved <= 4) this.editor._pick(this, e);
     });
     this.el.addEventListener('pointerenter', () => this.editor._hoverView(this));
 
@@ -109,22 +108,8 @@ export class View {
       const h = hitAt(e);
       if (h) { this.setView(h.view); this.editor.dispatchEvent(new CustomEvent('cameraend')); }
     });
-    // plano 2D de este panel
     this.mode = '3d';
-    this.cadView = new CadView(editor.cad, this);
     this.updateLabel();
-  }
-
-  /** '3d' (cámara) o '2d' (plano CAD). */
-  setMode(mode, silent = false) {
-    mode = mode === '2d' ? '2d' : '3d';
-    if (mode === this.mode) return;
-    this.mode = mode;
-    this.el.classList.toggle('is-2d', mode === '2d');
-    this.orbit.enabled = mode === '3d';
-    if (mode === '2d') this.cadView.resize();
-    this.updateLabel();
-    if (!silent) this.editor._viewModeChanged(this);
   }
 
   get target() { return this.orbit.target; }
@@ -220,15 +205,11 @@ export class View {
       zoom: round(this.ortho.zoom, 4),
       halfHeight: round(this.ortho.top, 4),
       view: this.currentView,
-      mode: this.mode,
-      cad: this.cadView.getState(),
     };
   }
 
   setState(s) {
     if (!s) return;
-    this.setMode(s.mode, true);
-    if (s.cad) this.cadView.setState(s.cad);
     if (!s.position || !s.target) return;
     if (this.projection !== 'persp') this.setProjection('persp');
     this.target.fromArray(s.target);
@@ -249,7 +230,6 @@ export class View {
   }
 
   labelText() {
-    if (this.mode === '2d') return 'Plano 2D';
     const name = (this.currentView === 'persp' && this.projection === 'ortho') ? 'Libre' : (VIEWS[this.currentView]?.label || 'Libre');
     if (this.projection === 'ortho') return `${name} · ortográfica`;
     return name === 'Perspectiva' ? name : `${name} · perspectiva`;
@@ -296,8 +276,38 @@ export class View {
   }
 
   dispose() {
-    this.cadView.dispose();
     this.orbit.dispose();
     this.el.remove();
   }
+}
+
+/**
+ * Panel del espacio de trabajo 2D: una ventana sobre el plano con su propio encuadre.
+ * Es independiente de los paneles 3D (otro contenedor, otro diseño de pantalla).
+ */
+export class CadPanel {
+  constructor(editor, index) {
+    this.editor = editor;
+    this.index = index;
+    this.mode = '2d';
+    this.el = document.createElement('div');
+    this.el.className = 'vp is-2d';
+    this.el.tabIndex = -1;
+    this.label = document.createElement('div');
+    this.label.className = 'vp-label';
+    this.el.append(this.label);
+    this.cadView = new CadView(editor.cad, this);
+    this.el.addEventListener('pointerdown', () => editor.setCadActive(this));
+    this.updateLabel();
+  }
+
+  /** El plano solo se dibuja mientras el espacio de trabajo 2D está a la vista. */
+  get showing() { return this.editor.workspace === '2d'; }
+
+  rect() { return { x: this.el.offsetLeft, y: this.el.offsetTop, w: this.el.offsetWidth, h: this.el.offsetHeight }; }
+  labelText() { return this.editor.cadPanels.length > 1 ? `Plano 2D · ${this.index + 1}` : 'Plano 2D'; }
+  updateLabel() { this.label.textContent = this.labelText(); }
+  getState() { return this.cadView.getState(); }
+  setState(s) { this.cadView.setState(s); }
+  dispose() { this.cadView.dispose(); this.el.remove(); }
 }

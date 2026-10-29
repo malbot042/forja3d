@@ -382,7 +382,7 @@ function initEditor() {
     $('#btn-undo').disabled = !e.detail.canUndo;
     $('#btn-redo').disabled = !e.detail.canRedo;
   });
-  editor.addEventListener('viewmode', applyMode);
+  editor.addEventListener('workspace', applyMode);
   editor.addEventListener('cameraend', scheduleSave);
   editor.addEventListener('layout', () => { refreshLayoutButtons(); scheduleSave(); });
 
@@ -426,13 +426,16 @@ function initEditor() {
   $('#view-bar').onclick = e => {
     const b = e.target.closest('button[data-cam]');
     if (!b) return;
-    if (is2D()) { if (b.dataset.cam === 'focus') editor.cad.zoomExtents(editor.active.cadView); scheduleSave(); return; }
+    if (is2D()) { if (b.dataset.cam === 'focus') editor.cad.zoomExtents(editor.cadActive?.cadView); scheduleSave(); return; }
     editor.setView(b.dataset.cam);
     scheduleSave();
   };
   $('#btn-proj').onclick = () => { editor.toggleProjection(); scheduleSave(); };
   for (const b of document.querySelectorAll('button[data-layout]')) {
-    b.addEventListener('click', () => { editor.setLayout(b.dataset.layout); editor.frame(true); });
+    b.addEventListener('click', () => {
+      if (is2D()) editor.setCadLayout(+b.dataset.layout);
+      else { editor.setLayout(+b.dataset.layout); editor.frame(true); }
+    });
   }
   $('#btn-capture').onclick = () => captureDialog();
   $('#btn-side').onclick = () => toggleSidebar();
@@ -682,7 +685,7 @@ function refreshCamera({ projection, view }) {
 }
 
 // ============================================================== editor 2D (CAD)
-const is2D = () => editor?.active?.mode === '2d';
+const is2D = () => editor?.workspace === '2d';
 const SHORT = { select: 'Selecc.', pline: 'Polilín.', rect: 'Rectáng.', dimlin: 'Lineal', dimali: 'Alineada', dimrad: 'Radio', dimdia: 'Diám.', dimang: 'Ángulo' };
 
 function renderToolbar() {
@@ -775,17 +778,11 @@ function applyMode() {
   renderProps();
   refreshStatus();
   refreshHistoryButtons();
+  refreshLayoutButtons();
 }
 
-/** Asegura que hay un panel 2D visible y lo activa. */
-function ensure2D() {
-  if (!editor.views.some(v => v.mode === '2d')) {
-    if (editor.objects.size && editor.layout === 1) editor.setLayout('2d3d');
-    else editor.active.setMode('2d');
-  }
-  editor.setActiveView(editor.views.find(v => v.mode === '2d'));
-  applyMode();
-}
+/** Pasa al espacio de trabajo 2D. */
+function ensure2D() { editor.setWorkspace('2d'); }
 
 function initCadUI() {
   const cad = editor.cad;
@@ -806,11 +803,7 @@ function initCadUI() {
   $('#mode-seg').addEventListener('click', e => {
     const b = e.target.closest('button[data-m]');
     if (!b) return;
-    editor.active.setMode(b.dataset.m);
-    if (b.dataset.m === '2d' && editor.views.length === 1 && editor.objects.size && !initCadUI.hinted) {
-      initCadUI.hinted = true;
-      toast('Plano 2D en este panel. Tu escena 3D sigue intacta: pulsa 3D para volver, o elige el diseño «Plano 2D + vista 3D» para ver los dos a la vez.', 6000);
-    }
+    editor.setWorkspace(b.dataset.m);
     scheduleSave();
   });
   $('#btn-layer-add').onclick = () => {
@@ -1089,9 +1082,8 @@ function extrude2DDialog() {
     const ids = editor.addExtrusions(shapes, { depth: d, scale: 1 / k, center: center.checked });
     D.lastDepth = d;
     if (D.per3D !== k) cad.setSetting('per3D', k); else cad.commit();
-    if (!editor.views.some(v => v.mode === '3d')) editor.setLayout('2d3d');
     editor.frame(true);
-    toast(`${ids.length} pieza${ids.length > 1 ? 's' : ''} 3D creada${ids.length > 1 ? 's' : ''}${holes ? ` con ${holes} hueco${holes > 1 ? 's' : ''}` : ''}. Están en la lista de Escena (panel 3D).`);
+    toast(`${ids.length} pieza${ids.length > 1 ? 's' : ''} 3D creada${ids.length > 1 ? 's' : ''}${holes ? ` con ${holes} hueco${holes > 1 ? 's' : ''}` : ''} en la escena 3D. Pulsa «3D» arriba para verla${ids.length > 1 ? 's' : ''}.`, 5000);
   };
   const onKey2 = ev => {
     if (ev.key === 'Escape') { ev.stopPropagation(); close(); }
@@ -1116,7 +1108,7 @@ function extrude2DDialog() {
 }
 
 function refreshLayoutButtons() {
-  for (const b of document.querySelectorAll('button[data-layout]')) b.classList.toggle('active', String(b.dataset.layout) === String(editor.layout));
+  for (const b of document.querySelectorAll('button[data-layout]')) b.classList.toggle('active', +b.dataset.layout === editor.currentLayout);
 }
 
 // ----------------------------------------------------------- panel lateral
@@ -1242,7 +1234,7 @@ function captureDialog(initialFormat) {
     if (st.background === 'transparent' && st.format !== 'png') st.background = 'theme';
     rowsEl.background.querySelector('[data-v="transparent"]').disabled = st.format !== 'png';
     rowsEl.orientation.hidden = !isDoc;
-    rowsEl.options.querySelectorAll('.toggle')[1].hidden = editor.views.length < 2;
+    rowsEl.options.querySelectorAll('.toggle')[1].hidden = editor.shownPanels.length < 2;
     rowsEl.options.querySelectorAll('.toggle')[2].hidden = !isDoc;
     actionBtn.textContent = st.format === 'print' ? 'Imprimir…' : 'Descargar';
     clearTimeout(timer);
@@ -1263,7 +1255,7 @@ function captureDialog(initialFormat) {
     }
     ctx.drawImage(current, 0, 0, pv.width, pv.height);
     preview.src = pv.toDataURL('image/png');
-    info.textContent = `${current.width} × ${current.height} px · ${editor.views.length} vista${editor.views.length > 1 ? 's' : ''}`;
+    info.textContent = `${current.width} × ${current.height} px · ${editor.shownPanels.length} vista${editor.shownPanels.length > 1 ? 's' : ''}`;
   }
 
   wrap.addEventListener('click', e => {
@@ -1285,7 +1277,7 @@ function captureDialog(initialFormat) {
     if (!current) render();
     const img = current;
     const title = st.header ? project.name : '';
-    const sub = st.header ? `Forja 3D · ${stamp()} · ${editor.views.map(v => v.labelText()).join(' / ')}` : '';
+    const sub = st.header ? `Forja 3D · ${stamp()} · ${editor.shownPanels.map(v => v.labelText()).join(' / ')}` : '';
     close();
     try {
       if (st.format === 'png') {

@@ -8,8 +8,8 @@ import { uid } from './storage.js';
 import { encodeGeometry, meshDataSize } from './io.js';
 import { createSculpt, SculptSession } from './sculpt.js';
 import { cssVar, currentTheme } from './theme.js';
-import { View, LAYOUTS } from './views.js';
-import { Cad } from './cad2d.js';
+import { View, CadPanel, LAYOUTS } from './views.js';
+import { Cad, fitView } from './cad2d.js';
 
 const DEG = THREE.MathUtils.DEG2RAD;
 const RAD = THREE.MathUtils.RAD2DEG;
@@ -44,7 +44,11 @@ export class Editor extends EventTarget {
     this.historyIndex = -1;
     this.views = [];
     this.layout = 1;
-    this.cad = new Cad();          // plano 2D compartido por los paneles en modo 2D
+    this.cad = new Cad();          // plano 2D: espacio de trabajo independiente del 3D
+    this.workspace = '3d';         // '3d' (escena) | '2d' (plano)
+    this.cadPanels = [];
+    this.cadLayout = 1;
+    this.cadActive = null;
 
     // --- renderer / escena (un solo lienzo; cada panel se dibuja con viewport + scissor)
     const renderer = this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -56,6 +60,10 @@ export class Editor extends EventTarget {
     this.layoutEl = document.createElement('div');
     this.layoutEl.className = 'vp-layout';
     container.appendChild(this.layoutEl);
+    this.cadLayoutEl = document.createElement('div');
+    this.cadLayoutEl.className = 'vp-layout cad-layout';
+    this.cadLayoutEl.hidden = true;
+    container.appendChild(this.cadLayoutEl);
 
     const scene = this.scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0f1114);
@@ -106,7 +114,7 @@ export class Editor extends EventTarget {
       };
     });
     this.gizmo.addEventListener('dragging-changed', e => {
-      if (this.gizmoView) this.gizmoView.orbit.enabled = !e.value && this.gizmoView.mode === '3d';
+      if (this.gizmoView) this.gizmoView.orbit.enabled = !e.value;
       if (!e.value) {
         start = null;
         if (this.subSel) this._rebuildRoot(this.subSel.rootId);
@@ -130,12 +138,13 @@ export class Editor extends EventTarget {
     scene.add(this.gizmoHelper);
 
     this.setLayout(1);
+    this.setCadLayout(1);
     this._resize = this._resize.bind(this);
     new ResizeObserver(this._resize).observe(container);
     this._resize();
 
     const loop = () => {
-      this.renderViews();
+      if (this.workspace === '3d') this.renderViews();
       this._raf = requestAnimationFrame(loop);
     };
     loop();
@@ -168,14 +177,13 @@ export class Editor extends EventTarget {
       v.persp.position.copy(v.target).add(new THREE.Vector3(5, 4, 6));
       v._isNew = true;
     }
-    this.layout = key === '2d3d' ? '2d3d' : +key;
+    this.layout = +key;
     this.layoutEl.dataset.layout = n;
     this.layoutEl.classList.toggle('multi', n > 1);
     this._resize();
     this.views.forEach((v, i) => {
       if (states?.[i]) v.setState(states[i]);
       else {
-        if (L.modes) v.setMode(L.modes[i] || '3d', true);
         if (v._isNew && (defaults[i] !== 'persp' || i > 0)) v.setView(defaults[i]);
       }
       v._isNew = false;
@@ -184,25 +192,61 @@ export class Editor extends EventTarget {
     this._syncGizmo();
     this._resize();
     this.dispatchEvent(new CustomEvent('layout', { detail: this.layout }));
-    this.dispatchEvent(new CustomEvent('viewmode'));
   }
 
   setActiveView(view) {
     if (this.active === view) return;
-    const prevMode = this.active?.mode;
     this.active = view;
     for (const v of this.views) v.el.classList.toggle('active', v === view);
     this._emitCamera(view);
-    if (prevMode !== view.mode) this.dispatchEvent(new CustomEvent('viewmode'));
   }
 
-  /** Un panel ha cambiado entre 2D y 3D. */
-  _viewModeChanged(view) {
-    if (view.mode === '2d' && this.sculpt) this.endSculpt();
+  // ------------------------------------------------------- espacio de trabajo 2D
+  /** Cambia toda la pantalla entre la escena 3D y el plano 2D (cada uno conserva sus paneles). */
+  setWorkspace(ws, force = false) {
+    ws = ws === '2d' ? '2d' : '3d';
+    if (ws === this.workspace && !force) return;
+    if (ws === '2d' && this.sculpt) this.endSculpt();
+    if (ws === '3d') this.cad.cancel(true);
+    this.workspace = ws;
+    this.container.classList.toggle('ws-2d', ws === '2d');
+    this.layoutEl.hidden = ws === '2d';
+    this.cadLayoutEl.hidden = ws !== '2d';
     this._syncGizmo();
     this._resize();
-    this.dispatchEvent(new CustomEvent('viewmode'));
-    this.dispatchEvent(new CustomEvent('layout', { detail: this.layout }));
+    if (ws === '3d') this.renderViews();
+    this.dispatchEvent(new CustomEvent('workspace', { detail: ws }));
+    this.dispatchEvent(new CustomEvent('layout', { detail: this.currentLayout }));
+  }
+
+  get currentLayout() { return this.workspace === '2d' ? this.cadLayout : this.layout; }
+  /** Paneles a la vista (los del espacio de trabajo actual). */
+  get shownPanels() { return this.workspace === '2d' ? this.cadPanels : this.views; }
+
+  /** Divide el plano 2D en 1-4 paneles, cada uno con su propio encuadre. */
+  setCadLayout(n, states) {
+    n = Math.max(1, Math.min(4, +n || 1));
+    while (this.cadPanels.length > n) this.cadPanels.pop().dispose();
+    while (this.cadPanels.length < n) {
+      const p = new CadPanel(this, this.cadPanels.length);
+      this.cadLayoutEl.append(p.el);
+      this.cadPanels.push(p);
+      // un panel nuevo empieza con el mismo encuadre que el primero
+      if (this.cadPanels[0] !== p && this.cadPanels[0].cadView.fitted) p.setState(this.cadPanels[0].getState());
+    }
+    this.cadLayout = n;
+    this.cadLayoutEl.dataset.layout = n;
+    this.cadLayoutEl.classList.toggle('multi', n > 1);
+    this.cadPanels.forEach((p, i) => { if (states?.[i]) p.setState(states[i]); p.updateLabel(); });
+    if (!this.cadPanels.includes(this.cadActive)) this.setCadActive(this.cadPanels[0]);
+    this._resize();
+    this.dispatchEvent(new CustomEvent('layout', { detail: this.currentLayout }));
+  }
+
+  setCadActive(panel) {
+    if (!panel || this.cadActive === panel) return;
+    this.cadActive = panel;
+    for (const p of this.cadPanels) p.el.classList.toggle('active', p === panel);
   }
 
   _emitCamera(view) {
@@ -215,11 +259,11 @@ export class Editor extends EventTarget {
    * el puntero y el plano dejaría de recibir los arrastres.
    */
   _syncGizmo() {
+    if (this.workspace === '2d') { this._detachGizmo(); return; }
     const g = this.gizmoView;
-    if (g && this.views.includes(g) && g.mode === '3d') return;
+    if (g && this.views.includes(g)) return;
     this._detachGizmo();
-    const v3 = this.views.find(v => v.mode === '3d');
-    if (v3) this._hoverView(v3);
+    this._hoverView(this.views[0]);
   }
 
   _detachGizmo() {
@@ -229,7 +273,7 @@ export class Editor extends EventTarget {
 
   /** El gizmo trabaja en el panel que está bajo el ratón. */
   _hoverView(view) {
-    if (!view || view.mode === '2d' || this.gizmo.dragging || this.gizmoView === view) return;
+    if (!view || this.workspace === '2d' || this.gizmo.dragging || this.gizmoView === view) return;
     if (this.gizmo.domElement) this.gizmo.disconnect();
     this.gizmo.domElement = view.el;
     this.gizmo.connect();
@@ -251,7 +295,6 @@ export class Editor extends EventTarget {
     r.setClearColor(opts.sepColor ?? (this._sepColor ??= new THREE.Color(cssVar('--line') || '#2e333a')), opts.sepAlpha ?? 1);
     r.clear();
     for (const v of opts.only ? [opts.only] : this.views) {
-      if (v.mode === '2d') continue;
       const rc = opts.only ? { x: 0, y: 0, w: W, h: H } : v.rect();
       if (rc.w < 2 || rc.h < 2) continue;
       if (!opts.only) v.setAspect(rc.w / rc.h);
@@ -316,8 +359,8 @@ export class Editor extends EventTarget {
     for (const v of this.views) {
       const rc = v.rect();
       if (rc.w && rc.h) v.setAspect(rc.w / rc.h);
-      v.cadView.resize();
     }
+    for (const p of this.cadPanels) p.cadView.resize();
   }
 
   // -------------------------------------------------------------- creación
@@ -1133,7 +1176,11 @@ export class Editor extends EventTarget {
 
   /** Estado de los paneles para guardarlo en el proyecto. */
   getViewState() {
-    return { layout: this.layout, views: this.views.map(v => v.getState()), active: this.views.indexOf(this.active) };
+    return {
+      workspace: this.workspace,
+      layout: this.layout, views: this.views.map(v => v.getState()), active: this.views.indexOf(this.active),
+      cad: { layout: this.cadLayout, views: this.cadPanels.map(p => p.getState()), active: this.cadPanels.indexOf(this.cadActive) },
+    };
   }
 
   /** Carga una lista de objetos y el estado de cámara(s). */
@@ -1147,12 +1194,28 @@ export class Editor extends EventTarget {
     }
     // reiniciar paneles con el estado guardado
     while (this.views.length > 1) this.setLayout(1);
-    const states = viewState?.views?.length ? viewState.views : camera ? [camera] : [];
+    let states = viewState?.views?.length ? viewState.views : camera ? [camera] : [];
+    let layout = viewState?.layout || 1, active = viewState?.active ?? 0;
+    let cad = viewState?.cad, ws = viewState?.workspace;
+    // proyectos de la versión anterior: paneles 2D mezclados con los 3D
+    if (layout === '2d3d' || states.some(st => st?.mode === '2d')) {
+      const s2 = states.filter(st => st?.mode === '2d'), s3 = states.filter(st => st?.mode !== '2d');
+      ws ??= states[active]?.mode === '2d' ? '2d' : '3d';
+      cad ??= { layout: Math.max(1, s2.length), views: s2.map(st => st.cad) };
+      states = s3;
+      layout = Math.max(1, Math.min(4, s3.length));
+      active = 0;
+    }
     this.views[0].setState(states[0] || { position: [5, 4, 6], target: [0, 0, 0], projection: 'persp', view: 'persp' });
-    this.setLayout(viewState?.layout || 1, states);
-    const act = this.views[viewState?.active ?? 0] || this.views[0];
+    this.setLayout(layout, states);
     this.active = null;
-    this.setActiveView(act);
+    this.setActiveView(this.views[active] || this.views[0]);
+    while (this.cadPanels.length > 1) this.setCadLayout(1);
+    this.cadPanels[0].cadView.fitted = false;
+    this.setCadLayout(cad?.layout || 1, cad?.views);
+    this.cadActive = null;
+    this.setCadActive(this.cadPanels[cad?.active ?? 0] || this.cadPanels[0]);
+    this.setWorkspace(ws || '3d', true);
     this.dispatchEvent(new CustomEvent('objects'));
     return skipped;
   }
@@ -1328,23 +1391,16 @@ export class Editor extends EventTarget {
     try { return fn(); } finally { hidden.forEach((o, i) => (o.visible = prev[i])); }
   }
 
-  /** Miniatura JPEG del primer panel (sin ayudas ni gizmo). */
+  /** Miniatura JPEG: el plano si se trabaja en 2D (o no hay escena), si no el primer panel 3D. */
   thumbnail(w = 320, h = 200) {
-    const v2 = this.views.find(v => v.mode === '2d');
-    if (v2 && (!this.objects.size || this.views[0] === v2) && !this.cad.isEmpty()) {
-      const rc = v2.rect();
-      if (!rc.w || !rc.h) return null;
-      const tmp = document.createElement('canvas');
-      tmp.width = rc.w; tmp.height = rc.h;
-      this.cad.render(v2.cadView, tmp.getContext('2d'), rc.w, rc.h, { print: true });
+    if (!this.cad.isEmpty() && (this.workspace === '2d' || !this.objects.size)) {
       const c = document.createElement('canvas');
       c.width = w; c.height = h;
-      const k = Math.max(w / rc.w, h / rc.h), sw = w / k, sh = h / k;
-      c.getContext('2d').drawImage(tmp, (rc.w - sw) / 2, (rc.h - sh) / 2, sw, sh, 0, 0, w, h);
+      this.cad.render(fitView(this.cad, w, h), c.getContext('2d'), w, h, { print: true, grid: false });
       return c.toDataURL('image/jpeg', 0.72);
     }
     if (!this.objects.size) return null;
-    const v = this.views.find(x => x.mode === '3d') || this.views[0];
+    const v = this.views[0];
     const rc = v.rect();
     return this._withCleanScene(() => {
       this.renderViews({ only: v, noNav: true });
@@ -1366,6 +1422,7 @@ export class Editor extends EventTarget {
    * Devuelve un <canvas> 2D.
    */
   capture({ scale = 1, grid = true, labels = true, background = 'theme' } = {}) {
+    if (this.workspace === '2d') return this._capture2D({ scale, grid, labels, background });
     const r = this.renderer;
     const W = this.container.clientWidth, H = this.container.clientHeight;
     const basePR = r.getPixelRatio();
@@ -1393,31 +1450,7 @@ export class Editor extends EventTarget {
         c.width = src.width; c.height = src.height;
         const ctx = c.getContext('2d');
         ctx.drawImage(src, 0, 0);
-        for (const v of this.views) {
-          if (v.mode !== '2d') continue;
-          const rc = v.rect(), k = c.width / W;
-          ctx.save();
-          ctx.scale(k, k);
-          ctx.translate(rc.x, rc.y);
-          ctx.beginPath(); ctx.rect(0, 0, rc.w, rc.h); ctx.clip();
-          this.cad.render(v.cadView, ctx, rc.w, rc.h, { print: true, grid, background });
-          ctx.restore();
-        }
-        if (labels && this.views.length > 1) {
-          const k = c.width / W;
-          ctx.font = `${Math.round(12 * k)}px system-ui, sans-serif`;
-          ctx.textBaseline = 'top';
-          for (const v of this.views) {
-            const rc = v.rect();
-            const text = v.labelText();
-            const x = (rc.x + 10) * k, y = (rc.y + 8) * k;
-            const tw = ctx.measureText(text).width;
-            ctx.fillStyle = background === 'white' || this.theme === 'light' ? 'rgba(255,255,255,.85)' : 'rgba(20,22,26,.75)';
-            ctx.fillRect(x - 5 * k, y - 3 * k, tw + 10 * k, 20 * k);
-            ctx.fillStyle = background === 'white' || this.theme === 'light' ? '#1d1f23' : '#e6e8eb';
-            ctx.fillText(text, x, y + 1 * k);
-          }
-        }
+        if (labels && this.views.length > 1) this._drawLabels(ctx, this.views, c.width / W, background);
         return c;
       }, { grid });
     } finally {
@@ -1427,5 +1460,42 @@ export class Editor extends EventTarget {
       this.renderViews();
     }
     return out;
+  }
+
+  /** Captura de los paneles del plano 2D tal como se ven. */
+  _capture2D({ scale, grid, labels, background }) {
+    const W = this.container.clientWidth, H = this.container.clientHeight;
+    const k = Math.max(0.25, Math.min(scale * Math.min(window.devicePixelRatio || 1, 2), Math.sqrt(40e6 / (W * H))));
+    const c = document.createElement('canvas');
+    c.width = Math.round(W * k); c.height = Math.round(H * k);
+    const ctx = c.getContext('2d');
+    if (background !== 'transparent') { ctx.fillStyle = background === 'white' ? '#dddddd' : (cssVar('--line') || '#2e333a'); ctx.fillRect(0, 0, c.width, c.height); }
+    for (const p of this.cadPanels) {
+      const rc = p.rect();
+      ctx.save();
+      ctx.scale(k, k);
+      ctx.translate(rc.x, rc.y);
+      ctx.beginPath(); ctx.rect(0, 0, rc.w, rc.h); ctx.clip();
+      this.cad.render(p.cadView, ctx, rc.w, rc.h, { print: true, grid, background });
+      ctx.restore();
+    }
+    if (labels && this.cadPanels.length > 1) this._drawLabels(ctx, this.cadPanels, k, background);
+    return c;
+  }
+
+  _drawLabels(ctx, panels, k, background) {
+    const light = background === 'white' || this.theme === 'light';
+    ctx.font = `${Math.round(12 * k)}px system-ui, sans-serif`;
+    ctx.textBaseline = 'top';
+    for (const v of panels) {
+      const rc = v.rect();
+      const text = v.labelText();
+      const x = (rc.x + 10) * k, y = (rc.y + 8) * k;
+      const tw = ctx.measureText(text).width;
+      ctx.fillStyle = light ? 'rgba(255,255,255,.85)' : 'rgba(20,22,26,.75)';
+      ctx.fillRect(x - 5 * k, y - 3 * k, tw + 10 * k, 20 * k);
+      ctx.fillStyle = light ? '#1d1f23' : '#e6e8eb';
+      ctx.fillText(text, x, y + 1 * k);
+    }
   }
 }

@@ -22,7 +22,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Editor 2D de planos** al estilo AutoCAD: línea de órdenes con alias (`L`, `PL`, `REC`, `C`, `A`, `T`, `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`…), coordenadas absolutas, relativas (`@dx,dy`), polares (`d<ángulo`) y distancia directa; referencias a objetos (final, medio, centro, cuadrante, intersección), Orto, forzar a rejilla, pinzamientos, selección por ventana/captura, rótulos junto al cursor que explican cada acción, copiar/pegar/duplicar y desplazamiento con flechas.
   - **Cotas** lineales, alineadas, de radio, diámetro y ángulo, y herramienta **Medir** (distancia, ΔX, ΔY, ángulo); longitudes, perímetros y áreas en Propiedades.
   - **Capas** con color, tipo de línea (eje, oculta, trazos…) y grosor; unidades (mm, cm, m, pulgadas…) y estilo de cota configurables.
-  - **Cambio 2D/3D por panel**: cada vista de la pantalla dividida puede ser plano 2D o vista 3D; diseño *Plano 2D + vista 3D* para trabajar con ambos a la vez.
+  - **Espacio de trabajo 2D independiente del 3D**: el selector 3D | 2D cambia toda la pantalla; cada espacio tiene sus herramientas, su deshacer/rehacer y su propia pantalla dividida (en 2D, 1-4 paneles del plano con zoom independiente). Ambos se guardan con el proyecto.
   - **Extruir a 3D**: los contornos cerrados del plano se convierten en una pieza 3D, con los contornos interiores como huecos.
   - **DXF** (exportar e importar, compatible con AutoCAD, LibreCAD, FreeCAD y cortadoras láser) y **SVG**.
 - **Pantalla dividida** en 1, 2, 3 o 4 vistas, cada una con su propia cámara, navegador de ejes y vista (perspectiva, alzado, planta, perfil…); se guarda con el proyecto.

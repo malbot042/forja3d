@@ -2437,7 +2437,7 @@ export class CadView {
     cad.views.add(this);
   }
 
-  get visible() { return this.host.mode === '2d'; }
+  get visible() { return !!this.host.showing; }
 
   resize() {
     const el = this.host.el;
@@ -2497,4 +2497,12 @@ export class CadView {
   setState(s) { if (s && Number.isFinite(s.zoom)) { this.cx = s.cx; this.cy = s.cy; this.zoom = s.zoom; this.fitted = true; } }
 
   dispose() { this.cad.views.delete(this); this.canvas.remove(); }
+}
+
+/** Encuadre «ver todo» fuera de pantalla (miniaturas): mismo interfaz que una CadView. */
+export function fitView(cad, W, H) {
+  const v = Object.create(CadView.prototype);
+  Object.assign(v, { cad, W, H, dpr: 1, cx: 0, cy: 0, zoom: 1, screenCursor: null });
+  v.fit();
+  return v;
 }

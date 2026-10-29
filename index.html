@@ -65,9 +65,9 @@
         <button class="icon-btn" id="btn-redo" title="Rehacer (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
       </div>
 
-      <div class="seg mode-seg" id="mode-seg" role="group" aria-label="Tipo de vista del panel activo">
-        <button data-m="3d" class="active" title="Panel activo en 3D">3D</button>
-        <button data-m="2d" title="Panel activo como plano 2D (editor CAD)">2D</button>
+      <div class="seg mode-seg" id="mode-seg" role="group" aria-label="Espacio de trabajo">
+        <button data-m="3d" class="active" title="Escena 3D (sus propias vistas, herramientas e historial)">3D</button>
+        <button data-m="2d" title="Plano 2D tipo CAD, independiente de la escena 3D (sus propias vistas, herramientas e historial)">2D</button>
       </div>
 
       <div class="seg only3d" id="transform-mode" role="group" aria-label="Herramienta">
@@ -129,7 +129,6 @@
           <button data-layout="2" title="2 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M10 1v12"/></svg></button>
           <button data-layout="3" title="3 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M12 1v12M12 7h7"/></svg></button>
           <button data-layout="4" title="4 vistas"><svg viewBox="0 0 20 14"><rect x="1" y="1" width="18" height="12" rx="1.5"/><path d="M10 1v12M1 7h18"/></svg></button>
-          <button data-layout="2d3d" title="Plano 2D a la izquierda y vista 3D a la derecha"><svg viewBox="0 0 30 14"><rect x="1" y="1" width="28" height="12" rx="1.5"/><path d="M15 1v12"/><text x="8" y="10" font-size="7" text-anchor="middle" fill="currentColor" stroke="none">2D</text><text x="22" y="10" font-size="7" text-anchor="middle" fill="currentColor" stroke="none">3D</text></svg></button>
         </span>
         <span class="ops-sep"></span>
         <button class="v3d" data-cam="front" title="Alzado / vista frontal (1 · Mayús+1 posterior)">Alzado</button>
