@@ -18,7 +18,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Reflejar** en X/Y/Z y **Apoyar en el suelo**.
 - **Vistas rápidas** con cámara ortográfica: alzado (frontal), perfil derecho e izquierdo (laterales), planta (superior), posterior, inferior y perspectiva; navegador de ejes clicable en la esquina del visor.
 - **Transformaciones** con gizmo (mover / rotar / escalar) o con valores numéricos exactos. Arrastra la etiqueta X/Y/Z de un campo para cambiar el valor deslizando (Mayús = ajuste fino).
-- **Modos de vista**: Sólido, Wire (alámbrico) y Mixto (sólido + aristas).
+- **Modos de vista**: Sólido y Wire (alámbrico).
 - **Materiales**: color con paleta rápida, metalizado, rugosidad, opacidad y sombreado plano.
 - **Escena**: lista de objetos, selección, ocultar/mostrar, duplicar, eliminar, renombrar.
 - **Deshacer / rehacer** (hasta 100 pasos).
@@ -41,7 +41,7 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `7` / `Mayús+7` | Planta (superior) / inferior |
 | `5` | Alternar ortográfica / perspectiva |
 | `0` | Vista en perspectiva |
-| `Z` | Alternar sólido / alámbrico / mixto |
+| `Z` | Alternar sólido / alámbrico |
 | `Ctrl+A` | Seleccionar todo |
 | `Mayús` o `Ctrl` + clic | Añadir o quitar de la selección |
 | `F` | Encuadrar selección (o toda la escena) |

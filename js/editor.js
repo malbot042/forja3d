@@ -278,13 +278,6 @@ export class Editor extends EventTarget {
       geom = new THREE.BoxGeometry(0.2, 0.2, 0.2);
     }
     const mesh = new THREE.Mesh(geom, mat);
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(mesh.geometry, 25),
-      new THREE.LineBasicMaterial({ color: 0x111316, transparent: true, opacity: 0.85 })
-    );
-    edges.name = '__edges';
-    edges.raycast = () => {};
-    mesh.add(edges);
     mesh.userData = {
       id: data.id, type: data.type, name: data.name,
       params: { ...data.params },
@@ -321,13 +314,11 @@ export class Editor extends EventTarget {
   }
 
   _applyViewToMesh(mesh) {
-    const edges = mesh.getObjectByName('__edges');
     const wire = this.viewMode === 'wire';
     if (mesh.material.wireframe !== wire) {
       mesh.material.wireframe = wire;
       mesh.material.needsUpdate = true;
     }
-    edges.visible = this.viewMode === 'both';
   }
 
   _names() { return new Set([...this.objects.values()].map(m => m.userData.name)); }
@@ -436,9 +427,6 @@ export class Editor extends EventTarget {
     this.root.remove(mesh);
     mesh.geometry.dispose();
     mesh.material.dispose();
-    const edges = mesh.getObjectByName('__edges');
-    edges.geometry.dispose();
-    edges.material.dispose();
   }
 
   clear() {
@@ -648,9 +636,6 @@ export class Editor extends EventTarget {
         const old = mesh.geometry;
         mesh.geometry = geom;
         old.dispose();
-        const edges = mesh.getObjectByName('__edges');
-        edges.geometry.dispose();
-        edges.geometry = new THREE.EdgesGeometry(mesh.geometry, 25);
       } catch (err) {
         console.error(err);
         this.notice(`No se pudo regenerar la geometría: ${err.message}`, true);
@@ -672,7 +657,7 @@ export class Editor extends EventTarget {
 
   // ------------------------------------------------------------- vista
   setViewMode(mode) {
-    this.viewMode = mode;
+    this.viewMode = mode === 'wire' ? 'wire' : 'solid';
     for (const m of this.objects.values()) this._applyViewToMesh(m);
   }
 

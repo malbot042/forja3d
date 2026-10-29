@@ -342,10 +342,10 @@ function setTransform(mode) {
   for (const b of document.querySelectorAll('#transform-mode button')) b.classList.toggle('active', b.dataset.mode === mode);
 }
 
-const VIEW_LABEL = { solid: 'Sólido', wire: 'Alámbrico', both: 'Mixto' };
+const VIEW_LABEL = { solid: 'Sólido', wire: 'Alámbrico' };
 function setView(mode) {
   editor.setViewMode(mode);
-  for (const b of document.querySelectorAll('#view-mode button')) b.classList.toggle('active', b.dataset.view === mode);
+  for (const b of document.querySelectorAll('#view-mode button')) b.classList.toggle('active', b.dataset.view === editor.viewMode);
   refreshStatus();
 }
 
@@ -372,7 +372,7 @@ function onKey(e) {
   else if (k === 'w') setTransform('translate');
   else if (k === 'e') setTransform('rotate');
   else if (k === 'r') setTransform('scale');
-  else if (k === 'z') { const order = ['solid', 'wire', 'both']; setView(order[(order.indexOf(editor.viewMode) + 1) % 3]); scheduleSave(); }
+  else if (k === 'z') { setView(editor.viewMode === 'wire' ? 'solid' : 'wire'); scheduleSave(); }
   else if (k === 'g') { const c = $('#chk-snap'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); }
   else if (k === 'delete' || k === 'backspace') { e.preventDefault(); editor.remove(); }
   else if (k === 'escape') editor.select(null);

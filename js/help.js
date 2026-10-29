@@ -199,7 +199,7 @@ const SECTIONS = [
       <p class="lead">Forja 3D es un editor 3D que funciona en el navegador. Construyes modelos combinando piezas básicas (primitivas), perfiles extruidos o torneados y operaciones booleanas.</p>
       <h4>La pantalla del editor</h4>
       <ul class="areas">
-        <li><span class="tag">Barra superior</span> nombre del proyecto, deshacer/rehacer, herramienta (Mover · Rotar · Escalar), modo de vista (Sólido · Wire · Mixto), Snap, Rejilla y Descargar JSON.</li>
+        <li><span class="tag">Barra superior</span> nombre del proyecto, deshacer/rehacer, herramienta (Mover · Rotar · Escalar), modo de vista (Sólido · Wire), Snap, Rejilla y Descargar JSON.</li>
         <li><span class="tag">Izquierda</span> primitivas: un clic añade la pieza en el centro de la vista, apoyada en el suelo.</li>
         <li><span class="tag">Visor</span> arriba, las <b>operaciones</b> (Unir, Restar…); abajo, las <b>vistas</b> (Alzado, Planta…); arriba a la derecha, el <b>navegador de ejes</b>.</li>
         <li><span class="tag">Derecha</span> la lista de objetos de la escena y las propiedades del seleccionado.</li>
@@ -312,13 +312,12 @@ const SECTIONS = [
       <ul>
         <li><b>Sólido</b>: superficies con iluminación.</li>
         <li><b>Wire</b>: solo la malla de alambre, para ver la estructura interior y el número de segmentos.</li>
-        <li><b>Mixto</b>: sólido con las aristas marcadas.</li>
       </ul>
-      <p>${k('Z')} alterna entre los tres.</p>
+      <p>${k('Z')} alterna entre los dos.</p>
       <h4>Ejemplo: alinear una tapa</h4>
       <ol class="steps">
         <li>Abre el ejemplo de la tuerca y el tornillo.</li>
-        <li>Pulsa ${k('1')} (Alzado) y ${k('Z')} hasta el modo Wire: verás si la cabeza y el vástago están centrados.</li>
+        <li>Pulsa ${k('1')} (Alzado) y ${k('Z')} para pasar a Wire: verás si la cabeza y el vástago están centrados.</li>
         <li>Pulsa ${k('7')} (Planta) para comprobar la alineación desde arriba.</li>
       </ol>
       ${exBtn('tuerca')}`,
@@ -419,7 +418,7 @@ const SECTIONS = [
         <tr><td>${k('7')} · ${k('Mayús', '7')}</td><td>Planta (superior) · Inferior</td></tr>
         <tr><td>${k('5')} · ${k('0')}</td><td>Ortográfica ⇄ perspectiva · Perspectiva</td></tr>
         <tr><td>${k('F')}</td><td>Encuadrar selección</td></tr>
-        <tr><td>${k('Z')}</td><td>Sólido → Wire → Mixto</td></tr>
+        <tr><td>${k('Z')}</td><td>Alternar Sólido ⇄ Wire</td></tr>
         <tr><th colspan="2">Ayuda</th></tr>
         <tr><td>${k('?')} · ${k('F1')}</td><td>Abrir esta ayuda</td></tr>
       </table>
