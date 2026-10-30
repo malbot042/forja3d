@@ -486,6 +486,60 @@ export class Editor extends EventTarget {
   }
 
   /** Apoya los objetos seleccionados sobre el suelo (y = 0). */
+  /**
+   * Ejes de la pantalla del panel activo, ajustados al eje del mundo más cercano:
+   * right (→), up (↑) y depth (hacia el fondo). Así las flechas mueven «hacia donde se ve».
+   */
+  screenAxes(view = this.active) {
+    const q = view.camera.quaternion;
+    const vs = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1)].map(v => v.applyQuaternion(q));
+    const used = new Set(), out = [];
+    for (const v of vs) {
+      let bi = 0, best = -1;
+      for (let i = 0; i < 3; i++) if (!used.has(i) && Math.abs(v.getComponent(i)) > best) { best = Math.abs(v.getComponent(i)); bi = i; }
+      used.add(bi);
+      const a = new THREE.Vector3();
+      a.setComponent(bi, Math.sign(v.getComponent(bi)) || 1);
+      out.push(a);
+    }
+    return { right: out[0], up: out[1], depth: out[2] };
+  }
+
+  /**
+   * Teclado: mueve, gira o escala la selección (o la pieza seleccionada dentro de una operación).
+   * kind: 'move' (amount en unidades) | 'rotate' (radianes) | 'scale' (factor); axis: vector unitario del mundo.
+   * Un grupo gira y escala alrededor de su centro. El historial se guarda al dejar de pulsar.
+   */
+  nudge(kind, axis, amount) {
+    if (this.sculpt) return false;
+    const targets = this.subSel ? (this._proxy ? [this._proxy] : []) : this.selection.map(id => this.objects.get(id)).filter(Boolean);
+    if (!targets.length) return false;
+    const center = new THREE.Vector3();
+    if (targets.length > 1) { const box = new THREE.Box3(); targets.forEach(m => box.expandByObject(m)); box.getCenter(center); }
+    const q = kind === 'rotate' ? new THREE.Quaternion().setFromAxisAngle(axis, amount) : null;
+    for (const m of targets) {
+      if (kind === 'move') m.position.addScaledVector(axis, amount);
+      else if (kind === 'rotate') {
+        if (targets.length > 1) m.position.sub(center).applyQuaternion(q).add(center);
+        m.quaternion.premultiply(q);
+      } else {
+        if (targets.length > 1) m.position.sub(center).multiplyScalar(amount).add(center);
+        m.scale.multiplyScalar(amount);
+      }
+      m.position.set(round(m.position.x, 4), round(m.position.y, 4), round(m.position.z, 4));
+      m.updateMatrixWorld(true);
+    }
+    if (this.subSel) this._proxyMoved();
+    this._updateSelectionBoxes();
+    this.dispatchEvent(new CustomEvent('transform', { detail: this.selectedId }));
+    clearTimeout(this._nudgeT);
+    this._nudgeT = setTimeout(() => {
+      if (this.subSel) this._rebuildRoot(this.subSel.rootId);
+      this._commit();
+    }, 350);
+    return true;
+  }
+
   dropToFloor(ids = this.selection) {
     for (const id of ids) { const m = this.objects.get(id); if (m) this._dropMesh(m); }
     this._updateSelectionBoxes();

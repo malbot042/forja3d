@@ -1,4 +1,5 @@
 // Punto de entrada: navegación entre pantallas, gestor de proyectos y paneles del editor.
+import * as THREE from 'three';
 import { Editor } from './editor.js';
 import { PRIMITIVES, TOOLBAR_ORDER, PALETTE, BOOLEAN_OPS, typeLabel, conversionModes } from './primitives.js';
 import { editShape } from './sketch.js';
@@ -1540,9 +1541,35 @@ function printImage(canvas, { title, subtitle, orientation }) {
   img.complete ? fire() : img.addEventListener('load', fire, { once: true });
 }
 
+/**
+ * Flechas en 3D: actúan según la herramienta activa (Mover / Rotar / Escalar), alineadas con la vista.
+ * Mover: ← → ↑ ↓ por los ejes de la pantalla; Mayús+↑↓ en profundidad.
+ * Rotar: ← → alrededor del eje vertical de la pantalla, ↑ ↓ del horizontal, Mayús+← → del de profundidad.
+ * Escalar: ↑ → agrandar, ↓ ← reducir. < y > giran alrededor del eje vertical (Y) con cualquier herramienta.
+ * Paso = tamaño del snap; con Ctrl, una décima parte.
+ */
+function keyNudge3D(e) {
+  if (!editor.selection.length || editor.sculpt) return false;
+  const k = e.key, fine = e.ctrlKey || e.metaKey ? 0.1 : 1;
+  const S = editor.snapSizes, rot = S.rot * Math.PI / 180 * fine;
+  if (k === '<' || k === '>') return editor.nudge('rotate', new THREE.Vector3(0, 1, 0), k === '<' ? rot : -rot);
+  const ax = editor.screenAxes();
+  const sgn = k === 'ArrowRight' || k === 'ArrowUp' ? 1 : -1;
+  const horiz = k === 'ArrowLeft' || k === 'ArrowRight';
+  const mode = editor.gizmo.mode;
+  if (mode === 'rotate') {
+    if (horiz) return editor.nudge('rotate', e.shiftKey ? ax.depth : ax.up, sgn * rot);
+    return editor.nudge('rotate', ax.right, -sgn * rot);
+  }
+  if (mode === 'scale') return editor.nudge('scale', null, sgn > 0 ? 1 + S.scale * fine : 1 / (1 + S.scale * fine));
+  const axis = horiz ? ax.right : e.shiftKey ? ax.depth : ax.up;
+  return editor.nudge('move', axis, sgn * S.move * fine);
+}
+
 function setTransform(mode) {
   editor.setTransformMode(mode);
   for (const b of document.querySelectorAll('#transform-mode button')) b.classList.toggle('active', b.dataset.mode === mode);
+  refreshStatus();
 }
 
 const VIEW_LABEL = { solid: 'Sólido', wire: 'Alámbrico' };
@@ -1569,6 +1596,7 @@ function onKey(e) {
   const k = e.key.toLowerCase();
   const digit = (e.code.match(/^(?:Digit|Numpad)(\d)$/) || [])[1];
   if (editor.sculpt && !mod && sculptKey(e)) return;
+  if ((k.startsWith('arrow') || e.key === '<' || e.key === '>') && keyNudge3D(e)) { e.preventDefault(); return; }
   if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); editor.undo(); }
   else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); editor.redo(); }
   else if (mod && k === 'd') { e.preventDefault(); editor.duplicate(); }
@@ -1713,7 +1741,8 @@ function refreshStatus() {
     `<span>Vértices <b>${s.verts.toLocaleString('es-ES')}</b></span>` +
     `<span>Vista <b>${VIEW_LABEL[editor.viewMode]}</b></span><span>Snap <b>${editor.snap ? `${fmtN(editor.snapSizes.move)} u · ${fmtN(editor.snapSizes.rot)}° · ×${fmtN(editor.snapSizes.scale)}` : 'no'}</b></span>` +
     (n > 1 ? `<span>Selección <b>${n} objetos</b></span>` : sel ? `<span>Selección <b>${escapeHTML(sel.name)}</b></span>` : '') +
-    (editor.sculpt ? '<span><b>Esculpiendo</b> · Intro o Esc para terminar</span>' : '');
+    (editor.sculpt ? '<span><b>Esculpiendo</b> · Intro o Esc para terminar</span>'
+      : n ? `<span class="key-hint">Teclado <b>${{ translate: '← → ↑ ↓ mover · Mayús+↑↓ fondo', rotate: '← → ↑ ↓ girar · Mayús+← → rodar', scale: '↑ → agrandar · ↓ ← reducir' }[editor.gizmo.mode] || ''} · &lt; &gt; girar · Ctrl fino</b></span>` : '');
 }
 const escapeHTML = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 

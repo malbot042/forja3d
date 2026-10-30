@@ -2209,7 +2209,7 @@ export class Cad extends EventTarget {
   emitPrompt() {
     let p;
     if (this.T) p = this.T.prompt();
-    else if (this.sel.size) p = `${this.sel.size} seleccionado${this.sel.size > 1 ? 's' : ''} · arrastra un pinzamiento ■ para editar o el objeto para moverlo · flechas: desplazar · Supr: borrar · Esc: deseleccionar · o escribe una orden (M, CO, RO…)`;
+    else if (this.sel.size) p = `${this.sel.size} seleccionado${this.sel.size > 1 ? 's' : ''} · arrastra un pinzamiento ■ para editar o el objeto para moverlo · flechas: desplazar · < >: girar · Supr: borrar · Esc: deseleccionar · o escribe una orden (M, CO, RO…)`;
     else p = 'Seleccionar: clic en un objeto · arrastra en vacío para seleccionar por ventana · o escribe una orden (L, REC, C, DLI, M…)';
     this.emit('prompt', p);
   }
@@ -2277,7 +2277,8 @@ export class Cad extends EventTarget {
   handleKey(e, inp) {
     const k = e.key;
     const mod = e.ctrlKey || e.metaKey;
-    const typing = document.activeElement === inp;
+    // «escribiendo» solo si hay algo en la línea de órdenes: con ella vacía, las teclas actúan sobre el dibujo
+    const typing = document.activeElement === inp && !!inp.value;
     if (k === 'Escape') {
       e.preventDefault();
       if (this.hand && !inp.value) { this.emit('handrequest', false); inp.blur(); return true; }
@@ -2303,6 +2304,19 @@ export class Cad extends EventTarget {
     if ((k === 'Tab' && !e.shiftKey && !mod) || (mod && k.toLowerCase() === 'e')) {
       if (this.isIso()) { e.preventDefault(); this.toggle('isoplane'); return true; }
       if (mod) { e.preventDefault(); this.message('Ctrl+E / Tab cambian de cara isométrica: activa antes «Isométrica» en este panel'); return true; }
+    }
+    // < y > giran la selección alrededor de su centro (15°, con Ctrl 1°), si no se está escribiendo una orden
+    if ((k === '<' || k === '>') && !this.T && this.sel.size && !inp.value) {
+      e.preventDefault();
+      const deg = (k === '<' ? 1 : -1) * (mod ? 1 : 15);
+      const bb = this.extents(this.selEnts());
+      const c = [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2];
+      const ang = deg / DEG;
+      this.transformSel(q => rotP(q, c, ang), { rot: ang });
+      this.commit();
+      this.emit('select');
+      this.message(`Girado ${deg > 0 ? '+' : ''}${deg}° alrededor del centro de la selección (< y >: 15° · con Ctrl: 1°)`);
+      return true;
     }
     if (mod) {
       const l = k.toLowerCase();

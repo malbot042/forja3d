@@ -329,6 +329,15 @@ const SECTIONS = [
         <li>El <b>orden importa</b>: el primero seleccionado es la base (A) de las operaciones booleanas. El panel muestra el orden con letras A, B, C…</li>
         <li>Doble clic en la lista encuadra el objeto; el icono del ojo lo oculta o muestra.</li>
       </ul>
+      <h4>Mover y girar con el teclado</h4>
+      <ul>
+        <li>Con algo seleccionado, las <b>flechas</b> actúan según la herramienta activa y <b>según cómo miras</b> la escena (cada flecha va por el eje X, Y o Z más parecido a esa dirección de la pantalla):</li>
+        <li><b>Mover</b> (${k('W')}): ${k('←')} ${k('→')} ${k('↑')} ${k('↓')} mueven a izquierda, derecha, arriba y abajo de la pantalla; ${k('Mayús')}+${k('↑')} / ${k('↓')} hacia el fondo o hacia ti.</li>
+        <li><b>Rotar</b> (${k('E')}): ${k('←')} ${k('→')} giran alrededor del eje vertical de la pantalla, ${k('↑')} ${k('↓')} inclinan hacia delante o atrás y ${k('Mayús')}+${k('←')} / ${k('→')} ruedan.</li>
+        <li><b>Escalar</b> (${k('R')}): ${k('↑')} ${k('→')} agrandan y ${k('↓')} ${k('←')} reducen.</li>
+        <li>${k('<')} y ${k('>')} giran alrededor del eje vertical (Y) con cualquier herramienta: lo más rápido para orientar una pieza sobre el suelo.</li>
+        <li>El paso es el <b>tamaño del snap</b> (botón junto a Snap); con ${k('Ctrl')}, una décima parte. Varios objetos giran y escalan alrededor de su centro común. Cada ráfaga de pulsaciones se deshace de una vez con ${k('Ctrl', 'Z')}.</li>
+      </ul>
       <h4>Mover, rotar y escalar</h4>
       <ul>
         <li>${k('W')} Mover · ${k('E')} Rotar · ${k('R')} Escalar. Arrastra una flecha/anillo/cubo del gizmo para un solo eje, o un cuadrado para un plano.</li>
@@ -587,7 +596,7 @@ const SECTIONS = [
         <li><b>Clic</b> para seleccionar (se dibuja discontinuo en azul), <kbd>Mayús</kbd>+clic para añadir o quitar, <kbd>Esc</kbd> o clic en vacío para deseleccionar.</li>
         <li>Arrastrando en vacío: de izquierda a derecha, <b>ventana</b> azul (solo lo que queda dentro del todo); de derecha a izquierda, <b>captura</b> verde (todo lo que toca). El rótulo indica cuántos objetos entrarán.</li>
         <li>Los <b>pinzamientos</b> (cuadrados azules) se ponen rojos al pasar por encima; arrástralos para estirar extremos, mover vértices o centros, o cambiar radios. Mientras arrastras se ve la medida (longitud, radio, desplazamiento).</li>
-        <li>Arrastrar la <b>línea</b> de un objeto lo mueve (con todo lo seleccionado). Las <b>flechas</b> lo desplazan un paso de rejilla (<kbd>Mayús</kbd>: ×10).</li>
+        <li>Arrastrar la <b>línea</b> de un objeto lo mueve (con todo lo seleccionado). Las <b>flechas</b> lo desplazan un paso de forzado (<kbd>Mayús</kbd>: ×10) y <kbd>&lt;</kbd> / <kbd>&gt;</kbd> lo giran 15° alrededor de su centro (con <kbd>Ctrl</kbd>: 1°).</li>
         <li><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>X</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd>: copiar, cortar y pegar (lo pegado sigue al cursor; clic para colocarlo, varias veces si quieres). <kbd>Ctrl</kbd>+<kbd>D</kbd>: duplicar.</li>
         <li>Durante una orden, el rótulo junto al cursor muestra qué pide y lo que vas tecleando, para no tener que mirar la barra de estado.</li>
         <li>En <b>Propiedades</b> se editan las coordenadas, el radio, la longitud, el texto o la capa con valores exactos; con varios objetos se ve la longitud total y se puede cambiar la capa de todos.</li>
@@ -667,6 +676,8 @@ const SECTIONS = [
         <tr><td>${k('W')} ${k('E')} ${k('R')}</td><td>Mover · Rotar · Escalar</td></tr>
         <tr><td>${k('G')}</td><td>Activar o desactivar Snap</td></tr>
         <tr><td>${k('Ctrl', 'D')}</td><td>Duplicar la selección</td></tr>
+        <tr><td>${k('←')} ${k('→')} ${k('↑')} ${k('↓')} · ${k('Mayús')}+${k('↑')} ${k('↓')}</td><td>Mover (o girar / escalar, según la herramienta) la selección · hacia el fondo</td></tr>
+        <tr><td>${k('<')} · ${k('>')}</td><td>Girar la selección alrededor del eje vertical (en 2D: 15° alrededor de su centro)</td></tr>
         <tr><td>${k('Supr')} / ${k('Retroceso')}</td><td>Eliminar la selección</td></tr>
         <tr><td>${k('Ctrl', 'A')}</td><td>Seleccionar todo</td></tr>
         <tr><td>${k('Mayús')}/${k('Ctrl')} + clic</td><td>Añadir o quitar de la selección</td></tr>

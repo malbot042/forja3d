@@ -66,6 +66,8 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `G` | Activar/desactivar snap |
 | `Supr` / `Retroceso` | Eliminar objeto seleccionado |
 | `Ctrl+D` | Duplicar |
+| `←` `→` `↑` `↓` (`Mayús+↑↓` fondo) | Mover la selección por los ejes de la pantalla; con Rotar o Escalar activos, gira o escala (paso = snap; `Ctrl` fino) |
+| `<` / `>` | Girar la selección alrededor del eje vertical (en 2D, 15° alrededor de su centro) |
 | `Ctrl+Z` / `Ctrl+Y` (o `Ctrl+Mayús+Z`) | Deshacer / Rehacer |
 | `Ctrl+S` | Guardar ahora |
 | `?` / `F1` | Abrir la ayuda |
