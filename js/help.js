@@ -220,6 +220,7 @@ const SECTIONS = [
     id: 'proyectos', title: 'Proyectos y guardado',
     html: `
       <p>Cada modelo es un <b>proyecto</b>. La pantalla de proyectos (botón <b>‹</b> de la barra superior) muestra todos con su miniatura.</p>
+      <p class="note"><b>¿No encuentras algo?</b> Pulsa <kbd>Ctrl</kbd>+<kbd>K</kbd> o el botón <b>Buscar acción</b> de la barra superior: escribe lo que quieres hacer («cilindro», «restar», «cota», «isométrica», «lápiz»…) y pulsa <kbd>Intro</kbd>. Sin escribir nada muestra todas las acciones agrupadas con su atajo de teclado.</p>
       <ul>
         <li><b>+ Nuevo proyecto</b>: crea uno vacío y lo abre.</li>
         <li>En cada tarjeta: <b>Abrir</b>, <b>Renombrar</b>, <b>Duplicar</b> (para probar variantes sin perder el original), <b>JSON</b> (descarga) y <b>Eliminar</b>.</li>
@@ -713,6 +714,7 @@ const SECTIONS = [
         <tr><td>${k('Ctrl', 'P')}</td><td>Capturar imagen, PDF o imprimir</td></tr>
         <tr><th colspan="2">Ayuda</th></tr>
         <tr><td>${k('?')} · ${k('F1')}</td><td>Abrir esta ayuda</td></tr>
+        <tr><td>${k('Ctrl', 'K')}</td><td>Buscar una herramienta o acción y ver su atajo (paleta de órdenes)</td></tr>
       </table>
       <p class="muted">En el editor de perfiles: ${k('Intro')} aplica, ${k('Esc')} cancela y ${k('Ctrl', 'Z')} quita el último punto.</p>`,
   },

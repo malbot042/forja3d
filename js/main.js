@@ -8,6 +8,7 @@ import * as store from './storage.js';
 import { toggleTheme } from './theme.js';
 import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
 import { makePdf } from './pdf.js';
+import { openPalette } from './palette.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
 import { blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
@@ -394,6 +395,7 @@ function initEditor() {
   // barra superior
   $('#btn-back').onclick = () => (location.hash = '');
   $('#btn-help').onclick = () => showHelp();
+  $('#btn-palette').onclick = () => openCommandPalette();
   $('#btn-undo').onclick = () => (is2D() ? editor.cad.undo() : editor.undo());
   $('#btn-redo').onclick = () => (is2D() ? editor.cad.redo() : editor.redo());
   $('#btn-export').onclick = () => exportDialog();
@@ -1566,6 +1568,111 @@ function keyNudge3D(e) {
   return editor.nudge('move', axis, sgn * S.move * fine);
 }
 
+// ============================================================ paleta de órdenes (Ctrl+K)
+const HELP_SECTIONS = [['inicio', 'Primeros pasos'], ['proyectos', 'Proyectos y guardado'], ['formatos', 'Exportar e importar 3D'],
+  ['primitivas', 'Primitivas y propiedades'], ['transformar', 'Seleccionar y transformar'], ['vistas', 'Vistas y cámara'],
+  ['captura', 'Capturar e imprimir'], ['extrusion', 'Extrusión'], ['revolucion', 'Revolución (torno)'], ['escultor', 'Modo escultor'],
+  ['booleanas', 'Operaciones booleanas'], ['cad2d', 'Editor 2D (planos y cotas)'], ['ejemplos', 'Ejemplos guiados'], ['atajos', 'Atajos de teclado']];
+
+/** Todas las acciones del editor para la paleta: etiqueta, grupo, atajo y qué hacen. */
+function paletteActions() {
+  const A = [];
+  const now = () => (is2D() ? '2d' : '3d');
+  const add = o => A.push({
+    ...o,
+    other: o.ws && o.ws !== now() ? o.ws.toUpperCase() : null,
+    run: () => { if (o.ws && o.ws !== now()) editor.setWorkspace(o.ws); o.run(); },
+  });
+  const click = sel => () => $(sel)?.click();
+  const cadKey = (key, opts = {}) => () => editor.cad.handleKey(new KeyboardEvent('keydown', { key, ...opts }), $('#cmd-input'));
+  const has3DSel = () => editor.selection.length > 0;
+
+  // ---- general
+  if (is2D()) add({ id: 'ws-3d', label: 'Ir a la escena 3D', group: 'General', words: 'modo espacio trabajo tres dimensiones', run: () => editor.setWorkspace('3d') });
+  else add({ id: 'ws-2d', label: 'Ir al plano 2D', group: 'General', words: 'modo espacio trabajo dibujo cad autocad', run: () => editor.setWorkspace('2d') });
+  add({ id: 'undo', label: 'Deshacer', group: 'General', keys: ['Ctrl+Z'], run: click('#btn-undo'), enabled: () => !$('#btn-undo').disabled });
+  add({ id: 'redo', label: 'Rehacer', group: 'General', keys: ['Ctrl+Y'], run: click('#btn-redo'), enabled: () => !$('#btn-redo').disabled });
+  add({ id: 'save', label: 'Guardar ahora', group: 'General', keys: ['Ctrl+S'], words: 'grabar', run: () => { saveNow(); toast('Guardado'); } });
+  add({ id: 'export', label: 'Exportar…', group: 'General', words: 'descargar glb gltf obj stl json dxf svg pdf blender', run: () => exportDialog() });
+  add({ id: 'import', label: 'Importar…', group: 'General', words: 'abrir cargar glb gltf obj stl dxf json', run: click('#btn-import') });
+  add({ id: 'capture', label: 'Capturar imagen, PDF o imprimir', group: 'General', keys: ['Ctrl+P'], words: 'png jpg captura pantalla', run: () => captureDialog() });
+  add({ id: 'theme', label: 'Cambiar modo claro / oscuro', group: 'General', words: 'tema noche dia', run: () => $('#editor-screen [data-theme-toggle]').click() });
+  add({ id: 'side', label: 'Mostrar u ocultar el panel lateral', group: 'General', keys: ['N'], words: 'propiedades capas escena', run: () => toggleSidebar() });
+  add({ id: 'back', label: 'Volver a la lista de proyectos', group: 'General', words: 'salir inicio', run: () => (location.hash = '') });
+  add({ id: 'help', label: 'Ayuda y ejemplos', group: 'Ayuda', keys: ['F1'], run: () => showHelp() });
+  for (const [id, title] of HELP_SECTIONS) add({ id: `help-${id}`, label: `Ayuda: ${title}`, group: 'Ayuda', words: id === 'atajos' ? 'teclas hotkeys shortcuts' : '', run: () => showHelp(id) });
+
+  // ---- vistas (las dos)
+  for (const n of [1, 2, 3, 4]) add({ id: `layout-${n}`, label: `Dividir en ${n} vista${n > 1 ? 's' : ''}`, group: 'Vistas', words: 'pantalla dividida paneles layout', run: click(`button[data-layout="${n}"]`) });
+  add({ id: 'hand', label: 'Mano: desplazar la vista', group: 'Vistas', keys: is2D() ? ['P'] : ['H'], words: 'pan mover vista arrastrar', run: () => editor.setHand(!editor.hand) });
+  add({ id: 'focus', label: is2D() ? 'Encuadrar todo el plano' : 'Encuadrar la selección o la escena', group: 'Vistas', keys: is2D() ? ['Z'] : ['F'], words: 'zoom ver todo extension', run: click('#view-bar [data-cam="focus"]') });
+
+  // ---- 3D
+  for (const type of TOOLBAR_ORDER) {
+    if (type === '|') continue;
+    const def = PRIMITIVES[type];
+    add({ id: `prim-${type}`, ws: '3d', label: `Añadir ${def.label.toLowerCase()}`, group: 'Primitivas 3D', words: `nuevo crear ${type}`, run: async () => { const id = editor.addPrimitive(type); $('#hint').hidden = true; if (def.usesShape) await editProfile(id); } });
+  }
+  for (const [mode, label, key] of [['translate', 'Mover', 'W'], ['rotate', 'Rotar', 'E'], ['scale', 'Escalar', 'R']]) {
+    add({ id: `tf-${mode}`, ws: '3d', label: `Herramienta ${label}`, group: 'Transformar 3D', keys: [key], hint: 'el gizmo y las flechas del teclado', words: 'gizmo transformar', run: () => setTransform(mode) });
+  }
+  add({ id: 'nudge', ws: '3d', label: 'Mover o girar con las flechas', group: 'Transformar 3D', keys: ['←', '→', '↑', '↓', '<', '>'], hint: 'según la herramienta; Mayús+↑↓ fondo; Ctrl fino', words: 'teclado flechas desplazar rotar', run: () => showHelp('transformar') });
+  add({ id: 'dup3', ws: '3d', label: 'Duplicar la selección', group: 'Transformar 3D', keys: ['Ctrl+D'], words: 'copiar clonar', run: () => editor.duplicate(), enabled: has3DSel });
+  add({ id: 'del3', ws: '3d', label: 'Eliminar la selección', group: 'Transformar 3D', keys: ['Supr'], words: 'borrar quitar', run: () => editor.remove(), enabled: has3DSel });
+  add({ id: 'all3', ws: '3d', label: 'Seleccionar todo', group: 'Transformar 3D', keys: ['Ctrl+A'], run: () => editor.selectAll() });
+  add({ id: 'drop', ws: '3d', label: 'Apoyar en el suelo', group: 'Transformar 3D', words: 'suelo y=0 bajar', run: () => runOp('drop'), enabled: has3DSel });
+  for (const [op, label, words] of [['union', 'Unir (A ∪ B)', 'booleana sumar fusionar'], ['subtract', 'Restar (A − B)', 'booleana agujero diferencia'], ['intersect', 'Intersecar (A ∩ B)', 'booleana comun'],
+    ['split', 'Partir', 'cortar plano'], ['explode', 'Separar operación', 'deshacer booleana piezas'], ['extrude2d', 'Extruir línea o círculo 2D', 'altura solido'],
+    ['lathe2d', 'Revolución', 'torno girar perfil'], ['sculpt', 'Esculpir', 'escultor tallar modelar']]) {
+    add({ id: `op-${op}`, ws: '3d', label, group: 'Operaciones 3D', words, run: () => runOp(op), enabled: () => !$(`#ops-bar [data-op="${op}"]`)?.disabled });
+  }
+  for (const [v, label, key] of [['front', 'Alzado (frontal)', '1'], ['back', 'Vista posterior', 'Mayús+1'], ['right', 'Perfil derecho', '3'], ['left', 'Perfil izquierdo', 'Mayús+3'],
+    ['top', 'Planta (superior)', '7'], ['bottom', 'Vista inferior', 'Mayús+7'], ['iso', 'Vista isométrica', '9'], ['persp', 'Perspectiva', '0']]) {
+    add({ id: `view-${v}`, ws: '3d', label, group: 'Vistas 3D', keys: [key], words: 'camara vista', run: () => { editor.setView(v); scheduleSave(); } });
+  }
+  add({ id: 'proj', ws: '3d', label: 'Alternar ortográfica / perspectiva', group: 'Vistas 3D', keys: ['5'], run: () => { editor.toggleProjection(); scheduleSave(); } });
+  add({ id: 'wire', ws: '3d', label: 'Alternar sólido / alámbrico (wire)', group: 'Vistas 3D', keys: ['Z'], run: () => { setView(editor.viewMode === 'wire' ? 'solid' : 'wire'); scheduleSave(); } });
+  add({ id: 'snap3', ws: '3d', label: 'Activar o desactivar el snap', group: 'Vistas 3D', keys: ['G'], words: 'ajuste rejilla', run: () => { const c = $('#chk-snap'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); } });
+  add({ id: 'snapsize', ws: '3d', label: 'Tamaño del snap (mover, girar, escalar)', group: 'Vistas 3D', words: 'paso ajuste', run: () => snapSizePopover() });
+  add({ id: 'grid3', ws: '3d', label: 'Mostrar u ocultar la rejilla 3D', group: 'Vistas 3D', run: () => { const c = $('#chk-grid'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); } });
+
+  // ---- 2D: herramientas de dibujo y modificación (con su orden de teclado)
+  const cad = editor.cad;
+  for (const [key, def] of Object.entries(CAD_TOOLS)) {
+    if (!def || key === 'select') continue;
+    add({ id: `cad-${key}`, ws: '2d', label: def.label, group: ['dimlin', 'dimali', 'dimrad', 'dimdia', 'dimang', 'measure'].includes(key) ? 'Cotas y medidas 2D' : 'Dibujo 2D',
+      keys: def.alias[0] ? [def.alias[0].toUpperCase()] : [], words: def.alias.join(' '), run: () => cad.setTool(key) });
+  }
+  for (const [key, def] of Object.entries(CAD_OPS)) {
+    add({ id: `cadop-${key}`, ws: '2d', label: def.label, group: 'Modificar 2D', keys: [def.alias[0].toUpperCase()], words: def.alias.join(' '), run: () => cad.runOp(key) });
+  }
+  add({ id: 'cad-rot15', ws: '2d', label: 'Girar la selección 15°', group: 'Modificar 2D', keys: ['<', '>'], hint: 'con Ctrl: 1°', words: 'rotar teclado', run: cadKey('<'), enabled: () => cad.sel.size > 0 });
+  add({ id: 'cad-copy', ws: '2d', label: 'Copiar al portapapeles', group: 'Modificar 2D', keys: ['Ctrl+C'], run: cadKey('c', { ctrlKey: true }), enabled: () => cad.sel.size > 0 });
+  add({ id: 'cad-paste', ws: '2d', label: 'Pegar', group: 'Modificar 2D', keys: ['Ctrl+V'], run: cadKey('v', { ctrlKey: true }) });
+  add({ id: 'cad-dup', ws: '2d', label: 'Duplicar la selección', group: 'Modificar 2D', keys: ['Ctrl+D'], run: cadKey('d', { ctrlKey: true }), enabled: () => cad.sel.size > 0 });
+  add({ id: 'cad-all', ws: '2d', label: 'Seleccionar todo el plano', group: 'Modificar 2D', keys: ['Ctrl+A'], run: () => cad.selectAll() });
+  add({ id: 'cad-ext', ws: '2d', label: 'Extruir el plano a 3D…', group: 'Modificar 2D', words: 'pieza solido volumen', run: () => extrude2DDialog() });
+  for (const [k, label, key, words] of [['osnapOn', 'Referencias a objetos', 'F3', 'snap osnap enganchar punto final medio centro'], ['grid', 'Rejilla', 'F7', 'cuadricula'],
+    ['ortho', 'Orto (solo horizontal y vertical)', 'F8', 'ortogonal'], ['gridSnap', 'Forzar a la rejilla', 'F9', 'snap ajuste'],
+    ['iso', 'Modo isométrico del panel', '', 'isometrica perspectiva rejilla 30'], ['isoplane', 'Cambiar de cara isométrica', 'Tab', 'superior derecha izquierda plano'],
+    ['pencil', 'Modo lápiz (a mano alzada)', '', 'boceto dibujo mano estilo linea']]) {
+    add({ id: `cadt-${k}`, ws: '2d', label, group: 'Ayudas al dibujo 2D', keys: key ? [key] : [], words, run: () => cad.toggle(k) });
+  }
+  add({ id: 'cad-step', ws: '2d', label: 'Paso del forzado (tamaño del snap)', group: 'Ayudas al dibujo 2D', words: 'snap rejilla paso', run: () => { $('#snap-step').focus(); $('#snap-step').showPicker?.(); } });
+  add({ id: 'cad-layer', ws: '2d', label: 'Nueva capa', group: 'Capas y hoja 2D', run: click('#btn-layer-add') });
+  add({ id: 'cad-paper', ws: '2d', label: 'Elegir tamaño de hoja (A5 … A0)', group: 'Capas y hoja 2D', words: 'papel formato a4 a3 recuadro cajetin', run: () => { cad.setSel([]); setTimeout(() => { const s = $('#props .prop-row:has(label) select'); const f = [...document.querySelectorAll('#props .prop-row')].find(r => r.textContent.startsWith('Formato'))?.querySelector('select'); (f || s)?.focus(); f?.scrollIntoView({ block: 'center' }); }, 60); } });
+  add({ id: 'cad-pdf', ws: '2d', label: 'PDF de la hoja a escala', group: 'Capas y hoja 2D', words: 'imprimir plano', run: () => exportCad('pdf'), enabled: () => !!sheetOf(cad.drawing) });
+  add({ id: 'cad-dxf', ws: '2d', label: 'Exportar el plano a DXF', group: 'Capas y hoja 2D', words: 'autocad', run: () => exportCad('dxf') });
+  add({ id: 'cad-svg', ws: '2d', label: 'Exportar el plano a SVG', group: 'Capas y hoja 2D', words: 'vectorial laser', run: () => exportCad('svg') });
+  // primero las del espacio de trabajo actual
+  return [...A.filter(a => !a.other), ...A.filter(a => a.other)];
+}
+
+function openCommandPalette() {
+  if (!editor || $('#editor-screen').hidden) return;
+  openPalette(paletteActions, { placeholder: is2D() ? 'Busca una herramienta o acción del plano 2D… (p. ej. cota, recortar, lápiz)' : 'Busca una herramienta o acción… (p. ej. cilindro, restar, isométrica)' });
+}
+
 function setTransform(mode) {
   editor.setTransformMode(mode);
   for (const b of document.querySelectorAll('#transform-mode button')) b.classList.toggle('active', b.dataset.mode === mode);
@@ -1587,6 +1694,7 @@ function onKey(e) {
   const typing = e.target.closest('input, textarea, select');
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveNow(); toast('Guardado'); return; }
+  if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openCommandPalette(); return; }
   if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); captureDialog('print'); return; }
   if (is2D()) {
     if (e.target.id === 'cmd-input' || !e.target.closest('input, textarea, select')) editor.cad.handleKey(e, $('#cmd-input'));

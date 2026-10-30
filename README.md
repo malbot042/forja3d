@@ -47,6 +47,8 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 
 ## Ayuda integrada y ejemplos
 
+**Paleta de órdenes** (`Ctrl+K` o el botón *Buscar acción*): busca cualquier herramienta o acción por su nombre, un sinónimo o su atajo, y la ejecuta con `Intro`. Sin escribir nada muestra todas las acciones por grupos con sus atajos de teclado; las del otro espacio de trabajo (2D/3D) también aparecen y cambian a él al elegirlas.
+
 El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en la pantalla de proyectos abren una guía con todas las funcionalidades una sección del editor 2D con todas las órdenes y seis ejemplos guiados (taza, dado, tuerca y tornillo, casa, piezas de torno y naranja partida). Cada ejemplo se puede abrir con un clic como proyecto nuevo y desmontar con *Separar* para ver cómo está hecho.
 
 ## Atajos de teclado
@@ -71,6 +73,7 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `Ctrl+Z` / `Ctrl+Y` (o `Ctrl+Mayús+Z`) | Deshacer / Rehacer |
 | `Ctrl+S` | Guardar ahora |
 | `?` / `F1` | Abrir la ayuda |
+| `Ctrl+K` | Paleta de órdenes: buscar y ejecutar cualquier acción, ver los atajos |
 | `N` | Mostrar u ocultar el panel lateral |
 | `Ctrl+P` | Capturar imagen, PDF o imprimir |
 | `[` `]` / `Mayús+[` `]` | (Modo escultor) tamaño / fuerza del pincel |
