@@ -1633,7 +1633,10 @@ function paletteActions() {
     add({ id: `view-${v}`, ws: '3d', label, group: 'Vistas 3D', keys: [key], words: 'camara vista', run: () => { editor.setView(v); scheduleSave(); } });
   }
   add({ id: 'proj', ws: '3d', label: 'Alternar ortográfica / perspectiva', group: 'Vistas 3D', keys: ['5'], run: () => { editor.toggleProjection(); scheduleSave(); } });
-  add({ id: 'wire', ws: '3d', label: 'Alternar sólido / alámbrico (wire)', group: 'Vistas 3D', keys: ['Z'], run: () => { setView(editor.viewMode === 'wire' ? 'solid' : 'wire'); scheduleSave(); } });
+  add({ id: 'wire', ws: '3d', label: 'Cambiar sólido → alámbrico → lápiz', group: 'Vistas 3D', keys: ['Z'], run: () => { setView({ solid: 'wire', wire: 'sketch', sketch: 'solid' }[editor.viewMode] || 'solid'); scheduleSave(); } });
+  for (const [m, label, words] of [['solid', 'Vista sólida', 'solido normal'], ['wire', 'Vista alámbrica (wire)', 'malla alambre'], ['sketch', 'Vista lápiz (dibujo a mano)', 'sketch boceto mano alzada dibujo trama']]) {
+    add({ id: `vm-${m}`, ws: '3d', label, group: 'Vistas 3D', words, run: () => { setView(m); scheduleSave(); } });
+  }
   add({ id: 'snap3', ws: '3d', label: 'Activar o desactivar el snap', group: 'Vistas 3D', keys: ['G'], words: 'ajuste rejilla', run: () => { const c = $('#chk-snap'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); } });
   add({ id: 'snapsize', ws: '3d', label: 'Tamaño del snap (mover, girar, escalar)', group: 'Vistas 3D', words: 'paso ajuste', run: () => snapSizePopover() });
   add({ id: 'grid3', ws: '3d', label: 'Mostrar u ocultar la rejilla 3D', group: 'Vistas 3D', run: () => { const c = $('#chk-grid'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); } });
@@ -1681,7 +1684,7 @@ function setTransform(mode) {
   refreshStatus();
 }
 
-const VIEW_LABEL = { solid: 'Sólido', wire: 'Alámbrico' };
+const VIEW_LABEL = { solid: 'Sólido', wire: 'Alámbrico', sketch: 'Lápiz' };
 function setView(mode) {
   editor.setViewMode(mode);
   for (const b of document.querySelectorAll('#view-mode button')) b.classList.toggle('active', b.dataset.view === editor.viewMode);
@@ -1721,7 +1724,7 @@ function onKey(e) {
   else if (k === 'w') setTransform('translate');
   else if (k === 'e') setTransform('rotate');
   else if (k === 'r') setTransform('scale');
-  else if (k === 'z') { setView(editor.viewMode === 'wire' ? 'solid' : 'wire'); scheduleSave(); }
+  else if (k === 'z') { setView({ solid: 'wire', wire: 'sketch', sketch: 'solid' }[editor.viewMode] || 'solid'); scheduleSave(); }
   else if (k === 'g') { const c = $('#chk-snap'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); refreshSnapSizeBtn(); }
   else if (k === 'delete' || k === 'backspace') { e.preventDefault(); editor.remove(); }
   else if (k === 'escape') editor.select(null);

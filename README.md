@@ -33,7 +33,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Capturar** lo que se ve en pantalla (todas las vistas) como **PNG** (también con fondo transparente), **JPG**, **PDF** A4 o **imprimir**, con o sin rejilla, a 1×, 2× o 4× de resolución.
 - **Vistas rápidas** con cámara ortográfica: alzado (frontal), perfil derecho e izquierdo (laterales), planta (superior), posterior, inferior, **isométrica** y perspectiva; navegador de ejes clicable en la esquina del visor; herramienta **Mano** (pan) para desplazarse con el botón izquierdo.
 - **Transformaciones** con gizmo (mover / rotar / escalar) o con valores numéricos exactos. Arrastra la etiqueta X/Y/Z de un campo para cambiar el valor deslizando (Mayús = ajuste fino).
-- **Modos de vista**: Sólido y Wire (alámbrico).
+- **Modos de vista**: Sólido, Wire (alámbrico) y **Lápiz** (dibujo a mano: contorno de grosor irregular, aristas temblorosas que se pasan en las esquinas y sombreado con trama cruzada; también en capturas y PDF).
 - **Materiales**: color con paleta rápida, metalizado, rugosidad, opacidad y sombreado plano.
 - **Escena**: lista de objetos, selección, ocultar/mostrar, duplicar, eliminar, renombrar.
 - **Deshacer / rehacer** (hasta 100 pasos).
@@ -61,7 +61,7 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `7` / `Mayús+7` | Planta (superior) / inferior |
 | `5` | Alternar ortográfica / perspectiva |
 | `0` | Vista en perspectiva |
-| `Z` | Alternar sólido / alámbrico |
+| `Z` | Cambiar la vista: sólido → alámbrico → lápiz |
 | `Ctrl+A` | Seleccionar todo |
 | `Mayús` o `Ctrl` + clic | Añadir o quitar de la selección |
 | `F` | Encuadrar selección (o toda la escena) |
@@ -124,6 +124,8 @@ js/storage.js           Persistencia en IndexedDB (con migración), import/expor
 js/sculpt.js            Modo escultor: malla (deformar) y volumen (tallar con vóxeles)
 js/csg.js               Operaciones booleanas (CSG) y caché de resultados
 js/sketch.js            Editor de perfiles 2D para extrusión y revolución
+js/sketch3d.js          Vista «Lápiz» en 3D (contorno, aristas temblorosas y trama)
+js/palette.js           Paleta de órdenes (Ctrl+K)
 js/cad2d.js             Editor 2D de planos: entidades, órdenes, referencias, cotas, capas, DXF/SVG
 js/help.js              Ayuda integrada y proyectos de ejemplo
 js/theme.js             Modo claro / oscuro

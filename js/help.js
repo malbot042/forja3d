@@ -358,6 +358,13 @@ const SECTIONS = [
   {
     id: 'vistas', title: 'Vistas y cámara',
     html: `
+      <h4>Sólido, Wire y Lápiz</h4>
+      <ul>
+        <li><b>Sólido</b>: superficies con luz y color. <b>Wire</b>: solo la malla de triángulos.</li>
+        <li><b>Lápiz</b>: los objetos se ven <b>dibujados a mano</b>, como el modo lápiz del plano 2D: contorno con grosor irregular, aristas vivas trazadas con dos pasadas temblorosas que se pasan un poco en las esquinas, y el sombreado hecho con <b>rayas cruzadas</b> (más densas cuanto más en sombra). El color del objeto tiñe ligeramente el papel.</li>
+        <li>Solo cambia el aspecto: se selecciona, se mueve, se usan las booleanas y se exporta igual. Las capturas, el PDF y las miniaturas salen dibujadas a lápiz. Mientras esculpes, la pieza se ve sólida.</li>
+        <li>Botones <b>Sólido · Wire · Lápiz</b> de la barra superior, o ${k('Z')} para pasar de uno a otro.</li>
+      </ul>
       <h4>Moverse por la escena</h4>
       <ul>
         <li><b>Botón izquierdo</b> arrastrando: orbitar · <b>botón derecho</b>: desplazar · <b>rueda</b>: zoom.</li>
@@ -693,7 +700,7 @@ const SECTIONS = [
         <tr><td>${k('9')}</td><td>Vista isométrica</td></tr>
         <tr><td>${k('H')}</td><td>Mano: desplazar la vista con el botón izquierdo (en 2D: orden <code>P</code>)</td></tr>
         <tr><td>${k('F')}</td><td>Encuadrar selección</td></tr>
-        <tr><td>${k('Z')}</td><td>Alternar Sólido ⇄ Wire</td></tr>
+        <tr><td>${k('Z')}</td><td>Cambiar la vista: Sólido → Wire → Lápiz</td></tr>
         <tr><td>${k('N')}</td><td>Mostrar u ocultar el panel lateral</td></tr>
         <tr><th colspan="2">Editor 2D</th></tr>
         <tr><td>Teclear + ${k('Intro')}</td><td>Orden o valor en la línea de órdenes (L, PL, REC, C, A, T, DLI, DRA, DI, M, CO, RO, O, TR…)</td></tr>

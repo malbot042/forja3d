@@ -10,6 +10,7 @@ import { createSculpt, SculptSession } from './sculpt.js';
 import { cssVar, currentTheme } from './theme.js';
 import { View, CadPanel, LAYOUTS } from './views.js';
 import { Cad, fitView } from './cad2d.js';
+import { SketchLayer } from './sketch3d.js';
 
 const DEG = THREE.MathUtils.DEG2RAD;
 const RAD = THREE.MathUtils.RAD2DEG;
@@ -309,6 +310,12 @@ export class Editor extends EventTarget {
     r.setScissorTest(false);
     r.setClearColor(opts.sepColor ?? (this._sepColor ??= new THREE.Color(cssVar('--line') || '#2e333a')), opts.sepAlpha ?? 1);
     r.clear();
+    const sketch = this.viewMode === 'sketch' && this._sketch;
+    if (sketch) {
+      const bg = this.scene.background || new THREE.Color(this.theme === 'light' ? 0xe7e6e2 : 0x0f1114);
+      sketch.setTheme(this.theme === 'light' || (bg.r + bg.g + bg.b) / 3 > 0.6, bg);
+      sketch.sync();
+    }
     for (const v of opts.only ? [opts.only] : this.views) {
       const rc = opts.only ? { x: 0, y: 0, w: W, h: H } : v.rect();
       if (rc.w < 2 || rc.h < 2) continue;
@@ -320,6 +327,7 @@ export class Editor extends EventTarget {
       this.headLight.position.copy(v.camera.position);
       this.headLight.target.position.copy(v.target);
       this.gizmo.camera = v.camera;
+      if (sketch) sketch.setViewport(rc.w, rc.h, r.getPixelRatio());
       r.render(this.scene, v.camera);
       if (!opts.noNav) v.drawNav(this.layout > 1);
     }
@@ -1172,9 +1180,12 @@ export class Editor extends EventTarget {
   }
 
   // ------------------------------------------------------------- vista
+  /** 'solid' | 'wire' | 'sketch' (lápiz: dibujo a mano con contorno, aristas temblorosas y trama). */
   setViewMode(mode) {
-    this.viewMode = mode === 'wire' ? 'wire' : 'solid';
+    this.viewMode = ['wire', 'sketch'].includes(mode) ? mode : 'solid';
     for (const m of this.objects.values()) this._applyViewToMesh(m);
+    if (this.viewMode === 'sketch') this._sketch ||= new SketchLayer(this);
+    else this._sketch?.clear();
   }
 
   setTransformMode(mode) { this.gizmo.setMode(mode); }
