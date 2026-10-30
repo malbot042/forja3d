@@ -577,6 +577,7 @@ const SECTIONS = [
         <tr><td><code>DRA</code> · <code>DDI</code></td><td>Cota de radio · diámetro: clic en el círculo o arco y luego dónde poner el texto</td></tr>
         <tr><td><code>DAN</code></td><td>Cota angular entre dos líneas</td></tr>
         <tr><td><code>DI</code></td><td>Medir: distancia, ΔX, ΔY y ángulo entre dos puntos (no dibuja nada)</td></tr>
+        <tr><td>Propiedades</td><td><b>Colocación de la cota</b>: flechas <b>dentro</b> o <b>fuera</b>; texto <b>dentro</b> o <b>fuera</b> (por el inicio o por el final); texto <b>alineado</b>, <b>horizontal</b> o <b>vertical</b> (atravesado, la línea de cota se interrumpe). <i>Automático</i> saca flechas y texto fuera cuando no caben. Se aplica a una cota, a varias seleccionadas o a todo el plano (sin nada seleccionado → <i>Cotas · …</i>)</td></tr>
         <tr><th colspan="2">Modificar</th></tr>
         <tr><td><code>M</code> · <code>CO</code></td><td>Desplazar · Copiar (punto base y destino)</td></tr>
         <tr><td><code>RO</code> · <code>SC</code> · <code>MI</code></td><td>Girar · Escalar · Simetría</td></tr>

@@ -541,6 +541,83 @@ function pointInPoly(p, pts) {
 }
 
 // =================================================================== cotas
+/**
+ * Opciones de colocación de una cota: las del objeto o, si no tiene, las del plano.
+ *  arrows: 'auto' | 'in' (flechas dentro) | 'out' (fuera, apuntando hacia dentro)
+ *  tpos:   'auto' | 'in' (texto entre las líneas de referencia) | 'start' | 'end' (fuera, por un lado)
+ *  tdir:   'aligned' (paralelo a la línea de cota) | 'h' (siempre horizontal) | 'v' (siempre vertical)
+ */
+export const DIM_OPTS = {
+  arrows: { label: 'Flechas', def: 'auto', opts: [['auto', 'Automático'], ['in', 'Dentro'], ['out', 'Fuera']] },
+  tpos: { label: 'Texto', def: 'auto', opts: [['auto', 'Automático'], ['in', 'Dentro'], ['start', 'Fuera (inicio)'], ['end', 'Fuera (final)']] },
+  tdir: { label: 'Orientación', def: 'aligned', opts: [['aligned', 'Alineado con la cota'], ['h', 'Horizontal'], ['v', 'Vertical']] },
+};
+const dimKey = k => `dim${k[0].toUpperCase()}${k.slice(1)}`;
+export const dimOpt = (e, D, k) => e[k] || D[dimKey(k)] || DIM_OPTS[k].def;
+export const dimDefaultKey = dimKey;
+/** Qué opciones tienen sentido para cada tipo de cota. */
+export const dimOptsFor = kind => kind === 'iso' ? ['arrows', 'tpos'] : ['radius', 'diameter', 'angle'].includes(kind) ? ['arrows', 'tdir'] : ['arrows', 'tpos', 'tdir'];
+
+const upOf = rot => [-Math.sin(rot), Math.cos(rot)];
+
+/** Ángulo del texto según la orientación elegida (alineado: legible, nunca boca abajo). */
+function textRot(dir, th) {
+  if (dir === 'h') return 0;
+  if (dir === 'v') return Math.PI / 2;
+  let r = th;
+  if (flips(r)) r += Math.PI;
+  return signedA(r);
+}
+
+/**
+ * Línea de cota recta de a2 a b2 con sus flechas y su texto, según las opciones de la cota.
+ * basis: texto oblicuo de las cotas isométricas ([eje de la base, eje vertical]).
+ */
+function dimLineGeom(g, e, D, a2, b2, str, basis = null) {
+  const A = D.arrow, gap = A * 0.5, h = D.textH;
+  const L = dist(a2, b2);
+  const u = L > 1e-9 ? norm(sub(b2, a2)) : [1, 0];
+  const th = Math.atan2(u[1], u[0]);
+  const rot = basis ? Math.atan2(basis[0][1], basis[0][0]) : textRot(dimOpt(e, D, 'tdir'), th);
+  const tw = textWidth(str, h);
+  const parallel = !!basis || Math.abs(Math.sin(rot - th)) < 1e-6;
+  const along = parallel ? tw : Math.abs(Math.cos(rot - th)) * tw + Math.abs(Math.sin(rot - th)) * h;
+  let arrows = dimOpt(e, D, 'arrows');
+  if (arrows === 'auto') arrows = L >= 3 * A ? 'in' : 'out';
+  let tpos = dimOpt(e, D, 'tpos');
+  if (tpos === 'auto') tpos = L >= along + 2 * gap + (arrows === 'in' ? 2 * A : 0) ? 'in' : 'end';
+  const tail = 2 * A;
+  const segs = [];
+  if (L > 1e-9) {
+    if (arrows === 'in') g.arrows.push({ tip: a2, dir: mul(u, -1) }, { tip: b2, dir: u });
+    else {
+      g.arrows.push({ tip: a2, dir: u }, { tip: b2, dir: mul(u, -1) });
+      segs.push([add(a2, mul(u, -tail)), a2], [b2, add(b2, mul(u, tail))]);
+    }
+  }
+  let mid;
+  if (tpos === 'in') {
+    mid = lerp(a2, b2, 0.5);
+    if (parallel) segs.push([a2, b2]);
+    else {
+      // texto atravesado: la línea de cota se interrumpe a su paso
+      const hw = along / 2 + gap * 0.6;
+      if (L / 2 > hw) segs.push([a2, add(mid, mul(u, -hw))], [add(mid, mul(u, hw)), b2]);
+    }
+  } else {
+    const sd = tpos === 'start' ? -1 : 1, end = sd > 0 ? b2 : a2;
+    const lead = (arrows === 'out' ? tail : 0) + gap;
+    segs.push([a2, b2]);
+    mid = add(end, mul(u, sd * (lead + along / 2)));
+    if (parallel) segs.push([end, add(end, mul(u, sd * (lead + along + gap)))]);   // la línea sigue bajo el texto
+    else if (arrows !== 'out') segs.push([end, add(end, mul(u, sd * lead))]);
+  }
+  g.lines.push(...segs);
+  if (basis) g.text = { p: add(mid, mul(basis[1], gap * 0.7)), rot, str, h, align: 'center', basis };
+  else if (parallel) g.text = { p: add(mid, mul(upOf(rot), gap * 0.6)), rot, str, h, align: 'center' };
+  else g.text = { p: add(mid, mul(upOf(rot), -h / 2)), rot, str, h, align: 'center' };
+}
+
 /** Geometría de una cota en unidades del plano: líneas, arcos, flechas y texto. */
 export function dimGeom(e, D) {
   const g = { lines: [], arrows: [], arcs: [], text: null, value: 0 };
@@ -565,14 +642,7 @@ export function dimGeom(e, D) {
       const v = sub(P1, P0), L = len(v);
       if (L > gap) { const u = mul(v, 1 / L); g.lines.push([add(P0, mul(u, gap)), add(P1, mul(u, ext))]); }
     }
-    g.lines.push([a2, b2]);
-    const L = dist(a2, b2);
-    let rot = L > 1e-9 ? angOf(a2, b2) : 0;
-    if (L > 1e-9) { const u = norm(sub(b2, a2)); g.arrows.push({ tip: a2, dir: mul(u, -1) }, { tip: b2, dir: u }); }
-    if (flips(rot)) rot += Math.PI;
-    rot = signedA(rot);
-    const up = [-Math.sin(rot), Math.cos(rot)];
-    g.text = { p: add(lerp(a2, b2, 0.5), mul(up, gap * 0.6)), rot, str: label(g.value), h, align: 'center' };
+    dimLineGeom(g, e, D, a2, b2, label(g.value));
   } else if (e.kind === 'iso') {
     // cota isométrica: mide a lo largo de un eje isométrico (u); las líneas de referencia van por otro eje (w)
     const { a, b, p, u, w } = e;
@@ -584,15 +654,13 @@ export function dimGeom(e, D) {
       const v = sub(P1, P0), L = len(v);
       if (L > gap) { const k = mul(v, 1 / L); g.lines.push([add(P0, mul(k, gap)), add(P1, mul(k, ext))]); }
     }
-    g.lines.push([a2, b2]);
-    if (dist(a2, b2) > 1e-9) { const k = norm(sub(b2, a2)); g.arrows.push({ tip: a2, dir: mul(k, -1) }, { tip: b2, dir: k }); }
     // texto apoyado en la cara: su base sigue u y sus verticales siguen w (texto oblicuo)
     let e1 = [...u];
     if (e1[0] < -1e-9 || (Math.abs(e1[0]) <= 1e-9 && e1[1] < 0)) e1 = mul(e1, -1);
     let e2 = [...w];
     if (cross2(e1, e2) < 0) e2 = mul(e2, -1);
     const str = (e.pre || '') + label(g.value);
-    g.text = { p: add(lerp(a2, b2, 0.5), mul(e2, gap * 0.7)), rot: Math.atan2(e1[1], e1[0]), str, h, align: 'center', basis: [e1, e2] };
+    dimLineGeom(g, e, D, a2, b2, str, [e1, e2]);
   } else if (e.kind === 'radius' || e.kind === 'diameter') {
     const { c, r, p } = e;
     const diam = e.kind === 'diameter';
@@ -601,17 +669,27 @@ export function dimGeom(e, D) {
     const outside = dist(p, c) > r;
     g.value = diam ? 2 * r : r;
     const str = (diam ? 'Ø' : 'R') + label(g.value);
+    let arrows = dimOpt(e, D, 'arrows');
+    if (arrows === 'auto') arrows = outside || (diam ? 2 * r : r) < 3 * A ? 'out' : 'in';
+    const tail = 2 * A;
     if (diam) {
       const q2 = add(c, mul(u, -r));
       g.lines.push([q2, q]);
-      g.arrows.push({ tip: q, dir: u }, { tip: q2, dir: mul(u, -1) });
+      if (arrows === 'in') g.arrows.push({ tip: q, dir: u }, { tip: q2, dir: mul(u, -1) });
+      else {
+        g.arrows.push({ tip: q, dir: mul(u, -1) }, { tip: q2, dir: u });
+        g.lines.push([q2, add(q2, mul(u, -tail))]);
+        if (!outside) g.lines.push([q, add(q, mul(u, tail))]);
+      }
       if (outside) g.lines.push([q, p]);
     } else if (outside) {
       g.lines.push([q, p]);
-      g.arrows.push({ tip: q, dir: mul(u, -1) });
+      if (arrows === 'in') { g.lines.push([c, q]); g.arrows.push({ tip: q, dir: u }); }
+      else g.arrows.push({ tip: q, dir: mul(u, -1) });
     } else {
       g.lines.push([c, q]);
-      g.arrows.push({ tip: q, dir: u });
+      if (arrows === 'in') g.arrows.push({ tip: q, dir: u });
+      else { g.arrows.push({ tip: q, dir: mul(u, -1) }); g.lines.push([q, add(q, mul(u, tail))]); }
     }
     if (outside) {
       const side = u[0] >= 0 ? 1 : -1;
@@ -620,11 +698,20 @@ export function dimGeom(e, D) {
       g.lines.push([p, land]);
       g.text = { p: [(p[0] + land[0]) / 2, p[1] + gap * 0.5], rot: 0, str, h, align: 'center' };
     } else {
-      let rot = Math.atan2(u[1], u[0]);
-      if (flips(rot)) rot += Math.PI;
-      rot = signedA(rot);
-      const mid = diam ? lerp(c, q, 0.5) : lerp(c, q, 0.5);
-      g.text = { p: add(mid, mul([-Math.sin(rot), Math.cos(rot)], gap * 0.6)), rot, str, h, align: 'center' };
+      const th = Math.atan2(u[1], u[0]);
+      const rot = textRot(dimOpt(e, D, 'tdir'), th);
+      const mid = lerp(c, q, 0.5);
+      if (Math.abs(Math.sin(rot - th)) < 1e-6) g.text = { p: add(mid, mul(upOf(rot), gap * 0.6)), rot, str, h, align: 'center' };
+      else {
+        // texto atravesado (horizontal o vertical): centrado en el radio, que se interrumpe a su paso
+        const tw = textWidth(str, h), hw = (Math.abs(Math.cos(rot - th)) * tw + Math.abs(Math.sin(rot - th)) * h) / 2 + gap * 0.6;
+        const i = g.lines.findIndex(l => l[0] === c || (diam && l[1] === q && l[0] !== q));
+        if (i >= 0 && r / 2 > hw) {
+          const [l0, l1] = g.lines[i];
+          g.lines.splice(i, 1, [l0, add(mid, mul(u, -hw))], [add(mid, mul(u, hw)), l1]);
+        }
+        g.text = { p: add(mid, mul(upOf(rot), -h / 2)), rot, str, h, align: 'center' };
+      }
     }
   } else if (e.kind === 'angle') {
     const { c, a1, a2, p } = e;
@@ -632,17 +719,30 @@ export function dimGeom(e, D) {
     const sw = sweepOf(a1, a2);
     g.value = sw * DEG;
     g.arcs.push({ c, r, a0: a1, a1: a2 });
+    let arrows = dimOpt(e, D, 'arrows');
+    if (arrows === 'auto') arrows = r * sw >= 3 * A ? 'in' : 'out';
+    const s1 = arrows === 'in' ? 1 : -1;
     g.arrows.push(
-      { tip: polar(c, r, a1), dir: [Math.sin(a1), -Math.cos(a1)] },
-      { tip: polar(c, r, a2), dir: [-Math.sin(a2), Math.cos(a2)] });
+      { tip: polar(c, r, a1), dir: mul([Math.sin(a1), -Math.cos(a1)], s1) },
+      { tip: polar(c, r, a2), dir: mul([-Math.sin(a2), Math.cos(a2)], s1) });
+    if (arrows === 'out') { const t = 2 * A / r; g.arcs.push({ c, r, a0: a1 - t, a1 }, { c, r, a0: a2, a1: a2 + t }); }
     for (const [ang, e0] of [[a1, e.e1 || 0], [a2, e.e2 || 0]]) {
       if (r > e0 + gap) g.lines.push([polar(c, e0 + gap, ang), polar(c, r + ext, ang)]);
     }
     const am = a1 + sw / 2;
-    let rot = am - Math.PI / 2, pos = polar(c, r + gap * 0.6, am);
-    if (flips(rot)) { rot += Math.PI; pos = polar(c, r + gap * 0.6 + h * 1.05, am); }
     const s = fmtNum(g.value, D, Math.min(D.precision, 2)) + '°';
-    g.text = { p: pos, rot: signedA(rot), str: e.text ? (e.text.includes('<>') ? e.text.replace('<>', s) : e.text) : s, h, align: 'center' };
+    const str = e.text ? (e.text.includes('<>') ? e.text.replace('<>', s) : e.text) : s;
+    const dir = dimOpt(e, D, 'tdir');
+    if (dir === 'aligned') {
+      let rot = am - Math.PI / 2, pos = polar(c, r + gap * 0.6, am);
+      if (flips(rot)) { rot += Math.PI; pos = polar(c, r + gap * 0.6 + h * 1.05, am); }
+      g.text = { p: pos, rot: signedA(rot), str, h, align: 'center' };
+    } else {
+      // texto horizontal o vertical, por fuera del arco en la bisectriz
+      const rot = dir === 'h' ? 0 : Math.PI / 2, up = upOf(rot), d = [Math.cos(am), Math.sin(am)];
+      const half = Math.abs(dot(d, [Math.cos(rot), Math.sin(rot)])) * textWidth(str, h) / 2 + Math.abs(dot(d, up)) * h / 2;
+      g.text = { p: add(polar(c, r + gap + half, am), mul(up, -h / 2)), rot, str, h, align: 'center' };
+    }
   }
   return g;
 }

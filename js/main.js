@@ -11,7 +11,7 @@ import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from '.
 import { makePdf } from './pdf.js';
 import { openPalette } from './palette.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { profileFromSketch, emptyDrawing, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, toPDFMulti, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { profileFromSketch, emptyDrawing, DIM_OPTS, dimOptsFor, dimDefaultKey, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, toPDFMulti, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -1398,6 +1398,23 @@ function renderCadProps(box) {
     ['', `Por capa${layerLt ? ` (${LINETYPES[layerLt]?.label || layerLt})` : ''}`],
     ...Object.entries(LINETYPES).map(([k, v]) => [k, v.label])], value, v => { if (v !== '-') onchange(v); });
 
+  /** Flechas dentro/fuera, texto dentro/fuera y su orientación, para una o varias cotas. */
+  function dimStyleRows(dims) {
+    const keys = Object.keys(DIM_OPTS).filter(k => dims.some(d => dimOptsFor(d.kind).includes(k)));
+    return keys.map(k => {
+      const o = DIM_OPTS[k];
+      const vals = new Set(dims.filter(d => dimOptsFor(d.kind).includes(k)).map(d => d[k] || ''));
+      const planDef = o.opts.find(x => x[0] === (D[dimDefaultKey(k)] || o.def))?.[1] || '';
+      const opts = [...(vals.size > 1 ? [['-', 'Varios']] : []), ['', `Como el plano (${planDef.toLowerCase()})`], ...o.opts];
+      return row(o.label, select(opts, vals.size > 1 ? '-' : [...vals][0], v => {
+        if (v === '-') return;
+        const ids = new Set(dims.map(d => d.id));
+        for (const ent of D.entities) if (ids.has(ent.id) && dimOptsFor(ent.kind).includes(k)) { if (v) ent[k] = v; else delete ent[k]; }
+        cad.commit();
+      }));
+    });
+  }
+
   if (!ents.length) {
     const osnaps = Object.entries(OSNAP_LABELS).map(([k, l]) => {
       const c = h('input', { type: 'checkbox' });
@@ -1422,6 +1439,7 @@ function renderCadProps(box) {
         row('Separador', select([[',', 'Coma (12,50)'], ['.', 'Punto (12.50)']], D.decimal, v => cad.setSetting('decimal', v))),
         num('Altura texto', D.textH, v => { if (v > 0) cad.setSetting('textH', v); }, { min: 0.01 }),
         num('Flechas', D.arrow, v => { if (v > 0) cad.setSetting('arrow', v); }, { min: 0.01, step: 0.25 }),
+        ...Object.entries(DIM_OPTS).map(([k, o]) => row(`Cotas · ${o.label.toLowerCase()}`, select(o.opts, D[dimDefaultKey(k)] || o.def, v => cad.setSetting(dimDefaultKey(k), v === o.def ? undefined : v)))),
         (() => {
           const inp = h('input', { type: 'number', class: 'text-input', min: 0, step: 'any', placeholder: 'Automático (según el zoom)' });
           inp.value = D.snapStep || '';
@@ -1493,7 +1511,8 @@ function renderCadProps(box) {
         row('Tipo de línea', ltSel(ents.every(e => (e.lt || '') === (ents[0].lt || '')) ? ents[0].lt || '' : '-', null, v => {
           for (const e of ents) if (v) e.lt = v; else delete e.lt;
           cad.commit();
-        }))),
+        })),
+        ...(ents.some(e => e.type === 'dim') ? [h('h3', { style: 'margin-top:10px' }, 'Cotas seleccionadas'), ...dimStyleRows(ents.filter(e => e.type === 'dim'))] : [])),
       h('div', { class: 'prop-section' },
         h('h3', {}, 'Acciones'),
         h('div', { class: 'btn-row' },
@@ -1588,6 +1607,7 @@ function renderCadProps(box) {
       if (e.a) geo.push(xy('Origen 1', e.a, (q, c) => upd({ a: q }, c)), xy('Origen 2', e.b, (q, c) => upd({ b: q }, c)));
       geo.push(xy('Posición', e.p, (q, c) => upd({ p: q }, c)));
       if (e.a) geo.push(row('Tipo', select([['horizontal', 'Horizontal'], ['vertical', 'Vertical'], ['aligned', 'Alineada']], e.kind, v => upd({ kind: v }))));
+      geo.push(...dimStyleRows([e]));
       break;
     }
   }
