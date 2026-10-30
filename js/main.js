@@ -8,7 +8,7 @@ import { toggleTheme } from './theme.js';
 import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
 import { makePdf } from './pdf.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -915,9 +915,19 @@ function blockFields(cad, D) {
     if (value.trim()) fields[key] = value.replace(/\s+$/, ''); else delete fields[key];
     cad.setPaper({ fields });
   };
-  const ph = { title: project?.name || 'Sin título', date: `${new Date().toLocaleDateString('es-ES')} (hoy)`, description: 'Texto libre: qué es la pieza, material, acabado, notas… (Intro = nueva línea)' };
+  const ph = { title: project?.name || 'Sin título', description: 'Texto libre: qué es la pieza, material, acabado, notas… (Intro = nueva línea)' };
   const box = h('div', { class: 'block-fields' }, h('h4', {}, 'Cajetín'));
   for (const [key, label] of BLOCK_FIELDS) {
+    if (key === 'date') {
+      // selector de fecha; vacío = la fecha de hoy (se actualiza sola)
+      const inp = h('input', { type: 'date', class: 'text-input block-date' });
+      inp.value = /^\d{4}-\d{2}-\d{2}$/.test(F.date || '') ? F.date : '';
+      inp.onchange = () => set('date', inp.value);
+      const today = h('button', { class: `btn sm${F.date ? '' : ' active'}`, title: 'Usar siempre la fecha del día en que se imprime', onclick: () => set('date', '') }, 'Hoy');
+      box.append(row(label, h('div', { class: 'date-row' }, inp, today)),
+        h('p', { class: 'muted small cad-hint' }, F.date ? `En el cajetín: ${blockDate(F.date)}` : `Sin fecha elegida: se pone la de hoy (${blockDate('')}).`));
+      continue;
+    }
     const multi = key === 'description';
     const inp = h(multi ? 'textarea' : 'input', { class: `text-input block-${key}`, placeholder: ph[key] || '', spellcheck: multi ? 'true' : 'false', rows: multi ? 3 : null });
     inp.value = F[key] || '';
@@ -925,7 +935,7 @@ function blockFields(cad, D) {
     if (!multi) inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
     box.append(multi ? h('label', { class: 'field block-desc' }, h('span', {}, label), inp) : row(label, inp));
   }
-  box.append(h('p', { class: 'muted small cad-hint' }, 'La escala y el formato se rellenan solos. Los campos vacíos usan el nombre del proyecto y la fecha de hoy, o se quedan en blanco. Doble clic en el cajetín del plano para editarlo.'));
+  box.append(h('p', { class: 'muted small cad-hint' }, 'La escala se rellena sola. Si dejas el título vacío se usa el nombre del proyecto; los demás campos vacíos se quedan en blanco. Doble clic en el cajetín del plano para editarlo.'));
   return box;
 }
 

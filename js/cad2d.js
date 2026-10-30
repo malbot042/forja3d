@@ -95,6 +95,13 @@ export const BLOCK_FIELDS = [
   ['company', 'Empresa / centro'], ['number', 'Nº de plano'], ['date', 'Fecha'],
 ];
 
+/** Fecha del cajetín: la elegida (AAAA-MM-DD) en formato dd/mm/aaaa, o la de hoy si no hay ninguna. */
+export function blockDate(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || '');
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return v || new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 /** Parte un texto en líneas que caben en `maxW` (mm) con altura `h` (mm); respeta los saltos de línea. */
 function wrapText(str, h, maxW, maxLines = 8) {
   const out = [];
@@ -125,8 +132,8 @@ function blockLayout(D, S, title) {
   const lab = 1.6, val = 2.5, pad = 1.5;
   const desc = F.description ? wrapText(F.description, val, bw - 2 * pad) : [];
   const rows = [
-    { h: 9, cells: [['Escala', S.scale], ['Formato', `${S.size} ${S.landscape ? 'horizontal' : 'vertical'}`], ['Nº de plano', F.number || '']] },
-    { h: 9, cells: [['Dibujado por', F.author || ''], ['Empresa / centro', F.company || ''], ['Fecha', F.date || new Date().toLocaleDateString('es-ES')]] },
+    { h: 9, cells: [['Escala', S.scale], ['Nº de plano', F.number || '']] },
+    { h: 9, cells: [['Dibujado por', F.author || ''], ['Empresa / centro', F.company || ''], ['Fecha', blockDate(F.date)]] },
   ];
   if (desc.length) rows.push({ h: 2 * pad + lab + 1.2 + val + (desc.length - 1) * val * 1.55 + 1.2, cells: [['Descripción', desc]] });
   rows.push({ h: 11, cells: [['Título', F.title || title || 'Sin título']], big: true });

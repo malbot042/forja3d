@@ -770,3 +770,6 @@ kbd {
 .block-fields h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .block-fields .block-desc { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
 .block-fields textarea { resize: vertical; min-height: 56px; font: inherit; line-height: 1.4; }
+.date-row { display: flex; gap: 6px; align-items: center; }
+.date-row input { flex: 1; min-width: 0; color-scheme: light dark; }
+.date-row .btn.active { color: var(--accent); border-color: var(--accent); }
