@@ -1600,7 +1600,9 @@ function paletteActions() {
   add({ id: 'side', label: 'Mostrar u ocultar el panel lateral', group: 'General', keys: ['N'], words: 'propiedades capas escena', run: () => toggleSidebar() });
   add({ id: 'back', label: 'Volver a la lista de proyectos', group: 'General', words: 'salir inicio', run: () => (location.hash = '') });
   add({ id: 'help', label: 'Ayuda y ejemplos', group: 'Ayuda', keys: ['F1'], run: () => showHelp() });
-  for (const [id, title] of HELP_SECTIONS) add({ id: `help-${id}`, label: `Ayuda: ${title}`, group: 'Ayuda', words: id === 'atajos' ? 'teclas hotkeys shortcuts' : '', run: () => showHelp(id) });
+  // secciones de ayuda: las de 3D solo en 3D, la del plano solo en 2D, las generales siempre
+  const HELP_WS = { formatos: '3d', primitivas: '3d', transformar: '3d', vistas: '3d', extrusion: '3d', revolucion: '3d', escultor: '3d', booleanas: '3d', ejemplos: '3d', cad2d: '2d' };
+  for (const [id, title] of HELP_SECTIONS) add({ id: `help-${id}`, ws: HELP_WS[id], label: `Ayuda: ${title}`, group: 'Ayuda', words: id === 'atajos' ? 'teclas hotkeys shortcuts' : '', run: () => showHelp(id) });
 
   // ---- vistas (las dos)
   for (const n of [1, 2, 3, 4]) add({ id: `layout-${n}`, label: `Dividir en ${n} vista${n > 1 ? 's' : ''}`, group: 'Vistas', words: 'pantalla dividida paneles layout', run: click(`button[data-layout="${n}"]`) });
@@ -1664,8 +1666,8 @@ function paletteActions() {
   add({ id: 'cad-pdf', ws: '2d', label: 'PDF de la hoja a escala', group: 'Capas y hoja 2D', words: 'imprimir plano', run: () => exportCad('pdf'), enabled: () => !!sheetOf(cad.drawing) });
   add({ id: 'cad-dxf', ws: '2d', label: 'Exportar el plano a DXF', group: 'Capas y hoja 2D', words: 'autocad', run: () => exportCad('dxf') });
   add({ id: 'cad-svg', ws: '2d', label: 'Exportar el plano a SVG', group: 'Capas y hoja 2D', words: 'vectorial laser', run: () => exportCad('svg') });
-  // primero las del espacio de trabajo actual
-  return [...A.filter(a => !a.other), ...A.filter(a => a.other)];
+  // solo las del espacio de trabajo actual (más las generales); para lo del otro, «Ir al plano 2D / a la escena 3D»
+  return A.filter(a => !a.other);
 }
 
 function openCommandPalette() {
