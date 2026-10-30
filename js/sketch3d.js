@@ -1,7 +1,7 @@
 // Vista «Lápiz» en 3D: los objetos se ven como dibujados a mano.
 // Cada objeto conserva su malla (no se dibuja, pero sigue sirviendo para seleccionar y exportar);
 // encima se dibuja, en una capa aparte que sigue su posición:
-//   · relleno de papel con sombreado a rayas (trama cruzada según la luz),
+//   · relleno con el color asignado al objeto y sombreado a rayas del mismo color, más oscuro (trama cruzada según la luz),
 //   · contorno tembloroso (casco invertido desplazado en pantalla, grosor variable),
 //   · aristas vivas con dos pasadas temblorosas que se pasan un poco en los extremos.
 // La geometría no cambia: selección, gizmo, snap, booleanas y exportaciones siguen igual.
@@ -54,20 +54,23 @@ export class SketchLayer {
         }`,
       fragmentShader: /* glsl */`
         uniform vec3 ink;
-        void main() { gl_FragColor = vec4(ink, 1.0); }`,
+        void main() {
+          gl_FragColor = vec4(ink, 1.0);
+          #include <colorspace_fragment>
+        }`,
     });
   }
 
   /** Material de relleno con trama (uno por objeto, por su color). */
   _fillMat(color) {
     return new THREE.ShaderMaterial({
-      uniforms: { ...this.u, tint: { value: new THREE.Color(color) } },
+      uniforms: { ...this.u, tint: { value: new THREE.Color(color) }, alpha: { value: 1 } },
       polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
       vertexShader: /* glsl */`
         varying vec3 vN;
         void main() { vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: /* glsl */`
-        uniform vec3 paper, ink, tint; uniform float dpr;
+        uniform vec3 paper, ink, tint; uniform float dpr, alpha;
         varying vec3 vN;
         float hatch(vec2 p, float spacing, float width) {
           float d = abs(fract(p.x / spacing) - 0.5) * spacing;
@@ -84,8 +87,11 @@ export class SketchLayer {
           if (shade > 0.30) s = max(s, hatch(vec2(q.x + q.y, 0.0), 6.5, 0.8) * smoothstep(0.30, 0.42, shade));
           if (shade > 0.52) s = max(s, hatch(vec2(q.x - q.y, 0.0), 6.5, 0.8) * smoothstep(0.52, 0.64, shade));
           if (shade > 0.72) s = max(s, hatch(vec2(q.x * 0.3 + q.y, 0.0), 4.2, 0.7) * smoothstep(0.72, 0.84, shade));
-          vec3 base = mix(paper, tint, 0.13);
-          gl_FragColor = vec4(mix(base, ink, s * 0.55), 1.0);
+          // el color asignado al objeto, con un poco de volumen; las rayas, del mismo color más oscuro (como lápices de colores)
+          vec3 base = tint * (0.8 + 0.2 * light);
+          vec3 stroke = tint * 0.3;
+          gl_FragColor = vec4(mix(base, stroke, s * 0.8), alpha);
+          #include <colorspace_fragment>
         }`,
     });
   }
@@ -200,7 +206,12 @@ export class SketchLayer {
         this.items.set(id, it);
       }
       const fill = it.root.children[0];
-      fill.material.uniforms.tint.value.set(mesh.userData.material?.color || '#d9d4c7');
+      const M = mesh.userData.material || {};
+      fill.material.uniforms.tint.value.set(M.color || '#d9d4c7');
+      // la opacidad asignada también se respeta
+      const alpha = M.opacity ?? 1;
+      fill.material.uniforms.alpha.value = alpha;
+      if (fill.material.transparent !== alpha < 1) { fill.material.transparent = alpha < 1; fill.material.depthWrite = alpha >= 1; fill.material.needsUpdate = true; }
       mesh.updateMatrixWorld();
       it.root.matrix.copy(mesh.matrixWorld);
       it.root.matrixWorldNeedsUpdate = true;
