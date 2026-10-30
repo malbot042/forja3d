@@ -361,7 +361,7 @@ const SECTIONS = [
       <h4>Sólido, Wire y Lápiz</h4>
       <ul>
         <li><b>Sólido</b>: superficies con luz y color. <b>Wire</b>: solo la malla de triángulos.</li>
-        <li><b>Lápiz</b>: los objetos se ven <b>dibujados a mano</b>, como el modo lápiz del plano 2D: contorno con grosor irregular, aristas vivas trazadas con dos pasadas temblorosas que se pasan un poco en las esquinas, y el sombreado hecho con <b>rayas cruzadas</b> (más densas cuanto más en sombra). Cada objeto <b>conserva su color</b> y su opacidad: las rayas son del mismo color, más oscuro, como con lápices de colores.</li>
+        <li><b>Lápiz</b>: los objetos se ven <b>dibujados a mano</b>, como el modo lápiz del plano 2D: contorno con grosor irregular, aristas vivas trazadas con dos pasadas temblorosas que se pasan un poco en las esquinas, y el sombreado hecho con <b>rayas cruzadas</b> (más densas cuanto más en sombra). Cada objeto <b>conserva su color</b> y su opacidad: las rayas son del mismo color, más oscuro, como con lápices de colores. Los objetos <b>transparentes</b> dejan ver lo que tienen dentro y detrás, con su contorno solo por fuera y las aristas de atrás más tenues.</li>
         <li>Solo cambia el aspecto: se selecciona, se mueve, se usan las booleanas y se exporta igual. Las capturas, el PDF y las miniaturas salen dibujadas a lápiz. Mientras esculpes, la pieza se ve sólida.</li>
         <li>Botones <b>Sólido · Wire · Lápiz</b> de la barra superior, o ${k('Z')} para pasar de uno a otro.</li>
       </ul>

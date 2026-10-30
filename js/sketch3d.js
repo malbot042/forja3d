@@ -38,6 +38,10 @@ export class SketchLayer {
       outline: { value: 1.7 },
     };
     this.lineMats = [0.9, 0.42].map(op => new THREE.LineBasicMaterial({ color: 0xd8d8d8, transparent: true, opacity: op, depthWrite: false }));
+    // objetos transparentes: aristas de detrás que se ven a través (más tenues) y la profundidad de la cara de delante
+    this.hiddenLineMat = new THREE.LineBasicMaterial({ color: 0xd8d8d8, transparent: true, opacity: 0.3, depthWrite: false });
+    this.depthMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, transparent: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    this.shared = new Set([...this.lineMats, this.hiddenLineMat, this.depthMat]);
     this.hullMat = new THREE.ShaderMaterial({
       uniforms: this.u,
       side: THREE.BackSide,
@@ -59,6 +63,8 @@ export class SketchLayer {
           #include <colorspace_fragment>
         }`,
     });
+    // el mismo contorno, en la cola de transparentes (se dibuja después de la profundidad de la cara de delante)
+    this.hullMatT = new THREE.ShaderMaterial({ uniforms: this.u, side: THREE.BackSide, vertexShader: this.hullMat.vertexShader, fragmentShader: this.hullMat.fragmentShader, transparent: true });
   }
 
   /** Material de relleno con trama (uno por objeto, por su color). */
@@ -99,21 +105,38 @@ export class SketchLayer {
   setTheme(light, bg) {
     this.u.paper.value.copy(bg);
     this.u.ink.value.set(light ? 0x2a2b2e : 0xd8d8d8);
-    for (const m of this.lineMats) m.color.copy(this.u.ink.value);
+    for (const m of [...this.lineMats, this.hiddenLineMat]) m.color.copy(this.u.ink.value);
   }
 
   /** Tamaño en píxeles del panel que se va a dibujar (para el grosor del contorno). */
   setViewport(w, h, dpr) { this.u.res.value.set(w, h); this.u.dpr.value = dpr; }
 
-  _build(mesh) {
+  /**
+   * Objeto opaco: relleno (escribe profundidad) + contorno + aristas.
+   * Objeto transparente (opacidad < 1), en este orden de dibujo:
+   *   1 · aristas de detrás, tenues (se ven a través del objeto)
+   *   2 · relleno transparente
+   *   3 · solo profundidad de la cara de delante (sin color)
+   *   4 · contorno: así solo asoma por la silueta, no rellena el interior
+   *   5 · aristas de delante
+   */
+  _build(mesh, transparent) {
     const g = mesh.geometry;
     const root = new THREE.Group();
     root.matrixAutoUpdate = false;
+    const order = transparent ? { fill: 2, depth: 3, hull: 4, lines: 5 } : { fill: 0, depth: 0, hull: 0, lines: 3 };
     const seed = seedOf(mesh.userData.id);
     // relleno
     const fill = new THREE.Mesh(g, this._fillMat(mesh.userData.material?.color || '#d9d4c7'));
     fill.raycast = () => {};
+    fill.renderOrder = order.fill;
     root.add(fill);
+    if (transparent) {
+      const depth = new THREE.Mesh(g, this.depthMat);
+      depth.raycast = () => {};
+      depth.renderOrder = order.depth;
+      root.add(depth);
+    }
     if (!g.boundingSphere) g.computeBoundingSphere();
     const R = Math.max(g.boundingSphere?.radius || 1, 1e-3);
     const tris = g.index ? g.index.count / 3 : g.attributes.position.count / 3;
@@ -124,8 +147,9 @@ export class SketchLayer {
       if (g.index) hg.setIndex(g.index);
       hg = mergeVertices(hg, R * 1e-4);
       hg.computeVertexNormals();
-      const hull = new THREE.Mesh(hg, this.hullMat);
+      const hull = new THREE.Mesh(hg, transparent ? this.hullMatT : this.hullMat);
       hull.raycast = () => {};
+      hull.renderOrder = order.hull;
       root.add(hull);
     } catch { /* sin contorno */ }
     // aristas vivas temblorosas
@@ -167,8 +191,14 @@ export class SketchLayer {
           lg.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
           const lines = new THREE.LineSegments(lg, this.lineMats[pass]);
           lines.raycast = () => {};
-          lines.renderOrder = 3;
+          lines.renderOrder = order.lines;
           root.add(lines);
+          if (transparent && pass === 0) {
+            const hidden = new THREE.LineSegments(lg, this.hiddenLineMat);
+            hidden.raycast = () => {};
+            hidden.renderOrder = 1;
+            root.add(hidden);
+          }
         }
       }
     }
@@ -179,7 +209,7 @@ export class SketchLayer {
     this.group.remove(item.root);
     item.root.traverse(o => {
       if (o.geometry && o.geometry !== item.geom) o.geometry.dispose();
-      if (o.material && !this.lineMats.includes(o.material) && o.material !== this.hullMat) o.material.dispose();
+      if (o.material && !this.shared.has(o.material) && o.material !== this.hullMat && o.material !== this.hullMatT) o.material.dispose();
     });
   }
 
@@ -198,10 +228,11 @@ export class SketchLayer {
       // sigue ahí para seleccionar, el gizmo y las exportaciones. Mientras se esculpe, se ve sólida.
       mesh.material.visible = sculpting;
       if (sculpting) { if (it) it.root.visible = false; continue; }
-      const stale = it && (it.geom !== g || (it.version !== version && now - it.at > 400));
+      const transparent = (mesh.userData.material?.opacity ?? 1) < 1;
+      const stale = it && (it.geom !== g || it.transparent !== transparent || (it.version !== version && now - it.at > 400));
       if (!it || stale) {
         if (it) this._dispose(it);
-        it = { root: this._build(mesh), geom: g, version, at: now };
+        it = { root: this._build(mesh, transparent), geom: g, version, at: now, transparent };
         this.group.add(it.root);
         this.items.set(id, it);
       }
