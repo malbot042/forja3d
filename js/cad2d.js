@@ -89,24 +89,93 @@ export function sheetOf(D) {
   return { x0, y0, x1: x0 + w * k, y1: y0 + h * k, w, h, k, size: P.size, landscape: P.landscape !== false, scale: P.scale || '1:1' };
 }
 
+/** Campos editables del cajetín (los que quedan vacíos usan un valor automático o no se muestran). */
+export const BLOCK_FIELDS = [
+  ['title', 'Título'], ['description', 'Descripción'], ['author', 'Dibujado por'],
+  ['company', 'Empresa / centro'], ['number', 'Nº de plano'], ['date', 'Fecha'],
+];
+
+/** Parte un texto en líneas que caben en `maxW` (mm) con altura `h` (mm); respeta los saltos de línea. */
+function wrapText(str, h, maxW, maxLines = 8) {
+  const out = [];
+  for (const para of String(str).split(/\r?\n/)) {
+    let line = '';
+    for (const word of para.split(/\s+/).filter(Boolean)) {
+      const t = line ? `${line} ${word}` : word;
+      if (textWidth(t, h) <= maxW || !line) line = t;
+      else { out.push(line); line = word; }
+    }
+    out.push(line);
+  }
+  while (out.length && !out[out.length - 1]) out.pop();
+  if (out.length > maxLines) { out.length = maxLines; out[maxLines - 1] += ' …'; }
+  return out;
+}
+
+/** Recuadro y cajetín activados (por separado). Planos antiguos: «frame» controlaba los dos. */
+const paperFlags = P => ({ frame: P.frame !== false, block: P.block ?? (P.frame !== false) });
+
+/** Rectángulo del cajetín en mm de papel { x, y, w, h } y su contenido, o null. */
+function blockLayout(D, S, title) {
+  const P = D.paper;
+  if (!paperFlags(P).block) return null;
+  const F = P.fields || {};
+  const m = PAPER_MARGIN;
+  const bw = Math.min(S.w >= 420 ? 180 : 120, S.w - 2 * m);
+  const lab = 1.6, val = 2.5, pad = 1.5;
+  const desc = F.description ? wrapText(F.description, val, bw - 2 * pad) : [];
+  const rows = [
+    { h: 9, cells: [['Escala', S.scale], ['Formato', `${S.size} ${S.landscape ? 'horizontal' : 'vertical'}`], ['Nº de plano', F.number || '']] },
+    { h: 9, cells: [['Dibujado por', F.author || ''], ['Empresa / centro', F.company || ''], ['Fecha', F.date || new Date().toLocaleDateString('es-ES')]] },
+  ];
+  if (desc.length) rows.push({ h: 2 * pad + lab + 1.2 + val + (desc.length - 1) * val * 1.55 + 1.2, cells: [['Descripción', desc]] });
+  rows.push({ h: 11, cells: [['Título', F.title || title || 'Sin título']], big: true });
+  const bh = rows.reduce((a, r) => a + r.h, 0);
+  return { x: S.w - m - bw, y: m, w: bw, h: bh, rows, lab, val, pad };
+}
+
+/** Rectángulo del cajetín en coordenadas del plano (para editarlo con doble clic). */
+export function sheetBlockRect(D) {
+  const S = sheetOf(D);
+  const L = S && blockLayout(D, S, '');
+  return L ? [S.x0 + L.x * S.k, S.y0 + L.y * S.k, S.x0 + (L.x + L.w) * S.k, S.y0 + (L.y + L.h) * S.k] : null;
+}
+
 /** Recuadro y cajetín de la hoja como objetos del plano (sin id: no se seleccionan ni se exportan a DXF). */
 export function sheetDecor(D, title = '') {
   const S = sheetOf(D);
-  if (!S || D.paper.frame === false) return [];
+  if (!S) return [];
   const { k } = S;
   const at = (mx, my) => [S.x0 + mx * k, S.y0 + my * k];
   const m = PAPER_MARGIN, W = S.w, H = S.h;
-  const out = [{ type: 'pline', closed: true, pts: [at(m, m), at(W - m, m), at(W - m, H - m), at(m, H - m)], lw: 'thick' }];
-  // cajetín 120 × 21 mm abajo a la derecha
-  const bw = Math.min(120, W - 2 * m), bh = 21, bx = W - m - bw, by = m;
-  out.push({ type: 'pline', closed: true, pts: [at(bx, by), at(bx + bw, by), at(bx + bw, by + bh), at(bx, by + bh)], lw: 'thick' });
-  out.push({ type: 'line', a: at(bx, by + 7), b: at(bx + bw, by + 7) }, { type: 'line', a: at(bx, by + 14), b: at(bx + bw, by + 14) },
-    { type: 'line', a: at(bx + bw / 2, by), b: at(bx + bw / 2, by + 14) });
-  const d = new Date();
+  const rect = (x, y, w, h, lw) => ({ type: 'pline', closed: true, pts: [at(x, y), at(x + w, y), at(x + w, y + h), at(x, y + h)], lw });
+  const out = [];
+  if (paperFlags(D.paper).frame) out.push(rect(m, m, W - 2 * m, H - 2 * m, 'thick'));
+  const L = blockLayout(D, S, title);
+  if (!L) return out;
   const txt = (mx, my, text, hmm) => ({ type: 'text', p: at(mx, my), text, h: hmm * k });
-  out.push(txt(bx + 2.5, by + 16, title || 'Sin título', 3.2),
-    txt(bx + 2.5, by + 9, `Escala ${S.scale}`, 2.5), txt(bx + bw / 2 + 2.5, by + 9, `Formato ${S.size} ${S.landscape ? 'horizontal' : 'vertical'}`, 2.5),
-    txt(bx + 2.5, by + 2, `Fecha ${d.toLocaleDateString('es-ES')}`, 2.5), txt(bx + bw / 2 + 2.5, by + 2, `Unidades: ${D.units === 'u' ? '—' : D.units}`, 2.5));
+  out.push(rect(L.x, L.y, L.w, L.h, 'thick'));
+  let y = L.y;
+  L.rows.forEach((r, ri) => {
+    if (ri) out.push({ type: 'line', a: at(L.x, y), b: at(L.x + L.w, y) });
+    const cw = L.w / r.cells.length;
+    r.cells.forEach(([label, value], ci) => {
+      const x = L.x + ci * cw;
+      if (ci) out.push({ type: 'line', a: at(x, y), b: at(x, y + r.h) });
+      out.push(txt(x + L.pad, y + r.h - L.pad - L.lab, label, L.lab));
+      const lines = Array.isArray(value) ? value : [value];
+      const vh = r.big ? 3.5 : L.val;
+      lines.forEach((line, li) => {
+        if (!line) return;
+        const vy = Array.isArray(value) ? y + r.h - L.pad - L.lab - 1.2 - vh - li * vh * 1.55 : y + L.pad + 0.3;
+        // el texto que no cabe en la celda se acorta
+        let t = String(line);
+        while (t.length > 1 && textWidth(t, vh) > cw - 2 * L.pad) t = t.slice(0, -2) + '…';
+        out.push(txt(x + L.pad, vy, t, vh));
+      });
+    });
+    y += r.h;
+  });
   return out;
 }
 
@@ -2573,6 +2642,8 @@ export class Cad extends EventTarget {
 
   dblClick(view, raw) {
     const e = this.pick(view, raw);
+    const br = !e && sheetBlockRect(this.drawing);
+    if (br && raw[0] >= br[0] && raw[0] <= br[2] && raw[1] >= br[1] && raw[1] <= br[3]) { this.setSel([]); this.emit('blockedit'); return; }
     if (!e) { this.zoomExtents(view); return; }
     this.setSel([e.id]);
     this.emit('editrequest', e.id);

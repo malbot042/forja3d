@@ -8,7 +8,7 @@ import { toggleTheme } from './theme.js';
 import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from './io.js';
 import { makePdf } from './pdf.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -816,6 +816,10 @@ function initCadUI() {
   cad.addEventListener('handrequest', e => editor.setHand(e.detail ?? !editor.hand));
   cad.addEventListener('viewchange', scheduleSave);
   cad.addEventListener('editrequest', () => setTimeout(() => $('#props .cad-text')?.focus(), 40));
+  cad.addEventListener('blockedit', () => {
+    if ($('#editor-screen').classList.contains('side-hidden')) toggleSidebar(false);
+    setTimeout(() => { const t = $('#props .block-title'); if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.focus(); t.select(); } }, 60);
+  });
   for (const b of document.querySelectorAll('[data-cadt]')) b.addEventListener('click', () => cad.toggle(b.dataset.cadt));
   cad.inputEl = $('#cmd-input');
   $('#cmd-input').addEventListener('input', () => cad.redraw());
@@ -881,21 +885,48 @@ function paperSection(cad, D, { select, btn, info }) {
     sec.append(h('p', { class: 'muted small cad-hint' }, 'Elige un formato para ver la hoja con su recuadro y cajetín, dibujar dentro de ella y sacar un PDF a escala real.'));
     return sec;
   }
-  const chk = h('input', { type: 'checkbox' });
-  chk.checked = P.frame !== false;
-  chk.onchange = () => cad.setPaper({ frame: chk.checked });
+  const flags = { frame: P.frame !== false, block: P.block ?? (P.frame !== false) };
+  const toggle = (key, label) => {
+    const c = h('input', { type: 'checkbox' });
+    c.checked = flags[key];
+    c.onchange = () => cad.setPaper({ ...flags, [key]: c.checked });
+    return h('label', { class: 'toggle' }, c, h('span', {}, label));
+  };
   const u = D.units === 'u' ? 'unidades' : D.units;
   const F = v => fmtNum(v, D);
   sec.append(
     row('Orientación', select([['h', 'Horizontal'], ['v', 'Vertical']], S.landscape ? 'h' : 'v', v => cad.setPaper({ landscape: v === 'h' }))),
     row('Escala', select(PAPER_SCALES.map(k => [k, k === '1:1' ? '1:1 (tamaño real)' : k]), S.scale, v => cad.setPaper({ scale: v }))),
-    h('label', { class: 'toggle', style: 'margin:4px 0 6px' }, chk, h('span', {}, 'Recuadro y cajetín')),
+    h('div', { class: 'paper-toggles' }, toggle('frame', 'Recuadro'), toggle('block', 'Cajetín')),
     info([['Área útil', `${F((S.w - 20) * S.k)} × ${F((S.h - 20) * S.k)} ${u} del dibujo`]]),
     h('div', { class: 'btn-row' },
       btn('Ver la hoja', () => cad.zoomExtents()),
       btn('Centrar en el dibujo', () => cad.centerPaper()),
       btn('PDF a escala', () => exportCad('pdf'), 'btn-primary')));
+  if (flags.block) sec.append(blockFields(cad, D));
   return sec;
+}
+
+/** Campos del cajetín: título, descripción (texto libre), autor, empresa, nº de plano y fecha. */
+function blockFields(cad, D) {
+  const F = D.paper.fields || {};
+  const set = (key, value) => {
+    const fields = { ...(D.paper.fields || {}) };
+    if (value.trim()) fields[key] = value.replace(/\s+$/, ''); else delete fields[key];
+    cad.setPaper({ fields });
+  };
+  const ph = { title: project?.name || 'Sin título', date: `${new Date().toLocaleDateString('es-ES')} (hoy)`, description: 'Texto libre: qué es la pieza, material, acabado, notas… (Intro = nueva línea)' };
+  const box = h('div', { class: 'block-fields' }, h('h4', {}, 'Cajetín'));
+  for (const [key, label] of BLOCK_FIELDS) {
+    const multi = key === 'description';
+    const inp = h(multi ? 'textarea' : 'input', { class: `text-input block-${key}`, placeholder: ph[key] || '', spellcheck: multi ? 'true' : 'false', rows: multi ? 3 : null });
+    inp.value = F[key] || '';
+    inp.onchange = () => set(key, inp.value);
+    if (!multi) inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
+    box.append(multi ? h('label', { class: 'field block-desc' }, h('span', {}, label), inp) : row(label, inp));
+  }
+  box.append(h('p', { class: 'muted small cad-hint' }, 'La escala y el formato se rellenan solos. Los campos vacíos usan el nombre del proyecto y la fecha de hoy, o se quedan en blanco. Doble clic en el cajetín del plano para editarlo.'));
+  return box;
 }
 
 function renderCadProps(box) {

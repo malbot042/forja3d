@@ -765,3 +765,8 @@ kbd {
   .work-bar .ops-bar, .work-bar .view-bar, .work-bar .sculpt-bar { flex-wrap: nowrap; flex: none; }
   .work-bar .hint { display: none; }
 }
+.paper-toggles { display: flex; gap: 16px; margin: 4px 0 6px; }
+.block-fields { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.block-fields h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.block-fields .block-desc { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+.block-fields textarea { resize: vertical; min-height: 56px; font: inherit; line-height: 1.4; }
