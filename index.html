@@ -83,6 +83,7 @@
 
       <div class="topbar-group right">
         <label class="toggle only3d" title="Ajuste a rejilla (G)"><input type="checkbox" id="chk-snap"><span>Snap</span></label>
+        <button class="snap-size only3d" id="btn-snap-size" title="Tamaño del snap: paso al mover, girar y escalar">0,25</button>
         <label class="toggle only3d" title="Mostrar rejilla"><input type="checkbox" id="chk-grid" checked><span>Rejilla</span></label>
         <button class="btn" id="btn-import" title="Importar un modelo (.glb, .gltf, .obj, .stl), un plano DXF o un proyecto (.json). También puedes arrastrar el archivo al visor.">Importar</button>
         <button class="btn" id="btn-export" title="Exportar a JSON, glTF, GLB, OBJ, STL, o el plano 2D a DXF / SVG">Exportar</button>
@@ -198,6 +199,7 @@
           <button data-cadt="osnapOn" title="Referencias a objetos: punto final, medio, centro, cuadrante, intersección (F3)">Referencias</button>
           <button data-cadt="ortho" title="Orto: solo horizontal y vertical (F8)">Orto</button>
           <button data-cadt="gridSnap" title="Forzar el cursor a la rejilla (F9)">Forzar</button>
+          <select id="snap-step" class="snap-step" title="Paso del forzado: cada cuánto salta el cursor (Auto = según el zoom)"></select>
           <button data-cadt="grid" title="Mostrar la rejilla (F7)">Rejilla</button>
           <button data-cadt="iso" title="Modo isométrico del panel activo (ejes a 30°, 90° y 150°)">Iso</button>
           <button data-cadt="pencil" title="Modo lápiz: lo que dibujes tendrá trazo a mano alzada, con la geometría exacta">✎ Lápiz</button>

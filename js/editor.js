@@ -40,6 +40,7 @@ export class Editor extends EventTarget {
     this.objects = new Map();       // id -> Mesh
     this.selection = [];            // ids; el último es el principal (lleva el gizmo)
     this.viewMode = 'solid';
+    this.snapSizes = { move: 0.25, rot: 15, scale: 0.1 };
     this.history = [];
     this.historyIndex = -1;
     this.views = [];
@@ -1126,9 +1127,17 @@ export class Editor extends EventTarget {
 
   setSnap(on) {
     this.snap = on;
-    this.gizmo.setTranslationSnap(on ? 0.25 : null);
-    this.gizmo.setRotationSnap(on ? 15 * DEG : null);
-    this.gizmo.setScaleSnap(on ? 0.1 : null);
+    const s = this.snapSizes;
+    this.gizmo.setTranslationSnap(on ? s.move : null);
+    this.gizmo.setRotationSnap(on ? s.rot * DEG : null);
+    this.gizmo.setScaleSnap(on ? s.scale : null);
+  }
+
+  /** Tamaño del snap 3D: paso al mover (unidades), girar (grados) y escalar. */
+  setSnapSizes(p = {}) {
+    const ok = (v, d) => (+v > 0 ? +v : d);
+    this.snapSizes = { move: ok(p.move, 0.25), rot: ok(p.rot, 15), scale: ok(p.scale, 0.1) };
+    this.setSnap(!!this.snap);
   }
 
   setGrid(on) { this.helpers.visible = on; }

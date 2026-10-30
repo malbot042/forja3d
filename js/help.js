@@ -351,6 +351,7 @@ const SECTIONS = [
       <h4>Moverse por la escena</h4>
       <ul>
         <li><b>Botón izquierdo</b> arrastrando: orbitar · <b>botón derecho</b>: desplazar · <b>rueda</b>: zoom.</li>
+        <li><b>Tamaño del snap</b>: el botón junto a <b>Snap</b> (muestra p. ej. «0,25 · 15° · ×0,1») abre una ventanita para elegir el paso al <b>mover</b> (unidades), <b>girar</b> (grados) y <b>escalar</b>. Se guarda con el proyecto.</li>
         <li><b>Mano</b> (botón de la barra de vistas o ${k('H')}): el botón izquierdo pasa a desplazar la vista libremente, sin girar ni seleccionar. Vuelve a pulsarlo para salir.</li>
         <li>${k('F')} <b>Encuadrar</b>: centra la vista en la selección (o en toda la escena).</li>
       </ul>
@@ -577,6 +578,7 @@ const SECTIONS = [
       <ul>
         <li><b>Referencias</b> (<kbd>F3</kbd>): el cursor se engancha a puntos finales, medios, centros, cuadrantes, intersecciones e inserción de texto. Se eligen en Propiedades (sin nada seleccionado).</li>
         <li><b>Orto</b> (<kbd>F8</kbd>): solo horizontal o vertical. <b>Forzar</b> (<kbd>F9</kbd>): el cursor salta a la rejilla. <b>Rejilla</b> (<kbd>F7</kbd>).</li>
+        <li><b>Paso del forzado</b>: el selector <b>Paso</b> junto a «Forzar» (o «Paso forzado» en Propiedades) fija cada cuánto salta el cursor: 0,5, 1, 5, 10 mm… u <b>Otro…</b> para cualquier valor. <b>Auto</b> lo adapta al zoom. Con un paso fijo la rejilla se dibuja a ese paso (o a un múltiplo si estás muy lejos), y las flechas desplazan la selección ese paso. Vale también para la rejilla isométrica.</li>
         <li>Los botones de la barra de estado activan y desactivan lo mismo; a la derecha se ven las coordenadas del cursor.</li>
       </ul>
       <h4>Seleccionar y editar</h4>

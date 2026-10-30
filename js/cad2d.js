@@ -2329,7 +2329,7 @@ export class Cad extends EventTarget {
     }
     if (k.startsWith('Arrow') && !typing && !this.T && this.sel.size) {
       e.preventDefault();
-      const step = (this.activeView?.gridStep() || 1) * (e.shiftKey ? 10 : 1);
+      const step = (this.activeView?.snapStep() || +this.drawing.snapStep || 1) * (e.shiftKey ? 10 : 1);
       const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[k];
       this.transformSel(q => add(q, d));
       this.commit();
@@ -2421,7 +2421,7 @@ export class Cad extends EventTarget {
     let p = raw;
     const iso = !!view.iso;
     if (this.gridSnap) {
-      const st = view.gridStep();
+      const st = view.snapStep();
       p = iso ? isoSnap(p, st) : [Math.round(p[0] / st) * st, Math.round(p[1] / st) * st].map(rnd);
     }
     const last = this.T?.last?.();
@@ -2432,7 +2432,7 @@ export class Cad extends EventTarget {
         let best = null, bd = -Infinity;
         for (const a of ISO_AXES) { const u = [Math.cos(a), Math.sin(a)], k = dot(d, u); if (k > bd) { bd = k; best = u; } }
         // con «Forzar», la longitud también va de nodo en nodo (los nodos están a un paso sobre cada eje)
-        if (this.gridSnap) { const st = view.gridStep(); bd = Math.round(bd / st) * st; }
+        if (this.gridSnap) { const st = view.snapStep(); bd = Math.round(bd / st) * st; }
         p = add(last, mul(best, bd)).map(rnd);
       } else p = Math.abs(d[0]) >= Math.abs(d[1]) ? [p[0], last[1]] : [last[0], p[1]];
     }
@@ -2700,6 +2700,18 @@ export class Cad extends EventTarget {
     if (!S) return bb;
     if (!bb) return [S.x0, S.y0, S.x1, S.y1];
     return [Math.min(bb[0], S.x0), Math.min(bb[1], S.y0), Math.max(bb[2], S.x1), Math.max(bb[3], S.y1)];
+  }
+
+  /** Paso de forzado a la rejilla (unidades del dibujo); 0 o vacío = automático según el zoom. */
+  setSnapStep(v) {
+    v = +v;
+    if (v > 0) { this.drawing.snapStep = v; if (!this.gridSnap) { this.gridSnap = true; this.savePrefs(); } }
+    else delete this.drawing.snapStep;
+    this.commit();
+    const u = this.drawing.units === 'u' ? '' : ` ${this.drawing.units}`;
+    this.message(v > 0 ? `Forzado cada ${fmtNum(v, this.drawing, 4).replace(/[,.]?0+$/, '')}${u}: el cursor salta a esa rejilla (Forzar activado). La rejilla se dibuja a ese paso o a un múltiplo si estás muy lejos.` : 'Paso de forzado automático: sigue al zoom');
+    this.emit('settings');
+    this.redraw();
   }
 
   /** Cambia la hoja (tamaño, orientación, escala, recuadro). `null` la quita. */
@@ -3143,11 +3155,23 @@ export class CadView {
   toScreen(p) { return [this.W / 2 + (p[0] - this.cx) * this.zoom, this.H / 2 - (p[1] - this.cy) * this.zoom]; }
   toWorld(sx, sy) { return [this.cx + (sx - this.W / 2) / this.zoom, this.cy - (sy - this.H / 2) / this.zoom]; }
 
-  gridStep() {
+  /** Paso automático: el que da unos 12 px en pantalla (1, 2, 5 × 10ⁿ). */
+  autoStep() {
     const target = 12 / this.zoom;
     const p = 10 ** Math.floor(Math.log10(target));
     for (const m of [1, 2, 5, 10]) if (p * m >= target) return p * m;
     return p * 10;
+  }
+
+  /** Paso de forzado: el fijado en el plano o, si no hay, el automático. */
+  snapStep() { const v = +this.cad.drawing.snapStep; return v > 0 ? v : this.autoStep(); }
+
+  /** Paso con el que se dibuja la rejilla: el de forzado, o un múltiplo suyo si quedaría demasiado denso. */
+  gridStep() {
+    const v = +this.cad.drawing.snapStep;
+    if (!(v > 0)) return this.autoStep();
+    for (const m of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]) if (v * m * this.zoom >= 7) return v * m;
+    return v * 10000;
   }
 
   fit() {

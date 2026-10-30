@@ -303,7 +303,9 @@ async function openProject(id) {
   $('#chk-grid').checked = s.grid !== false;
   editor.setGrid(s.grid !== false);
   $('#chk-snap').checked = !!s.snap;
+  editor.setSnapSizes(s.snapSizes);
   editor.setSnap(!!s.snap);
+  refreshSnapSizeBtn();
 
   $('#project-name').value = p.name;
   document.title = `${p.name} · Forja 3D`;
@@ -324,7 +326,7 @@ async function openProject(id) {
 function snapshotProject() {
   project.objects = editor.serialize();
   project.camera = editor.getCamera();
-  project.settings = { view: editor.viewMode, grid: $('#chk-grid').checked, snap: $('#chk-snap').checked, viewports: editor.getViewState() };
+  project.settings = { view: editor.viewMode, grid: $('#chk-grid').checked, snap: $('#chk-snap').checked, snapSizes: editor.snapSizes, viewports: editor.getViewState() };
   project.drawing = editor.cad.getDrawing();
 }
 
@@ -423,7 +425,8 @@ function initEditor() {
 
   $('#transform-mode').onclick = e => { const b = e.target.closest('button'); if (b) setTransform(b.dataset.mode); };
   $('#view-mode').onclick = e => { const b = e.target.closest('button'); if (b) { setView(b.dataset.view); scheduleSave(); } };
-  $('#chk-snap').onchange = e => { editor.setSnap(e.target.checked); scheduleSave(); refreshStatus(); };
+  $('#chk-snap').onchange = e => { editor.setSnap(e.target.checked); scheduleSave(); refreshStatus(); refreshSnapSizeBtn(); };
+  $('#btn-snap-size').onclick = e => { e.stopPropagation(); snapSizePopover(); };
   $('#chk-grid').onchange = e => { editor.setGrid(e.target.checked); scheduleSave(); };
 
   // vistas y operaciones
@@ -749,8 +752,64 @@ function refreshCadTool() {
   for (const b of document.querySelectorAll('#cad-bar [data-cadop]')) b.classList.toggle('active', b.dataset.cadop === t);
 }
 
+const SNAP_PRESETS = [0.1, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100];
+function refreshSnapSelect() {
+  const D = editor.cad.drawing, cur = +D.snapStep || 0;
+  const sel = $('#snap-step');
+  const u = D.units === 'u' ? '' : ` ${D.units}`;
+  const label = v => `${String(v).replace('.', ',')}${u}`;
+  const vals = cur && !SNAP_PRESETS.includes(cur) ? [...SNAP_PRESETS, cur].sort((a, b) => a - b) : SNAP_PRESETS;
+  sel.replaceChildren(h('option', { value: 'auto' }, 'Paso: auto'), ...vals.map(v => h('option', { value: String(v) }, `Paso: ${label(v)}`)), h('option', { value: 'other' }, 'Otro…'));
+  sel.value = cur ? String(cur) : 'auto';
+  sel.classList.toggle('on', !!cur);
+}
+
+const fmtN = v => String(+(+v).toFixed(4)).replace('.', ',');
+function refreshSnapSizeBtn() {
+  const s = editor.snapSizes, b = $('#btn-snap-size');
+  b.textContent = `${fmtN(s.move)} · ${fmtN(s.rot)}° · ×${fmtN(s.scale)}`;
+  b.classList.toggle('on', !!editor.snap);
+}
+
+/** Ventanita para elegir el paso del snap 3D (mover, girar, escalar). */
+function snapSizePopover() {
+  document.querySelector('.snap-pop')?.remove();
+  const btn = $('#btn-snap-size'), r = btn.getBoundingClientRect();
+  const s = editor.snapSizes;
+  const pop = h('div', { class: 'snap-pop', role: 'dialog', 'aria-label': 'Tamaño del snap' });
+  const field = (key, label, unit, presets) => {
+    const inp = h('input', { type: 'number', class: 'text-input', min: 0, step: 'any' });
+    inp.value = s[key];
+    const apply = v => {
+      if (!(+v > 0)) return;
+      editor.setSnapSizes({ ...editor.snapSizes, [key]: +v });
+      if (!editor.snap) { $('#chk-snap').checked = true; editor.setSnap(true); }
+      inp.value = editor.snapSizes[key];
+      refreshSnapSizeBtn(); refreshStatus(); scheduleSave();
+    };
+    inp.onchange = () => apply(String(inp.value).replace(',', '.'));
+    inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') pop.remove(); ev.stopPropagation(); };
+    return h('div', { class: 'snap-pop-row' }, h('label', {}, label),
+      h('div', { class: 'snap-pop-in' }, inp, h('span', { class: 'muted' }, unit)),
+      h('div', { class: 'snap-pop-presets' }, presets.map(v => h('button', { class: 'btn sm', onclick: () => apply(v) }, fmtN(v)))));
+  };
+  pop.append(
+    h('h4', {}, 'Tamaño del snap'),
+    field('move', 'Mover', 'unidades', [0.05, 0.1, 0.25, 0.5, 1]),
+    field('rot', 'Girar', 'grados', [5, 15, 30, 45, 90]),
+    field('scale', 'Escalar', 'paso', [0.05, 0.1, 0.25, 0.5]),
+    h('p', { class: 'muted small' }, 'Se aplica al mover, girar y escalar con el gizmo cuando el snap está activo (G). Se guarda con el proyecto.'));
+  document.body.append(pop);
+  pop.style.top = `${r.bottom + 6}px`;
+  pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth))}px`;
+  const close = ev => { if (!pop.contains(ev.target) && ev.target !== btn) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
+  document.addEventListener('pointerdown', close, true);
+  pop.querySelector('input').focus();
+}
+
 function refreshCadToggles() {
   const c = editor.cad;
+  refreshSnapSelect();
   for (const b of document.querySelectorAll('[data-cadt]')) {
     const k = b.dataset.cadt;
     const v = editor.cadActive?.cadView;
@@ -821,6 +880,15 @@ function initCadUI() {
     setTimeout(() => { const t = $('#props .block-title'); if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.focus(); t.select(); } }, 60);
   });
   for (const b of document.querySelectorAll('[data-cadt]')) b.addEventListener('click', () => cad.toggle(b.dataset.cadt));
+  $('#snap-step').addEventListener('change', e => {
+    const v = e.target.value;
+    if (v === 'other') {
+      const u = cad.drawing.units === 'u' ? '' : ` (${cad.drawing.units})`;
+      const r = prompt(`Paso del forzado${u}:`, String(cad.drawing.snapStep || 1).replace('.', ','));
+      const n = r == null ? NaN : parseFloat(r.replace(',', '.'));
+      if (n > 0) cad.setSnapStep(n); else refreshCadToggles();
+    } else cad.setSnapStep(v === 'auto' ? 0 : +v);
+  });
   cad.inputEl = $('#cmd-input');
   $('#cmd-input').addEventListener('input', () => cad.redraw());
   $('#mode-seg').addEventListener('click', e => {
@@ -982,7 +1050,14 @@ function renderCadProps(box) {
         row('Decimales', select([0, 1, 2, 3, 4].map(n => [n, n]), D.precision, v => cad.setSetting('precision', +v))),
         row('Separador', select([[',', 'Coma (12,50)'], ['.', 'Punto (12.50)']], D.decimal, v => cad.setSetting('decimal', v))),
         num('Altura texto', D.textH, v => { if (v > 0) cad.setSetting('textH', v); }, { min: 0.01 }),
-        num('Flechas', D.arrow, v => { if (v > 0) cad.setSetting('arrow', v); }, { min: 0.01, step: 0.25 })),
+        num('Flechas', D.arrow, v => { if (v > 0) cad.setSetting('arrow', v); }, { min: 0.01, step: 0.25 }),
+        (() => {
+          const inp = h('input', { type: 'number', class: 'text-input', min: 0, step: 'any', placeholder: 'Automático (según el zoom)' });
+          inp.value = D.snapStep || '';
+          inp.onchange = () => cad.setSnapStep(parseFloat(String(inp.value).replace(',', '.')) || 0);
+          inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
+          return row('Paso forzado', inp);
+        })()),
       paperSection(cad, D, { select, btn, info }),
       h('div', { class: 'prop-section' },
         h('h3', {}, 'Referencias a objetos'),
@@ -1509,7 +1584,7 @@ function onKey(e) {
   else if (k === 'e') setTransform('rotate');
   else if (k === 'r') setTransform('scale');
   else if (k === 'z') { setView(editor.viewMode === 'wire' ? 'solid' : 'wire'); scheduleSave(); }
-  else if (k === 'g') { const c = $('#chk-snap'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); }
+  else if (k === 'g') { const c = $('#chk-snap'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); refreshSnapSizeBtn(); }
   else if (k === 'delete' || k === 'backspace') { e.preventDefault(); editor.remove(); }
   else if (k === 'escape') editor.select(null);
 }
@@ -1636,7 +1711,7 @@ function refreshStatus() {
   $('#status-3d').innerHTML =
     `<span>Objetos <b>${s.objects}</b></span><span>Triángulos <b>${s.tris.toLocaleString('es-ES')}</b></span>` +
     `<span>Vértices <b>${s.verts.toLocaleString('es-ES')}</b></span>` +
-    `<span>Vista <b>${VIEW_LABEL[editor.viewMode]}</b></span><span>Snap <b>${editor.snap ? 'sí' : 'no'}</b></span>` +
+    `<span>Vista <b>${VIEW_LABEL[editor.viewMode]}</b></span><span>Snap <b>${editor.snap ? `${fmtN(editor.snapSizes.move)} u · ${fmtN(editor.snapSizes.rot)}° · ×${fmtN(editor.snapSizes.scale)}` : 'no'}</b></span>` +
     (n > 1 ? `<span>Selección <b>${n} objetos</b></span>` : sel ? `<span>Selección <b>${escapeHTML(sel.name)}</b></span>` : '') +
     (editor.sculpt ? '<span><b>Esculpiendo</b> · Intro o Esc para terminar</span>' : '');
 }
