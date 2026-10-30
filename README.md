@@ -7,8 +7,8 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **14 primitivas**: cubo, esfera, cilindro, cono, pirámide, toro, cápsula, plano, anillo, tetraedro, octaedro, dodecaedro, icosaedro y nudo toroidal. Todos sus parámetros (radios, alturas, segmentos…) son editables.
 - **Primitivas 2D** planas sobre el suelo: **Círculo 2D** (contorno o relleno, arco con ángulo parcial) y **Línea 2D** (polilínea abierta o cerrada, recta o curva, dibujada con el editor de trazados y con grosor ajustable).
 - **De 2D a 3D**: selecciona una Línea 2D o un Círculo 2D y pulsa **Extruir** (sólido relleno o pared con grosor, cilindro o tubo) o **Revolución** (gira el trazado alrededor de su eje vertical; un círculo da una esfera maciza o hueca).
-- **Extrusión**: dibuja un perfil cerrado en planta (o elige una plantilla: rectángulo, círculo, estrella, perfiles L/T/U/I, engranaje, flecha…) y se extruye hacia arriba, con altura y bisel ajustables.
-- **Revolución (torno)**: dibuja medio perfil y gíralo alrededor del eje vertical para hacer jarrones, copas, botellas, peones… con ángulo parcial opcional.
+- **Extrusión (croquis)**: el perfil se dibuja en un **croquis** con todo el editor 2D (medidas exactas, referencias, empalmes, chaflanes, cotas…). Los contornos cerrados se extruyen y los interiores son huecos; plano de planta, alzado o perfil; plantillas (rectángulo, estrella, perfiles L/T/U/I, engranaje…) y vista previa 3D. La pieza guarda su croquis para volver a editarlo (doble clic). Altura y bisel ajustables.
+- **Revolución (torno)**: dibuja medio perfil en el croquis, a la derecha del eje, y gíralo para hacer jarrones, copas, ejes escalonados, peones… Polilínea abierta = superficie, contorno cerrado = sólido; ángulo parcial opcional.
 - **Operaciones booleanas** (no destructivas, recuperables con *Separar*):
   - **Unir** (A ∪ B): fusiona varios objetos en uno.
   - **Restar** (A − B): vacía el primer objeto seleccionado con el volumen de los demás (agujeros, ranuras, encajes).
@@ -19,7 +19,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Selección múltiple** con Mayús/Ctrl + clic (en el visor o en la lista); el gizmo mueve, gira y escala todo el grupo.
 - **Reflejar** en X/Y/Z y **Apoyar en el suelo**.
 - **Modo escultor** con dos métodos a elegir: **Volumen (tallar)** — el objeto se convierte en un bloque de material y se pica con Cincel, Gubia, Arcilla, Lima y Aplanar (permite agujeros y túneles) — y **Malla (deformar)** — Dibujar, Inflar, Suavizar, Aplanar, Pellizcar y Arrastrar sobre una malla subdividida. Tamaño, fuerza, simetría X/Y/Z, presión del lápiz y deshacer por trazo.
-- **Editor 2D de planos** al estilo AutoCAD: línea de órdenes con alias (`L`, `PL`, `REC`, `C`, `A`, `T`, `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`…), coordenadas absolutas, relativas (`@dx,dy`), polares (`d<ángulo`) y distancia directa; referencias a objetos (final, medio, centro, cuadrante, intersección), Orto, forzar a rejilla, pinzamientos, selección por ventana/captura, rótulos junto al cursor que explican cada acción, copiar/pegar/duplicar y desplazamiento con flechas.
+- **Editor 2D de planos** al estilo AutoCAD: línea de órdenes con alias (`L`, `PL`, `REC`, `C`, `A`, `T`, `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`, `F` empalme, `CHA` chaflán…), coordenadas absolutas, relativas (`@dx,dy`), polares (`d<ángulo`) y distancia directa; referencias a objetos (final, medio, centro, cuadrante, intersección), Orto, forzar a rejilla, pinzamientos, selección por ventana/captura, rótulos junto al cursor que explican cada acción, copiar/pegar/duplicar y desplazamiento con flechas.
   - **Cotas** lineales, alineadas, de radio, diámetro y ángulo, y herramienta **Medir** (distancia, ΔX, ΔY, ángulo); longitudes, perímetros y áreas en Propiedades.
   - **Hoja** A5, A4, A3, A2, A1 o A0, horizontal o vertical, a escala (10:1 … 1:1000), con recuadro y cajetín independientes; cajetín editable (título, descripción libre, autor, empresa o centro, nº de plano y fecha con calendario; escala automática); **PDF vectorial a escala real** para imprimir.
   - **Modo isométrico** en el plano: rejilla a 30°/90°/150°, forzado a sus nodos y orto isométrico; caras superior/derecha/izquierda (`Tab` o `Ctrl+E`) en las que el círculo se dibuja como **círculo isométrico** (elipse), el rectángulo como paralelogramo y las **cotas** sobre los ejes isométricos con texto oblicuo. Cada panel 2D tiene su propio modo (normal o isométrico). **Mano** (pan) para moverse libremente por la hoja.
@@ -49,7 +49,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 
 **Paleta de órdenes** (`Ctrl+K` o el botón *Buscar acción*): busca cualquier herramienta o acción por su nombre, un sinónimo o su atajo, y la ejecuta con `Intro`. Sin escribir nada muestra todas las acciones por grupos con sus atajos de teclado. Solo aparecen las del espacio de trabajo en el que estás (3D o 2D) y las generales.
 
-El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en la pantalla de proyectos abren una guía con todas las funcionalidades una sección del editor 2D con todas las órdenes y seis ejemplos guiados (taza, dado, tuerca y tornillo, casa, piezas de torno y naranja partida). Cada ejemplo se puede abrir con un clic como proyecto nuevo y desmontar con *Separar* para ver cómo está hecho.
+El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en la pantalla de proyectos abren una guía con todas las funcionalidades, una sección del editor 2D con todas las órdenes y seis ejemplos guiados (taza, dado, tuerca y tornillo, casa, piezas de torno y naranja partida). Cada ejemplo se puede abrir con un clic como proyecto nuevo y desmontar con *Separar* para ver cómo está hecho.
 
 ## Atajos de teclado
 
@@ -123,7 +123,7 @@ js/primitives.js        Catálogo de primitivas y sus parámetros
 js/storage.js           Persistencia en IndexedDB (con migración), import/export JSON
 js/sculpt.js            Modo escultor: malla (deformar) y volumen (tallar con vóxeles)
 js/csg.js               Operaciones booleanas (CSG) y caché de resultados
-js/sketch.js            Editor de perfiles 2D para extrusión y revolución
+js/sketch.js            Editor de perfiles para Línea 2D y plantillas de perfil
 js/sketch3d.js          Vista «Lápiz» en 3D (contorno, aristas temblorosas y trama)
 js/palette.js           Paleta de órdenes (Ctrl+K)
 js/cad2d.js             Editor 2D de planos: entidades, órdenes, referencias, cotas, capas, DXF/SVG
@@ -174,7 +174,7 @@ three.js se incluye en el repositorio (`lib/three`) para que el editor no depend
 
 - `rotation` va en **grados** (orden XYZ).
 - `type` es uno de: `box`, `sphere`, `cylinder`, `cone`, `pyramid`, `torus`, `capsule`, `plane`, `ring`, `tetrahedron`, `octahedron`, `dodecahedron`, `icosahedron`, `torusKnot`, `circle2d`, `line2d`, `extrude`, `lathe` o `boolean`.
-- `extrude`, `lathe` y `line2d` añaden `"shape": { "points": [[x, y], …], "smooth": false }`; una extrusión puede incluir además `"holes": [[[x, y], …], …]` (huecos interiores).
+- `extrude`, `lathe` y `line2d` añaden `"shape": { "points": [[x, y], …], "smooth": false }`; una extrusión puede incluir además `"holes": [[[x, y], …], …]` (huecos interiores), `"shapes"` (varios contornos), `"plane"` (`top`, `front`, `side`), `"per3D"` (mm por unidad) y `"sketch"` (el dibujo del croquis, para reeditarlo).
 - `boolean` guarda la operación en `params.op` (`union`, `subtract`, `intersect`) y los objetos originales en `operands` (con sus transformaciones relativas al resultado). La malla se recalcula al abrir el proyecto, así que el JSON sigue siendo pequeño y editable.
 - “Exportar todo” genera `{ "format": "forja3d-bundle", "projects": [ … ] }`, que también se puede importar.
 

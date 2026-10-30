@@ -419,6 +419,51 @@ function arcDist(p, pr) {
 
 const primDist = (p, pr) => (pr.k === 's' ? segDist(p, pr.a, pr.b) : arcDist(p, pr));
 
+/**
+ * Esquina redondeada (empalme, radio r) o achaflanada (distancia d) en el vértice V entre las direcciones hacia P1 y P2.
+ * Devuelve { t1, t2, pts (de t1 a t2), arc? } o { error }.
+ */
+function cornerCut(V, P1, P2, size, chamfer) {
+  const L1 = dist(V, P1), L2 = dist(V, P2);
+  if (L1 < 1e-9 || L2 < 1e-9) return { error: 'Las líneas no forman esquina' };
+  const u1 = mul(sub(P1, V), 1 / L1), u2 = mul(sub(P2, V), 1 / L2);
+  const th = Math.acos(Math.max(-1, Math.min(1, dot(u1, u2))));
+  if (th < 1e-6 || th > Math.PI - 1e-6) return { error: 'Las líneas son paralelas o están alineadas: no hay esquina' };
+  const t = chamfer ? size : size / Math.tan(th / 2);
+  if (t > L1 + 1e-9 || t > L2 + 1e-9) return { error: `${chamfer ? 'La distancia' : 'El radio'} es demasiado grande para estas líneas` };
+  const t1 = add(V, mul(u1, t)), t2 = add(V, mul(u2, t));
+  if (chamfer || size <= 0) return { t1, t2, pts: size <= 0 ? [V] : [t1, t2] };
+  const c = add(V, mul(norm(add(u1, u2)), size / Math.sin(th / 2)));
+  const a1 = angOf(c, t1), a2 = angOf(c, t2);
+  const ccw = sweepOf(a1, a2) <= Math.PI;
+  const sw = ccw ? sweepOf(a1, a2) : -sweepOf(a2, a1);
+  const n = Math.max(4, Math.ceil(Math.abs(sw) / (4 * Math.PI / 180)));
+  const pts = Array.from({ length: n + 1 }, (_, k) => polar(c, size, a1 + sw * k / n));
+  return { t1, t2, pts, arc: { c, r: size, a0: ccw ? normA(a1) : normA(a2), a1: ccw ? normA(a2) : normA(a1) } };
+}
+
+/** Empalme / chaflán en un vértice (o en todos) de una polilínea. */
+function cornerPline(e, idx, size, chamfer) {
+  const n = e.pts.length;
+  const ok = i => e.closed || (i > 0 && i < n - 1);
+  const targets = idx === 'all' ? [...Array(n).keys()].filter(ok) : ok(idx) ? [idx] : [];
+  if (!targets.length) return { error: 'Ese punto es un extremo de la polilínea: no es una esquina' };
+  const out = [];
+  let done = 0, err = null;
+  for (let i = 0; i < n; i++) {
+    if (!targets.includes(i)) { out.push([...e.pts[i]]); continue; }
+    // con «todas», cada tramo solo puede gastar la mitad de su longitud en cada extremo
+    const prev = e.pts[(i - 1 + n) % n], next = e.pts[(i + 1) % n];
+    const half = idx === 'all';
+    const r = cornerCut(e.pts[i], half ? lerp(e.pts[i], prev, 0.5) : prev, half ? lerp(e.pts[i], next, 0.5) : next, size, chamfer);
+    if (r.error) { err = r.error; out.push([...e.pts[i]]); continue; }
+    out.push(...r.pts.map(P));
+    done++;
+  }
+  if (!done) return { error: err || 'No se pudo redondear' };
+  return { ent: { ...e, pts: out }, done };
+}
+
 function lineLine(a, b, c, d) {
   const r = sub(b, a), s = sub(d, c);
   const den = r[0] * s[1] - r[1] * s[0];
@@ -918,6 +963,85 @@ function trimCompute(e, click, others) {
  * Busca contornos cerrados (círculos, polilíneas cerradas y cadenas de líneas/arcos/polilíneas que se cierran)
  * y los anida: los contornos dentro de otro son huecos. Devuelve { shapes: [{points, holes}], open }.
  */
+/** Une líneas, arcos y polilíneas abiertas que se tocan; devuelve contornos cerrados y trazos abiertos (en puntos). */
+export function joinChains(ents) {
+  const loops = [], chains = [];
+  for (const e of ents) {
+    if (e.type === 'circle') loops.push(arcPts(e.c, e.r, 0, TAU, 72).slice(0, -1));
+    else if (e.type === 'ellipse') loops.push(ellPts(e, 96).slice(0, -1));
+    else if (e.type === 'pline') (e.closed ? loops : chains).push(e.pts.map(p => [...p]));
+    else if (e.type === 'line') chains.push([[...e.a], [...e.b]]);
+    else if (e.type === 'arc') chains.push(arcPts(e.c, e.r, e.a0, e.a1, 48));
+  }
+  let size = 1;
+  for (const c of [...loops, ...chains]) for (const p of c) size = Math.max(size, Math.abs(p[0]), Math.abs(p[1]));
+  const tol = size * 1e-6 + 1e-6;
+  const close = (a, b) => dist(a, b) <= tol;
+  const opens = [];
+  while (chains.length) {
+    let ch = chains.pop();
+    let changed = true;
+    while (changed && !(ch.length > 2 && close(ch[0], ch[ch.length - 1]))) {
+      changed = false;
+      for (let i = 0; i < chains.length; i++) {
+        const o = chains[i];
+        let joined = null;
+        if (close(ch[ch.length - 1], o[0])) joined = ch.concat(o.slice(1));
+        else if (close(ch[ch.length - 1], o[o.length - 1])) joined = ch.concat(o.slice(0, -1).reverse());
+        else if (close(ch[0], o[o.length - 1])) joined = o.concat(ch.slice(1));
+        else if (close(ch[0], o[0])) joined = o.slice().reverse().concat(ch.slice(1));
+        if (joined) { ch = joined; chains.splice(i, 1); changed = true; break; }
+      }
+    }
+    if (ch.length > 3 && close(ch[0], ch[ch.length - 1])) loops.push(ch.slice(0, -1));
+    else opens.push(ch);
+  }
+  return { loops, opens };
+}
+
+/** Capas que no forman parte del perfil (cotas, texto, ejes y construcción). */
+const NON_PROFILE = new Set(['Cotas', 'Texto', 'Ejes', 'Construcción']);
+export const profileEntities = ents => ents.filter(e => !NON_PROFILE.has(e.layer) && !['dim', 'text'].includes(e.type));
+
+/**
+ * Convierte un croquis (en unidades del plano) en el perfil de una pieza 3D.
+ * kind 'extrude': contornos cerrados (los de dentro son huecos). kind 'lathe': medio perfil a la derecha del eje (x ≥ 0).
+ * Devuelve { shape, info } o { error }.
+ */
+export function profileFromSketch(D, kind, plane = 'top') {
+  const per3D = +D.per3D > 0 ? +D.per3D : (UNITS[D.units]?.per3D || 100);
+  const k = 1 / per3D;
+  const S = pts => pts.map(([x, y]) => [rnd(x * k), rnd(y * k)]);
+  const hidden = new Set(D.layers.filter(l => l.visible === false).map(l => l.name));
+  const ents = profileEntities(D.entities.filter(e => !hidden.has(e.layer)));
+  if (kind === 'extrude') {
+    const { shapes, open } = buildShapes(ents);
+    if (!shapes.length) return { error: 'El croquis no tiene ningún contorno cerrado: dibuja rectángulos, círculos, polilíneas cerradas o líneas y arcos que se cierren.' };
+    const sh = shapes.map(s => ({ points: S(s.points), holes: s.holes.map(S) }));
+    const holes = sh.reduce((n, s) => n + s.holes.length, 0);
+    return {
+      shape: { smooth: false, points: sh[0].points, holes: sh[0].holes, shapes: sh.length > 1 ? sh : undefined, plane, per3D },
+      info: `${sh.length} contorno${sh.length > 1 ? 's' : ''}${holes ? ` · ${holes} hueco${holes > 1 ? 's' : ''}` : ''}${open ? ` · ${open} trazo${open > 1 ? 's' : ''} abierto${open > 1 ? 's' : ''} ignorado${open > 1 ? 's' : ''}` : ''}`,
+    };
+  }
+  const { loops, opens } = joinChains(ents);
+  const len = c => c.reduce((a, p, i) => a + (i ? dist(c[i - 1], p) : 0), 0);
+  let prof = null, closed = false;
+  if (loops.length) { prof = loops.reduce((a, b) => (Math.abs(polyArea(b)) > Math.abs(polyArea(a)) ? b : a)); closed = true; }
+  else if (opens.length) prof = opens.reduce((a, b) => (len(b) > len(a) ? b : a));
+  if (!prof || prof.length < 2) return { error: 'Dibuja el medio perfil de la pieza a la derecha del eje (línea discontinua): una polilínea abierta o un contorno cerrado.' };
+  const minX = Math.min(...prof.map(p => p[0]));
+  if (minX < -1e-6 * per3D) return { error: `El perfil cruza el eje de revolución (llega a x = ${fmtNum(minX, D)}). Todo el perfil debe quedar a la derecha del eje (x ≥ 0).` };
+  // los perfiles abiertos se ordenan de abajo arriba (las caras miran hacia fuera)
+  if (!closed && prof[0][1] > prof[prof.length - 1][1]) prof = prof.slice().reverse();
+  const pts = S(closed ? [...prof, prof[0]] : prof).map(([x, y]) => [Math.max(0, x), y]);
+  const extra = loops.length + opens.length - 1;
+  return {
+    shape: { smooth: false, points: pts, per3D },
+    info: `${closed ? 'Contorno cerrado → sólido' : 'Perfil abierto → superficie'} · ${prof.length} puntos${extra > 0 ? ` · ${extra} trazo${extra > 1 ? 's' : ''} más ignorado${extra > 1 ? 's' : ''} (se usa el mayor)` : ''}`,
+  };
+}
+
 export function buildShapes(ents) {
   const loops = [], chains = [];
   for (const e of ents) {
@@ -1413,6 +1537,8 @@ export const CAD_OPS = {
   mirror: { label: 'Simetría', alias: ['mi', 'mirror', 'simetria', 'simetría'], icon: '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L4 17h5zM15 7l5 10h-5z"/>' },
   offset: { label: 'Desfase', alias: ['o', 'of', 'offset', 'desfase', 'equidist', 'equidistancia'], icon: '<path d="M4 19c3-9 13-9 16 0"/><path d="M4 13c3-9 13-9 16 0" stroke-dasharray="3 2"/>' },
   trim: { label: 'Recortar', alias: ['tr', 'trim', 'recorta', 'recortar'], icon: '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8 7.5l12 9M8 16.5l12-9"/>' },
+  fillet: { label: 'Empalme', alias: ['f', 'emp', 'fillet', 'empalme', 'redondear'], icon: '<path d="M4 20V11a7 7 0 0 1 7-7h9"/><path d="M4 4h3M4 4v3" stroke-dasharray="1.5 1.5"/>' },
+  chamfer: { label: 'Chaflán', alias: ['cha', 'chaflan', 'chaflán', 'chamfer', 'bisel'], icon: '<path d="M4 20V10l6-6h10"/><path d="M4 4h3M4 4v3" stroke-dasharray="1.5 1.5"/>' },
   explode: { label: 'Descomponer', alias: ['x', 'explode', 'descomponer', 'desc'], icon: '<path d="M4 4l5 5M20 4l-5 5M4 20l5-5M20 20l-5-5M12 9v6M9 12h6"/>' },
   erase: { label: 'Borrar', alias: ['e', 'erase', 'borrar', 'borra', 'supr'], icon: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>' },
 };
@@ -1539,6 +1665,83 @@ function isoCircDim(ent, kind, p) {
   const a = kind === 'diameter' ? sub(ent.c, mul(k.u, r)) : [...ent.c];
   const b = add(ent.c, mul(k.u, kind === 'diameter' ? r : r * sgn));
   return { type: 'dim', kind: 'iso', a: P(a), b: P(b), p: P(p), u: P(kind === 'diameter' ? k.u : mul(k.u, sgn)), w: P(k.w), pre: kind === 'diameter' ? 'Ø' : 'R' };
+}
+
+/** EMPALME / CHAFLÁN: entre dos líneas, en un vértice de polilínea o en todas sus esquinas (T). */
+function cornerTool(cad, chamfer) {
+  const T = chamfer ? 'CHAFLÁN' : 'EMPALME', what = chamfer ? 'Distancia' : 'Radio';
+  const key = chamfer ? 'lastChamfer' : 'lastFillet';
+  let size = null, first = null, all = false;
+  const F = v => fmtNum(v, cad.drawing);
+  const apply = fn => { const r = fn(); if (r?.error) cad.message(r.error); else { cad.commit(); cad.message(r?.msg || `${T.toLowerCase()} hecho`); } };
+  const lineCorner = (A, B) => {
+    const ea = A.e, eb = B.e;
+    const V = lineLine(ea.a, ea.b, eb.a, eb.b);
+    if (!V) return { error: 'Las líneas son paralelas: no tienen esquina' };
+    // de cada línea se conserva el lado en el que se ha hecho clic
+    const keep = (e, click) => {
+      const d = norm(sub(e.b, e.a)), s = Math.sign(dot(sub(click, V), d)) || 1;
+      return dot(sub(e.a, V), d) * s >= dot(sub(e.b, V), d) * s ? e.a : e.b;
+    };
+    const fa = keep(ea, A.raw), fb = keep(eb, B.raw);
+    const r = cornerCut(V, fa, fb, size, chamfer);
+    if (r.error) return r;
+    const t1 = size > 0 ? r.t1 : V, t2 = size > 0 ? r.t2 : V;
+    cad.updateEntity(ea.id, { a: P(fa), b: P(t1) }, false);
+    cad.updateEntity(eb.id, { a: P(fb), b: P(t2) }, false);
+    if (size > 0) {
+      if (chamfer) cad.add({ type: 'line', a: P(r.t1), b: P(r.t2), layer: ea.layer, ...(ea.lt ? { lt: ea.lt } : {}) });
+      else cad.add({ type: 'arc', c: P(r.arc.c), r: rnd(r.arc.r), a0: r.arc.a0, a1: r.arc.a1, layer: ea.layer, ...(ea.lt ? { lt: ea.lt } : {}) });
+    }
+    return { msg: size > 0 ? `${chamfer ? 'Chaflán' : 'Empalme'} de ${F(size)} entre las dos líneas` : 'Líneas recortadas / alargadas hasta su esquina' };
+  };
+  return {
+    get pickMode() { return size !== null; },
+    pickFilter: e => e.type === 'line' || e.type === 'pline',
+    prompt: () => (size === null
+      ? `${T} · ${what}${cad[key] != null ? ` (Intro: ${F(cad[key])})` : ''} · 0 = recortar las dos líneas hasta su esquina`
+      : !first ? `${T} (${what.toLowerCase()} ${F(size)}${all ? ' · TODAS las esquinas' : ''}) · Designa la primera línea o una esquina de polilínea [T: todas las esquinas · ${what[0]}: cambiar ${what.toLowerCase()}] · Intro: terminar`
+        : `${T} (${what.toLowerCase()} ${F(size)}) · Designa la segunda línea`),
+    last: () => null,
+    input(s) {
+      if (size === null) { const v = parseNum(s); if (v === null || v < 0) return false; size = v; cad[key] = v; return true; }
+      if (/^t$/i.test(s)) { all = !all; cad.message(all ? 'Se redondearán todas las esquinas de la polilínea que designes' : 'Solo la esquina designada'); return true; }
+      if (new RegExp(`^${what[0]}$`, 'i').test(s)) { size = null; first = null; return true; }
+      return false;
+    },
+    enter() { if (size === null && cad[key] != null) { size = cad[key]; return; } if (first) { first = null; return; } cad.setTool('select'); },
+    pick(e, raw) {
+      if (!e) { cad.message('Designa una línea o una polilínea'); return; }
+      if (e.type === 'pline') {
+        if (first) { cad.message('Designa otra línea (o Esc y designa la esquina de la polilínea)'); return; }
+        let idx = 0, bd = Infinity;
+        e.pts.forEach((p, i) => { const d = dist(p, raw); if (d < bd) { bd = d; idx = i; } });
+        apply(() => {
+          const r = cornerPline(e, all ? 'all' : idx, size, chamfer);
+          if (r.error) return r;
+          cad.updateEntity(e.id, { pts: r.ent.pts }, false);
+          return { msg: `${chamfer ? 'Chaflán' : 'Empalme'} de ${F(size)} en ${r.done} esquina${r.done > 1 ? 's' : ''}` };
+        });
+        return;
+      }
+      if (!first) { first = { e, raw }; return; }
+      if (e.id === first.e.id) { cad.message('Designa una línea distinta'); return; }
+      const A = first;
+      first = null;
+      apply(() => lineCorner({ e: cad.byId(A.e.id), raw: A.raw }, { e, raw }));
+    },
+    preview() {
+      if (size === null || !cad.hover || !cad.raw) return null;
+      const h = cad.hover;
+      if (h.type === 'pline' && !first) {
+        let idx = 0, bd = Infinity;
+        h.pts.forEach((p, i) => { const d = dist(p, cad.raw); if (d < bd) { bd = d; idx = i; } });
+        const r = cornerPline(h, all ? 'all' : idx, size, chamfer);
+        return r.error ? null : { ents: [{ ...r.ent, id: undefined }] };
+      }
+      return null;
+    },
+  };
 }
 
 const dimCirc = kind => cad => {
@@ -1907,6 +2110,8 @@ const TOOLS = {
       preview() { if (!target || !cad.cur) return null; const r = offsetEntity(target, d, cad.cur); return r ? { ents: [r] } : null; },
     };
   },
+  fillet: cad => cornerTool(cad, false),
+  chamfer: cad => cornerTool(cad, true),
   trim: cad => ({
     pickMode: true,
     pickFilter: e => ['line', 'pline', 'circle', 'arc'].includes(e.type),
@@ -1999,7 +2204,39 @@ export class Cad extends EventTarget {
     this.redraw();
   }
 
-  getDrawing() { return this.drawing; }
+  /** El plano del proyecto (durante un croquis, el plano guardado, no el croquis). */
+  getDrawing() { return this._planSaved ? this._planSaved.drawing : this.drawing; }
+
+  /**
+   * Croquis: el editor 2D pasa a trabajar sobre `drawing` (el perfil de una pieza 3D).
+   * El plano del proyecto, su historial y su selección se guardan y vuelven intactos con endSketch().
+   * info: { kind: 'extrude' | 'lathe', name, plane }
+   */
+  beginSketch(drawing, info) {
+    if (this._planSaved) this.endSketch();
+    this.cancel(true);
+    this._planSaved = { drawing: this.drawing, hist: this.hist, hi: this.hi, sel: [...this.sel] };
+    this.sketch = info;
+    this.setDrawing(drawing);
+    this.emit('sketch', info);
+  }
+
+  endSketch() {
+    const S = this._planSaved;
+    if (!S) return;
+    this.cancel(true);
+    this._planSaved = null;
+    this.sketch = null;
+    this.drawing = S.drawing;
+    this.hist = S.hist; this.hi = S.hi;
+    this.sel = new Set(S.sel.filter(id => this.byId(id)));
+    this.measure = null;
+    this.emitHistory();
+    this.emit('select');
+    this.emitPrompt();
+    this.emit('sketch', null);
+    this.redraw();
+  }
   isEmpty() { return !this.drawing.entities.length; }
   layer(name) { return this.drawing.layers.find(l => l.name === name); }
   byId(id) { return this.drawing.entities.find(e => e.id === id); }
@@ -2814,6 +3051,7 @@ export class Cad extends EventTarget {
         ctx.fillText(`Hoja ${sheet.size} ${sheet.landscape ? 'horizontal' : 'vertical'} · ${sheet.w} × ${sheet.h} mm · escala ${sheet.scale}`, sr[0], sr[1] - 8);
       }
     }
+    if (this.sketch && !opts.print) this._sketchGuides(view, ctx, W, H, C);
     const layers = new Map(D.layers.map(l => [l.name, l]));
     const interactive = !opts.print;
     for (const e of D.entities) {
@@ -2908,6 +3146,25 @@ export class Cad extends EventTarget {
     ctx.strokeStyle = '#3fbf5f'; ctx.fillStyle = '#3fbf5f';
     ctx.beginPath(); ctx.moveTo(o[0], o[1]); ctx.lineTo(o[0], o[1] - 32); ctx.stroke();
     ctx.fillText('Y', o[0] - 3, o[1] - 37);
+  }
+
+  /** Croquis: eje de revolución (x = 0) o el origen de la pieza, con su rótulo. */
+  _sketchGuides(v, ctx, W, H, C) {
+    const o = v.toScreen([0, 0]);
+    ctx.save();
+    ctx.strokeStyle = C.accent; ctx.fillStyle = C.accent; ctx.lineWidth = 1.4;
+    if (this.sketch.kind === 'lathe') {
+      ctx.setLineDash([14, 4, 3, 4]);
+      ctx.beginPath(); ctx.moveTo(Math.round(o[0]) + 0.5, 0); ctx.lineTo(Math.round(o[0]) + 0.5, H); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.07; ctx.fillRect(0, 0, Math.max(0, o[0]), H); ctx.globalAlpha = 1;   // la zona prohibida (x < 0)
+      ctx.font = `600 11px ${FONT}`; ctx.textAlign = 'left';
+      ctx.fillText('Eje de revolución · dibuja el medio perfil a la derecha', o[0] + 8, 18);
+    } else {
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(o[0], o[1], 5, 0, TAU); ctx.moveTo(o[0] - 10, o[1]); ctx.lineTo(o[0] + 10, o[1]); ctx.moveTo(o[0], o[1] - 10); ctx.lineTo(o[0], o[1] + 10); ctx.stroke();
+    }
+    ctx.restore();
   }
 
   _grid(v, ctx, W, H, C) {

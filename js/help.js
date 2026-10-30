@@ -430,46 +430,48 @@ const SECTIONS = [
       ${exBtn('casa')}`,
   },
   {
-    id: 'extrusion', title: 'Extrusión',
+    id: 'extrusion', title: 'Extrusión (croquis)',
     html: `
-      <p>Dibuja un <b>perfil cerrado</b> visto desde arriba (en planta) y Forja 3D lo levanta con la altura que indiques. Sirve para letras, piezas mecánicas, engranajes, perfiles L/T/U, suelos de planta irregular…</p>
-      <h4>El editor de perfiles</h4>
+      <p>Dibuja el <b>perfil</b> de la pieza con medidas exactas y Forja 3D lo levanta con la altura que indiques: placas con taladros, letras, piezas mecánicas, engranajes, perfiles L/T/U…</p>
+      <h4>El croquis</h4>
       <ul>
-        <li><b>Clic</b> en vacío añade un punto al final del perfil.</li>
-        <li><b>Arrastra</b> un punto para moverlo; clic en un <b>+</b> (centro de un tramo) inserta un punto.</li>
-        <li><b>Clic derecho</b> o doble clic borra un punto; ${k('Ctrl', 'Z')} quita el último.</li>
-        <li><b>Rueda</b> para zoom, <b>botón central</b> para desplazar; <b>Encuadrar</b> ajusta la vista al perfil.</li>
-        <li><b>Plantilla</b>: rectángulo, círculo, hexágono, triángulo, estrella, perfiles L, T, U, I, flecha, engranaje y corazón.</li>
-        <li><b>Curva suave</b> redondea el perfil pasando por los puntos; <b>Ajustar a rejilla</b> los coloca en múltiplos de 0,05.</li>
+        <li>Al pulsar <b>Extrusión</b> (o <b>Editar perfil…</b> en Propiedades, o con <b>doble clic</b> sobre la pieza) se abre el <b>croquis</b>: el editor 2D completo, con una barra arriba «✎ Croquis · Extrusión · Aceptar · Cancelar».</li>
+        <li>Dibuja con todas las herramientas del plano: rectángulos, círculos, polilíneas, arcos, coordenadas exactas (<code>@80,50</code>), referencias, paso de forzado, <b>empalme</b> y <b>chaflán</b>, cotas… El origen de la pieza es la cruz naranja.</li>
+        <li>Los <b>contornos cerrados</b> se extruyen; los que quedan <b>dentro</b> de otro son <b>huecos</b> (taladros, ventanas). Varios contornos separados dan una pieza con varias partes. Cotas, texto, ejes y construcción no cuentan.</li>
+        <li><b>Plano</b>: <i>Planta</i> (se extruye hacia arriba), <i>Alzado</i> (hacia delante) o <i>Perfil</i> (hacia la derecha), para piezas tumbadas sin girarlas.</li>
+        <li><b>Plantilla…</b>: rectángulo, círculo, hexágono, estrella, perfiles L, T, U, I, flecha, engranaje, corazón… como punto de partida, que luego editas.</li>
+        <li>El panel lateral muestra una <b>vista previa 3D</b> y la barra indica si el perfil es válido («✓ 1 contorno · 2 huecos») o qué falta.</li>
+        <li><b>Aceptar</b> (${k('Ctrl', 'Intro')}) actualiza la pieza y vuelve al 3D; <b>Cancelar</b> la deja como estaba. El plano 2D del proyecto no se toca. Medidas en mm: 100 mm = 1 unidad 3D.</li>
+        <li>La pieza recuerda su croquis: puedes volver a editarlo cuando quieras.</li>
       </ul>
       <h4>Propiedades</h4>
       <ul>
         <li><b>Altura</b>: cuánto se extruye. <b>Bisel</b>: redondea los bordes (0 = sin bisel). <b>Seg. bisel</b>/<b>Seg. curva</b>: suavidad.</li>
-        <li><b>Editar perfil…</b> vuelve a abrir el editor en cualquier momento.</li>
       </ul>
-      <h4>Ejemplo: engranaje con eje</h4>
+      <h4>Ejemplo: placa de 80 × 50 con esquinas redondeadas y un taladro</h4>
       <ol class="steps">
-        <li>Pulsa <b>Extrusión</b>, elige la plantilla <b>Engranaje</b> y aplica. Altura 0,2.</li>
-        <li>Añade un <b>Cilindro</b> de radio 0,12 en el mismo centro, más alto que el engranaje.</li>
-        <li>Selecciona el engranaje y luego el cilindro: <b>Restar</b>. Ya tienes el agujero del eje.</li>
+        <li>Pulsa <b>Extrusión</b>. Selecciona el perfil de ejemplo (${k('Ctrl', 'A')}) y bórralo (${k('Supr')}).</li>
+        <li><code>REC</code> <code>0,0</code> <code>@80,50</code>. Después <code>F</code> (empalme), radio <code>10</code>, <code>T</code> (todas las esquinas) y clic en el rectángulo.</li>
+        <li><code>C</code> <code>40,25</code> <code>10</code>: el círculo de dentro será un taladro de Ø20.</li>
+        <li>Pulsa <b>Aceptar</b> y pon la <b>Altura</b> que quieras en Propiedades.</li>
       </ol>
       ${exBtn('tuerca')}`,
   },
   {
     id: 'revolucion', title: 'Revolución (torno)',
     html: `
-      <p>Dibuja <b>medio perfil</b> y Forja 3D lo gira alrededor del eje vertical, como en un torno: jarrones, copas, botellas, peones de ajedrez, lámparas, ruedas…</p>
+      <p>Dibuja <b>medio perfil</b> y Forja 3D lo gira alrededor del eje vertical, como en un torno: jarrones, copas, botellas, ejes con escalones, poleas, peones de ajedrez…</p>
       <ul>
-        <li>En el editor, la <b>línea discontinua verde</b> es el eje de giro. Los puntos no pueden pasar a la izquierda (x &lt; 0).</li>
-        <li>La silueta discontinua del otro lado es la vista previa del contorno completo.</li>
-        <li>Empieza y termina el perfil <b>sobre el eje</b> para que la pieza quede cerrada (necesario si luego vas a usarla en una booleana).</li>
-        <li><b>Segmentos</b>: suavidad del giro (pocos segmentos = pieza facetada, por ejemplo 6 para un vaso hexagonal).</li>
-        <li><b>Ángulo</b>: menos de 360° deja una porción, útil para ver la sección interior.</li>
+        <li>Al pulsar <b>Revolución</b> (o editar su perfil) se abre el <b>croquis</b> con el <b>eje de revolución</b>: la línea naranja discontinua en x = 0. Dibuja a su <b>derecha</b>; la zona sombreada de la izquierda no vale (si el perfil la cruza, la barra lo avisa y no deja aceptar).</li>
+        <li>Una <b>polilínea abierta</b> da una superficie (empieza y termina sobre el eje para que quede cerrada); un <b>contorno cerrado</b> da un <b>sólido</b> (por ejemplo un anillo o un tubo con pared).</li>
+        <li>Tienes todas las herramientas del plano: medidas exactas, arcos, empalmes, plantillas (jarrón, copa, botella, peón, cuenco, tubo…) y vista previa 3D.</li>
+        <li><b>Segmentos</b>: suavidad del giro (pocos segmentos = pieza facetada, por ejemplo 6 para un vaso hexagonal). <b>Ángulo</b>: menos de 360° deja una porción, útil para ver la sección interior.</li>
       </ul>
-      <h4>Ejemplo: vaso hexagonal</h4>
+      <h4>Ejemplo: eje con un escalón</h4>
       <ol class="steps">
-        <li>Pulsa <b>Revolución</b>, elige la plantilla <b>Copa</b> y aplica.</li>
-        <li>En Propiedades pon Segmentos = 6 y activa <i>Sombreado plano</i>.</li>
+        <li>Pulsa <b>Revolución</b>, selecciona todo (${k('Ctrl', 'A')}) y bórralo.</li>
+        <li><code>PL</code> <code>0,0</code> <code>15,0</code> <code>15,40</code> <code>8,40</code> <code>8,90</code> <code>0,90</code> e ${k('Intro')}.</li>
+        <li><b>Aceptar</b>: un eje de Ø30 × 40 mm que sigue en Ø16 hasta 90 mm.</li>
       </ol>
       ${exBtn('torno')}`,
   },
@@ -580,6 +582,7 @@ const SECTIONS = [
         <tr><td><code>RO</code> · <code>SC</code> · <code>MI</code></td><td>Girar · Escalar · Simetría</td></tr>
         <tr><td><code>O</code></td><td>Desfase (equidistancia): distancia, objeto y lado</td></tr>
         <tr><td><code>TR</code></td><td>Recortar: clic en la parte que sobra; corta en las intersecciones con el resto</td></tr>
+        <tr><td><code>F</code> · <code>CHA</code></td><td><b>Empalme</b> (radio) · <b>Chaflán</b> (distancia): clic en dos líneas, o en una esquina de polilínea; <code>T</code> para todas las esquinas; radio 0 = recortar o alargar hasta la esquina</td></tr>
         <tr><td><code>X</code> · <code>E</code></td><td>Descomponer (rectángulo/polilínea → líneas) · Borrar</td></tr>
         <tr><td><code>Z</code> · <code>U</code></td><td>Encuadrar todo · Deshacer</td></tr>
       </table>

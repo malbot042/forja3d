@@ -144,15 +144,25 @@ const toV2 = pts => pts.map(([x, y]) => new THREE.Vector2(x, y));
 
 /** Extrusión sin centrar: perfil en planta (XZ) extruido hacia arriba (+Y) desde y = 0. */
 function rawExtrude(p, shape) {
-  const pts = shapePoints(shape, true);
-  if (pts.length < 3) return new THREE.BoxGeometry(0.01, 0.01, 0.01);
-  const s = new THREE.Shape(toV2(pts));
-  for (const h of shape?.holes || []) if (h.length >= 3) s.holes.push(new THREE.Path(toV2(h)));
-  const g = new THREE.ExtrudeGeometry(s, {
+  // un croquis puede tener varios contornos exteriores (cada uno con sus huecos)
+  const list = shape?.shapes?.length ? shape.shapes : [{ points: shapePoints(shape, true), holes: shape?.holes }];
+  const shapes = [];
+  for (const it of list) {
+    const pts = it.points || [];
+    if (pts.length < 3) continue;
+    const s = new THREE.Shape(toV2(pts));
+    for (const h of it.holes || []) if (h.length >= 3) s.holes.push(new THREE.Path(toV2(h)));
+    shapes.push(s);
+  }
+  if (!shapes.length) return new THREE.BoxGeometry(0.01, 0.01, 0.01);
+  const g = new THREE.ExtrudeGeometry(shapes, {
     depth: p.depth, curveSegments: p.curveSegments,
     bevelEnabled: p.bevel > 0, bevelThickness: p.bevel, bevelSize: p.bevel * 0.7, bevelSegments: p.bevelSegments,
   });
-  g.rotateX(-Math.PI / 2);
+  // plano del croquis: planta (se extruye hacia arriba), alzado (hacia delante, +Z) o perfil (hacia la derecha, +X)
+  const plane = shape?.plane || 'top';
+  if (plane === 'top') g.rotateX(-Math.PI / 2);
+  else if (plane === 'side') g.rotateY(Math.PI / 2);
   return g;
 }
 

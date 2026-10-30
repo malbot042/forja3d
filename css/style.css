@@ -814,3 +814,15 @@ kbd {
 .palette-count { margin-left: auto; }
 @media (max-width: 720px) { .pi-group { display: none; } .palette-foot span:not(.palette-count) { display: none; } }
 .palette-list.grouped .pi-group { display: none; }
+/* ---- croquis (perfil de extrusión / revolución) */
+.sketch-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 100%; min-width: 0; padding: 4px 8px; margin: -3px -8px 2px; background: color-mix(in srgb, var(--accent) 14%, var(--bg-2)); border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); font-size: 13px; }
+.sketch-bar[hidden] { display: none; }
+.sketch-bar .sk-title b { color: var(--accent); }
+.sketch-bar .select-input.sm { height: 26px; padding: 0 6px; font-size: 12px; width: auto; }
+.sketch-bar .sk-status { font-size: 12px; color: var(--ok); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.sketch-bar .sk-status.bad { color: var(--danger-text); }
+.sketch-bar .sk-sep { flex: 1; }
+.in-sketch .x3d, .in-sketch #cad-bar [data-cadop="extrude3d"], .in-sketch #btn-cad-extrude { display: none !important; }
+.in-sketch #mode-seg [data-m="3d"] { opacity: .45; }
+.sketch-section { border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 8px; padding: 10px; margin: 4px 0 10px; }
+.sketch-preview { display: block; width: 100%; aspect-ratio: 268 / 180; border-radius: 6px; background: var(--viewport); margin: 4px 0 8px; }

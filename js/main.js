@@ -1,8 +1,9 @@
 // Punto de entrada: navegación entre pantallas, gestor de proyectos y paneles del editor.
 import * as THREE from 'three';
 import { Editor } from './editor.js';
-import { PRIMITIVES, TOOLBAR_ORDER, PALETTE, BOOLEAN_OPS, typeLabel, conversionModes } from './primitives.js';
-import { editShape } from './sketch.js';
+import { PRIMITIVES, TOOLBAR_ORDER, PALETTE, BOOLEAN_OPS, typeLabel, conversionModes, shapePoints } from './primitives.js';
+import { geometryFor } from './csg.js';
+import { editShape, PRESETS } from './sketch.js';
 import { openHelp, EXAMPLES, createExampleProject } from './help.js';
 import * as store from './storage.js';
 import { toggleTheme } from './theme.js';
@@ -10,7 +11,7 @@ import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from '.
 import { makePdf } from './pdf.js';
 import { openPalette } from './palette.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { profileFromSketch, emptyDrawing, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -286,6 +287,7 @@ async function openProject(id) {
     location.hash = '';
     return;
   }
+  if (sketchSession) finishSketch(false);
   flushSave();
   project = p;
   $('#projects-screen').hidden = true;
@@ -463,6 +465,11 @@ function initEditor() {
   };
 
   document.addEventListener('keydown', onKey);
+  // doble clic sobre una extrusión o revolución: editar su croquis
+  editor.layoutEl.addEventListener('dblclick', () => {
+    const m = editor.objects.get(editor.selectedId);
+    if (m && ['extrude', 'lathe'].includes(m.userData.type) && !editor.hand && !editor.sculpt) openSketch(m.userData.id);
+  });
 }
 
 function runOp(op) {
@@ -662,6 +669,8 @@ async function editProfile(id) {
   const sel = editor.objects.get(id);
   if (!sel) return;
   const ud = sel.userData;
+  // extrusiones y revoluciones: el perfil es un croquis que se dibuja con el editor 2D
+  if (ud.type === 'extrude' || ud.type === 'lathe') return openSketch(id);
   const def = PRIMITIVES[ud.type];
   const title = def.usesShape === 'path' ? `Trazado de «${ud.name}»` : `Perfil de «${ud.name}»`;
   const shape = await editShape(ud.shape, def.usesShape, title, { closedPath: !!ud.params.closed });
@@ -670,6 +679,195 @@ async function editProfile(id) {
     if (def.usesShape === 'open' || ud.type === 'extrude') editor.dropToFloor([id]);
     renderProps();
   }
+}
+
+// ============================================================ croquis (perfil de extrusión / revolución)
+let sketchSession = null;
+const SKETCH_KIND = { extrude: 'Extrusión', lathe: 'Revolución' };
+const SKETCH_PLANES = [['top', 'Planta · se extruye hacia arriba'], ['front', 'Alzado · se extruye hacia delante'], ['side', 'Perfil · se extruye hacia la derecha']];
+const r4 = v => Math.round(v * 10000) / 10000;
+
+/** Croquis inicial de una pieza que todavía no tiene (perfil antiguo o recién creada): su perfil, en mm. */
+function sketchFromShape(ud, per3D) {
+  const D = emptyDrawing();
+  D.per3D = per3D;
+  const M = pts => pts.map(([x, y]) => [r4(x * per3D), r4(y * per3D)]);
+  const sh = ud.shape || {};
+  if (ud.type === 'extrude') {
+    const list = sh.shapes?.length ? sh.shapes : [{ points: shapePoints(sh, true), holes: sh.holes }];
+    for (const it of list) {
+      if (it.points?.length >= 3) D.entities.push({ type: 'pline', closed: true, pts: M(it.points), layer: 'Contorno' });
+      for (const hl of it.holes || []) if (hl.length >= 3) D.entities.push({ type: 'pline', closed: true, pts: M(hl), layer: 'Contorno' });
+    }
+  } else {
+    let pts = shapePoints(sh, false);
+    const closed = pts.length > 3 && Math.hypot(pts[0][0] - pts.at(-1)[0], pts[0][1] - pts.at(-1)[1]) < 1e-6;
+    if (closed) pts = pts.slice(0, -1);
+    if (pts.length >= 2) D.entities.push({ type: 'pline', closed, pts: M(pts), layer: 'Contorno' });
+  }
+  return D;
+}
+
+/** Abre el croquis de una extrusión o revolución en el editor 2D. Resuelve con true si se acepta. */
+function openSketch(id) {
+  const mesh = editor.objects.get(id);
+  if (!mesh) return Promise.resolve(false);
+  if (sketchSession) finishSketch(false);
+  if (editor.sculpt) editor.endSculpt();
+  const ud = mesh.userData, kind = ud.type;
+  const per3D = ud.shape?.per3D || editor.cad.getDrawing().per3D || 100;
+  const D = ud.shape?.sketch ? structuredClone(ud.shape.sketch) : sketchFromShape(ud, per3D);
+  D.per3D = per3D;
+  const s = sketchSession = {
+    id, kind, plane: ud.shape?.plane || 'top', name: ud.name,
+    prevWs: editor.workspace, prevCad: { layout: editor.cadLayout, views: editor.cadPanels.map(p => p.getState()) },
+  };
+  editor.cad.beginSketch(D, { kind, name: ud.name, plane: s.plane });
+  editor.setCadLayout(1);
+  editor.setWorkspace('2d');
+  requestAnimationFrame(() => { editor.cad.zoomExtents(); updateSketchStatus(); });
+  $('#editor-screen').classList.add('in-sketch');
+  renderSketchBar();
+  applyMode();
+  return new Promise(res => (s.resolve = res));
+}
+
+/** Termina el croquis: acepta (actualiza la pieza) o cancela (la pieza no cambia). */
+function finishSketch(accept) {
+  const s = sketchSession;
+  if (!s) return false;
+  const cad = editor.cad;
+  let info = '';
+  if (accept) {
+    const r = profileFromSketch(cad.drawing, s.kind, s.plane);
+    if (r.error) { toast(r.error, true); return false; }
+    info = r.info;
+    editor.update(s.id, { shape: { ...r.shape, sketch: JSON.parse(JSON.stringify(cad.drawing)) } });
+    editor.dropToFloor([s.id]);
+  }
+  sketchSession = null;
+  cad.endSketch();
+  $('#editor-screen').classList.remove('in-sketch');
+  editor.setCadLayout(s.prevCad.layout, s.prevCad.views);
+  editor.setWorkspace('3d');
+  if (accept) { editor.select(s.id); toast(`${SKETCH_KIND[s.kind]} «${s.name}» actualizada · ${info}`); }
+  renderSketchBar();
+  applyMode();
+  renderProps();
+  scheduleSave();
+  s.resolve?.(accept);
+  return true;
+}
+
+/** Inserta una plantilla en el croquis (sustituye lo dibujado; Ctrl+Z la quita). */
+function insertSketchTemplate(name) {
+  const s = sketchSession, cad = editor.cad;
+  const lib = s.kind === 'lathe' ? PRESETS.open : PRESETS.closed;
+  const t = lib[name];
+  if (!t) return;
+  const per3D = cad.drawing.per3D || 100;
+  const closed = s.kind === 'extrude';
+  let pts = shapePoints(t, closed);
+  const isClosedLathe = !closed && pts.length > 3 && Math.hypot(pts[0][0] - pts.at(-1)[0], pts[0][1] - pts.at(-1)[1]) < 1e-6;
+  if (isClosedLathe) pts = pts.slice(0, -1);
+  const hadContent = profileEntitiesCount() > 0;
+  cad.drawing.entities = cad.drawing.entities.filter(e => ['dim', 'text'].includes(e.type) || ['Cotas', 'Texto', 'Ejes', 'Construcción'].includes(e.layer));
+  cad.add({ type: 'pline', closed: closed || isClosedLathe, pts: pts.map(([x, y]) => [r4(x * per3D), r4(y * per3D)]), layer: 'Contorno' });
+  cad.commit();
+  cad.zoomExtents();
+  toast(`Plantilla «${name}» insertada${hadContent ? ' (sustituye el perfil anterior; Ctrl+Z para recuperarlo)' : ''}. Edítala con las herramientas del plano.`);
+}
+const profileEntitiesCount = () => editor.cad.drawing.entities.filter(e => !['dim', 'text'].includes(e.type) && !['Cotas', 'Texto', 'Ejes', 'Construcción'].includes(e.layer)).length;
+
+/** Barra superior del croquis: qué se edita, plano, plantillas y Aceptar / Cancelar. */
+function renderSketchBar() {
+  const bar = $('#sketch-bar');
+  const s = sketchSession;
+  bar.hidden = !s;
+  if (!s) { bar.replaceChildren(); return; }
+  const lib = s.kind === 'lathe' ? PRESETS.open : PRESETS.closed;
+  const tpl = h('select', { class: 'select-input sm', title: 'Empezar desde una plantilla (sustituye el perfil; Ctrl+Z para recuperarlo)' },
+    h('option', { value: '' }, 'Plantilla…'), ...Object.keys(lib).map(n => h('option', { value: n }, n)));
+  tpl.onchange = () => { if (tpl.value) insertSketchTemplate(tpl.value); tpl.value = ''; };
+  const parts = [
+    h('span', { class: 'sk-title' }, h('b', {}, '✎ Croquis'), ` · ${SKETCH_KIND[s.kind]} «${s.name}»`),
+  ];
+  if (s.kind === 'extrude') {
+    const pl = h('select', { class: 'select-input sm', title: 'Plano en el que se dibuja el perfil y dirección de la extrusión' }, SKETCH_PLANES.map(([v, l]) => { const o = h('option', { value: v }, l); if (v === s.plane) o.selected = true; return o; }));
+    pl.onchange = () => { s.plane = pl.value; editor.cad.sketch.plane = s.plane; updateSketchStatus(); };
+    parts.push(pl);
+  }
+  parts.push(tpl, h('span', { class: 'sk-status', id: 'sk-status' }),
+    h('span', { class: 'sk-sep' }),
+    h('button', { class: 'btn sm', onclick: () => finishSketch(false), title: 'Volver al 3D sin cambiar la pieza' }, 'Cancelar'),
+    h('button', { class: 'btn sm btn-primary', onclick: () => finishSketch(true), title: 'Actualizar la pieza 3D con este perfil (Ctrl+Intro)' }, 'Aceptar'));
+  bar.replaceChildren(...parts);
+  updateSketchStatus();
+}
+
+let skTimer = 0;
+/** Estado del croquis (válido o qué falta) y vista previa 3D; se llama al cambiar el dibujo. */
+function updateSketchStatus() {
+  const s = sketchSession;
+  if (!s) return;
+  const r = profileFromSketch(editor.cad.drawing, s.kind, s.plane);
+  const st = $('#sk-status');
+  if (st) { st.textContent = r.error ? `⚠ ${r.error}` : `✓ ${r.info}`; st.classList.toggle('bad', !!r.error); st.title = st.textContent; }
+  clearTimeout(skTimer);
+  skTimer = setTimeout(() => renderSketchPreview(r), 120);
+}
+
+// vista previa 3D del croquis (un renderizador pequeño propio)
+let pv = null;
+function sketchPreviewCanvas() {
+  if (!pv) {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'sketch-preview';
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(268, 180, false);
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x404048, 1.5));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.8); dl.position.set(3, 5, 4); scene.add(dl);
+    const cam = new THREE.PerspectiveCamera(38, 268 / 180, 0.001, 1000);
+    pv = { canvas, renderer, scene, cam, mesh: null, msg: null };
+  }
+  return pv;
+}
+function renderSketchPreview(r) {
+  if (!pv || !sketchSession) return;
+  const s = sketchSession;
+  if (pv.mesh) { pv.scene.remove(pv.mesh); pv.mesh.geometry.dispose(); pv.mesh.material.dispose(); pv.mesh = null; }
+  if (!r.error) {
+    const ud = editor.objects.get(s.id)?.userData;
+    try {
+      const g = geometryFor({ type: s.kind, params: ud?.params || {}, shape: r.shape });
+      pv.mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: ud?.material?.color || '#d9d4c7', roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide }));
+      pv.scene.add(pv.mesh);
+      g.computeBoundingSphere();
+      const R = Math.max(g.boundingSphere.radius, 1e-3), c = g.boundingSphere.center;
+      pv.cam.position.copy(c).add(new THREE.Vector3(1, 0.85, 1.25).normalize().multiplyScalar(R * 2.9));
+      pv.cam.lookAt(c);
+    } catch (err) { console.error(err); }
+  }
+  pv.renderer.render(pv.scene, pv.cam);
+}
+
+/** Sección del croquis en Propiedades: explicación, vista previa y botones. */
+function sketchSection() {
+  const s = sketchSession;
+  const c = sketchPreviewCanvas().canvas;
+  setTimeout(updateSketchStatus, 0);
+  return h('div', { class: 'prop-section sketch-section' },
+    h('h3', {}, `Croquis · ${SKETCH_KIND[s.kind]}`),
+    h('p', { class: 'muted small cad-hint' }, s.kind === 'lathe'
+      ? 'Dibuja el medio perfil a la derecha del eje (línea discontinua): una polilínea abierta da una superficie y un contorno cerrado, un sólido. Gira alrededor del eje vertical.'
+      : 'Dibuja el contorno de la pieza con medidas exactas: los contornos cerrados se extruyen y los que quedan dentro de otro son huecos. Altura y bisel, en las propiedades de la pieza.'),
+    c,
+    h('div', { class: 'btn-row' },
+      h('button', { class: 'btn sm', onclick: () => finishSketch(false) }, 'Cancelar'),
+      h('button', { class: 'btn sm btn-primary', onclick: () => finishSketch(true) }, 'Aceptar y volver al 3D')),
+    h('p', { class: 'muted small cad-hint' }, `Unidades del croquis: ${editor.cad.drawing.units} · ${editor.cad.drawing.per3D || 100} ${editor.cad.drawing.units} = 1 unidad 3D. Cotas, texto, ejes y construcción no forman parte del perfil.`));
 }
 
 /** Activa/desactiva los botones de operación según la selección. */
@@ -864,7 +1062,7 @@ function ensure2D() { editor.setWorkspace('2d'); }
 
 function initCadUI() {
   const cad = editor.cad;
-  cad.addEventListener('change', () => { scheduleSave(); if (is2D()) { renderLayers(); renderProps(); refreshCadToggles(); } });
+  cad.addEventListener('change', () => { scheduleSave(); if (is2D()) { renderLayers(); renderProps(); refreshCadToggles(); } if (sketchSession) updateSketchStatus(); });
   cad.addEventListener('select', () => { if (is2D()) renderProps(); });
   cad.addEventListener('tool', refreshCadTool);
   cad.addEventListener('prompt', e => { $('#cmd-prompt').textContent = e.detail; $('#cmd-prompt').title = e.detail; });
@@ -897,6 +1095,7 @@ function initCadUI() {
   $('#mode-seg').addEventListener('click', e => {
     const b = e.target.closest('button[data-m]');
     if (!b) return;
+    if (sketchSession && b.dataset.m === '3d') { toast('Estás editando un croquis: pulsa «Aceptar» para actualizar la pieza o «Cancelar» para dejarla como estaba.'); return; }
     editor.setWorkspace(b.dataset.m);
     scheduleSave();
   });
@@ -1045,9 +1244,10 @@ function renderCadProps(box) {
       c.onchange = () => { cad.osnap[k] = c.checked; cad.savePrefs(); };
       return h('label', { class: 'toggle' }, c, h('span', {}, l));
     });
-    box.replaceChildren(
+    box.replaceChildren(...[
+      sketchSession ? sketchSection() : null,
       h('div', { class: 'prop-section' },
-        h('h3', {}, 'Plano 2D'),
+        h('h3', {}, sketchSession ? 'Ajustes del croquis' : 'Plano 2D'),
         info([['Objetos', String(D.entities.length)], ['Capa actual', D.current]]),
         row('Unidades', select(Object.entries(UNITS).map(([k, u]) => [k, u.label]), D.units, v => cad.setSetting('units', v))),
         row('Decimales', select([0, 1, 2, 3, 4].map(n => [n, n]), D.precision, v => cad.setSetting('precision', +v))),
@@ -1061,7 +1261,7 @@ function renderCadProps(box) {
           inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
           return row('Paso forzado', inp);
         })()),
-      paperSection(cad, D, { select, btn, info }),
+      sketchSession ? null : paperSection(cad, D, { select, btn, info }),
       h('div', { class: 'prop-section' },
         h('h3', {}, 'Referencias a objetos'),
         h('div', { class: 'cap-checks-list' }, osnaps)),
@@ -1069,7 +1269,7 @@ function renderCadProps(box) {
         h('h3', {}, 'Acciones'),
         h('div', { class: 'btn-row' },
           btn('Encuadrar todo', () => cad.zoomExtents()),
-          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary')),
+          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d')),
         h('div', { class: 'btn-row', style: 'margin-top:4px' },
           btn('Exportar DXF', () => exportCad('dxf')),
           btn('Exportar SVG', () => exportCad('svg')),
@@ -1101,7 +1301,7 @@ function renderCadProps(box) {
           ].map(t => `<li>${t}</li>`).join('');
           return ul;
         })()),
-    );
+    ].filter(Boolean));
     return;
   }
 
@@ -1131,7 +1331,7 @@ function renderCadProps(box) {
         h('div', { class: 'btn-row' },
           btn('Desplazar', () => cad.runOp('move')), btn('Copiar', () => cad.runOp('copy')), btn('Girar', () => cad.runOp('rotate'))),
         h('div', { class: 'btn-row', style: 'margin-top:4px' },
-          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary'), btn('Borrar', () => cad.eraseSel(), 'danger'))),
+          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d'), btn('Borrar', () => cad.eraseSel(), 'danger'))),
     );
     return;
   }
@@ -1238,7 +1438,7 @@ function renderCadProps(box) {
         btn('Desplazar', () => cad.runOp('move')), btn('Copiar', () => cad.runOp('copy')),
         ['line', 'pline', 'circle', 'arc'].includes(e.type) ? btn('Desfase', () => cad.setTool('offset')) : null),
       h('div', { class: 'btn-row', style: 'margin-top:4px' },
-        ['pline', 'circle'].includes(e.type) && (e.type === 'circle' || e.closed) ? btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary') : null,
+        ['pline', 'circle'].includes(e.type) && (e.type === 'circle' || e.closed) ? btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d') : null,
         e.type === 'pline' ? btn('Descomponer', () => cad.explodeSel()) : null,
         btn('Borrar', () => cad.eraseSel(), 'danger'))),
   );
@@ -1588,7 +1788,12 @@ function paletteActions() {
   const has3DSel = () => editor.selection.length > 0;
 
   // ---- general
-  if (is2D()) add({ id: 'ws-3d', label: 'Ir a la escena 3D', group: 'General', words: 'modo espacio trabajo tres dimensiones', run: () => editor.setWorkspace('3d') });
+  if (sketchSession) {
+    add({ id: 'sk-ok', label: 'Aceptar el croquis y volver al 3D', group: 'Croquis', keys: ['Ctrl+Intro'], words: 'terminar aplicar perfil', run: () => finishSketch(true) });
+    add({ id: 'sk-cancel', label: 'Cancelar el croquis', group: 'Croquis', words: 'salir descartar perfil', run: () => finishSketch(false) });
+    const lib = sketchSession.kind === 'lathe' ? PRESETS.open : PRESETS.closed;
+    for (const n of Object.keys(lib)) add({ id: `sk-tpl-${n}`, label: `Plantilla: ${n}`, group: 'Croquis', words: 'perfil forma', run: () => insertSketchTemplate(n) });
+  } else if (is2D()) add({ id: 'ws-3d', label: 'Ir a la escena 3D', group: 'General', words: 'modo espacio trabajo tres dimensiones', run: () => editor.setWorkspace('3d') });
   else add({ id: 'ws-2d', label: 'Ir al plano 2D', group: 'General', words: 'modo espacio trabajo dibujo cad autocad', run: () => editor.setWorkspace('2d') });
   add({ id: 'undo', label: 'Deshacer', group: 'General', keys: ['Ctrl+Z'], run: click('#btn-undo'), enabled: () => !$('#btn-undo').disabled });
   add({ id: 'redo', label: 'Rehacer', group: 'General', keys: ['Ctrl+Y'], run: click('#btn-redo'), enabled: () => !$('#btn-redo').disabled });
@@ -1613,7 +1818,7 @@ function paletteActions() {
   for (const type of TOOLBAR_ORDER) {
     if (type === '|') continue;
     const def = PRIMITIVES[type];
-    add({ id: `prim-${type}`, ws: '3d', label: `Añadir ${def.label.toLowerCase()}`, group: 'Primitivas 3D', words: `nuevo crear ${type}`, run: async () => { const id = editor.addPrimitive(type); $('#hint').hidden = true; if (def.usesShape) await editProfile(id); } });
+    add({ id: `prim-${type}`, ws: '3d', label: `Añadir ${def.label.toLowerCase()}`, hint: def.usesShape === 'closed' || def.usesShape === 'open' ? 'se dibuja su perfil en un croquis 2D' : '', group: 'Primitivas 3D', words: `nuevo crear ${type}`, run: async () => { const id = editor.addPrimitive(type); $('#hint').hidden = true; if (def.usesShape) await editProfile(id); } });
   }
   for (const [mode, label, key] of [['translate', 'Mover', 'W'], ['rotate', 'Rotar', 'E'], ['scale', 'Escalar', 'R']]) {
     add({ id: `tf-${mode}`, ws: '3d', label: `Herramienta ${label}`, group: 'Transformar 3D', keys: [key], hint: 'el gizmo y las flechas del teclado', words: 'gizmo transformar', run: () => setTransform(mode) });
@@ -1656,7 +1861,7 @@ function paletteActions() {
   add({ id: 'cad-paste', ws: '2d', label: 'Pegar', group: 'Modificar 2D', keys: ['Ctrl+V'], run: cadKey('v', { ctrlKey: true }) });
   add({ id: 'cad-dup', ws: '2d', label: 'Duplicar la selección', group: 'Modificar 2D', keys: ['Ctrl+D'], run: cadKey('d', { ctrlKey: true }), enabled: () => cad.sel.size > 0 });
   add({ id: 'cad-all', ws: '2d', label: 'Seleccionar todo el plano', group: 'Modificar 2D', keys: ['Ctrl+A'], run: () => cad.selectAll() });
-  add({ id: 'cad-ext', ws: '2d', label: 'Extruir el plano a 3D…', group: 'Modificar 2D', words: 'pieza solido volumen', run: () => extrude2DDialog() });
+  if (!sketchSession) add({ id: 'cad-ext', ws: '2d', label: 'Extruir el plano a 3D…', group: 'Modificar 2D', words: 'pieza solido volumen', run: () => extrude2DDialog() });
   for (const [k, label, key, words] of [['osnapOn', 'Referencias a objetos', 'F3', 'snap osnap enganchar punto final medio centro'], ['grid', 'Rejilla', 'F7', 'cuadricula'],
     ['ortho', 'Orto (solo horizontal y vertical)', 'F8', 'ortogonal'], ['gridSnap', 'Forzar a la rejilla', 'F9', 'snap ajuste'],
     ['iso', 'Modo isométrico del panel', '', 'isometrica perspectiva rejilla 30'], ['isoplane', 'Cambiar de cara isométrica', 'Tab', 'superior derecha izquierda plano'],
@@ -1700,6 +1905,7 @@ function onKey(e) {
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveNow(); toast('Guardado'); return; }
   if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openCommandPalette(); return; }
+  if (sketchSession && mod && e.key === 'Enter') { e.preventDefault(); finishSketch(true); return; }
   if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); captureDialog('print'); return; }
   if (is2D()) {
     if (e.target.id === 'cmd-input' || !e.target.closest('input, textarea, select')) editor.cad.handleKey(e, $('#cmd-input'));

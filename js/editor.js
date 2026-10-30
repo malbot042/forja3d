@@ -1488,7 +1488,7 @@ export class Editor extends EventTarget {
 
   /** Miniatura JPEG: el plano si se trabaja en 2D (o no hay escena), si no el primer panel 3D. */
   thumbnail(w = 320, h = 200) {
-    if (!this.cad.isEmpty() && (this.workspace === '2d' || !this.objects.size)) {
+    if (!this.cad.sketch && !this.cad.isEmpty() && (this.workspace === '2d' || !this.objects.size)) {
       const c = document.createElement('canvas');
       c.width = w; c.height = h;
       this.cad.render(fitView(this.cad, w, h), c.getContext('2d'), w, h, { print: true, grid: false });
