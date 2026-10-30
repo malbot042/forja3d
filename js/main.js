@@ -11,7 +11,7 @@ import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from '.
 import { makePdf } from './pdf.js';
 import { openPalette } from './palette.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { profileFromSketch, emptyDrawing, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { profileFromSketch, emptyDrawing, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, toPDFMulti, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -231,6 +231,10 @@ function exportDialog() {
     ['dxf', { label: 'Plano 2D · DXF', ext: 'dxf', desc: 'Para AutoCAD, LibreCAD, FreeCAD, QCAD, DraftSight o corte láser/CNC. Conserva capas, colores y tipos de línea; las cotas se exportan como líneas y texto.' }],
     ['svg', { label: 'Plano 2D · SVG', ext: 'svg', desc: 'Dibujo vectorial a escala real para Inkscape, Illustrator, la web o el corte láser.' }],
     ...(sheetOf(editor.cad.drawing) ? [['pdf', { label: `Hoja ${editor.cad.drawing.paper.size} · PDF a escala`, ext: 'pdf', desc: 'La hoja con su recuadro y cajetín, en PDF vectorial del tamaño del papel. Imprímela al 100 % para que las medidas sean exactas.' }]] : [])];
+  if (sheets.length > 1) {
+    cadFormats.forEach(f => { f[1] = { ...f[1], label: f[1].label.replace('Plano 2D', `Hoja «${activeSheet().name}»`) }; });
+    cadFormats.push(['pdf-all', { label: `Todas las hojas (${sheets.length}) · PDF`, ext: 'pdf', desc: 'Un PDF con una página por hoja, cada una a su tamaño de papel y escala, con «Hoja n / total» en el cajetín.' }]);
+  }
   const formats = [['json', { label: 'Proyecto Forja 3D', ext: 'json', desc: 'Todo el proyecto, editable: primitivas, perfiles, booleanas y el plano 2D. Para copias de seguridad o compartir con otro usuario de Forja 3D.' }],
     ...(is2D() ? [...cadFormats, ...Object.entries(EXPORT_FORMATS)] : [...Object.entries(EXPORT_FORMATS), ...cadFormats])];
   const wrap = h('div', { class: 'modal-backdrop' });
@@ -248,7 +252,7 @@ function exportDialog() {
     const f = fmt();
     close();
     if (f === 'json') { snapshotProject(); saveNow(); exportProject(project); return; }
-    if (f === 'dxf' || f === 'svg' || f === 'pdf') { exportCad(f); return; }
+    if (['dxf', 'svg', 'pdf', 'pdf-all'].includes(f)) { exportCad(f); return; }
     try {
       const n = await exportModel(editor, f, { name: project.name, selectionOnly: selOnly.checked, withMtl: mtl.checked });
       toast(`${EXPORT_FORMATS[f].label} exportado (${n} objeto${n === 1 ? '' : 's'})`);
@@ -294,7 +298,7 @@ async function openProject(id) {
   $('#editor-screen').hidden = false;
   if (!editor) initEditor();
 
-  editor.cad.setDrawing(p.drawing);
+  loadSheets(p);
   editor.cad.title = p.name;
   const skipped = editor.load(p.objects, p.camera, p.settings?.viewports);
   refreshLayoutButtons();
@@ -326,12 +330,169 @@ async function openProject(id) {
   }
 }
 
+// ============================================================ hojas del plano 2D
+// Un proyecto puede tener varias hojas 2D (como las presentaciones de AutoCAD). La hoja activa vive en
+// editor.cad; las demás esperan en `sheets`. Cada hoja conserva su deshacer/rehacer, su selección y su
+// encuadre mientras el proyecto está abierto.
+let sheets = [];                  // [{ id, name, drawing }]
+const sheetStates = new Map();    // id → estado de trabajo guardado con cad.stash()
+
+const activeSheet = () => sheets.find(s => s.id === project?.sheet) || sheets[0];
+
+function loadSheets(p) {
+  sheets = (Array.isArray(p.sheets) && p.sheets.length ? p.sheets : [{ name: 'Hoja 1', drawing: p.drawing }])
+    .map((s, i) => ({ id: s.id || store.uid(), name: String(s.name || `Hoja ${i + 1}`), drawing: s.drawing }));
+  sheetStates.clear();
+  if (!sheets.some(s => s.id === p.sheet)) p.sheet = sheets[0].id;
+  editor.cad.setDrawing(activeSheet().drawing);
+  syncSheetNo();
+  renderSheetTabs();
+}
+
+/** «2 / 3» en el cajetín cuando hay más de una hoja. */
+function syncSheetNo() {
+  const i = sheets.indexOf(activeSheet());
+  editor.cad.sheetNo = sheets.length > 1 ? `${i + 1} / ${sheets.length}` : '';
+}
+
+function sheetBusy() {
+  if (!sketchSession) return false;
+  toast('Acepta o cancela el croquis antes de cambiar de hoja', true);
+  return true;
+}
+
+function afterSheetChange() {
+  syncSheetNo();
+  renderSheetTabs();
+  if (is2D()) { renderLayers(); renderProps(); refreshCadToggles(); refreshHistoryButtons(); }
+  editor.cad.redraw();
+  scheduleSave();
+}
+
+function switchSheet(id) {
+  const to = sheets.find(s => s.id === id), from = activeSheet();
+  if (!to || to === from || sheetBusy()) return;
+  const cad = editor.cad;
+  const st = cad.stash();
+  from.drawing = st.drawing;
+  sheetStates.set(from.id, st);
+  project.sheet = to.id;
+  const saved = sheetStates.get(to.id);
+  if (saved) cad.unstash(saved);
+  else cad.setDrawing(to.drawing);
+  afterSheetChange();
+}
+
+const stepSheet = d => {
+  const i = sheets.indexOf(activeSheet());
+  switchSheet(sheets[(i + d + sheets.length) % sheets.length].id);
+};
+
+function uniqueSheetName(base) {
+  let name = base, n = 2;
+  while (sheets.some(s => s.name === name)) name = `${base} ${n++}`;
+  return name;
+}
+
+/** Hoja nueva (vacía, con el mismo papel, capas y datos del cajetín) o copia de la actual. */
+function addSheet(dup = false) {
+  if (sheetBusy()) return;
+  const from = activeSheet();
+  const d = JSON.parse(JSON.stringify(editor.cad.getDrawing()));
+  if (!dup) {
+    d.entities = [];
+    if (d.paper?.fields) d.paper.fields = { ...d.paper.fields, title: '', description: '', number: '' };
+  }
+  let name;
+  if (dup) name = uniqueSheetName(`${from.name} (copia)`);
+  else { let n = sheets.length + 1; while (sheets.some(s => s.name === `Hoja ${n}`)) n++; name = `Hoja ${n}`; }
+  const sh = { id: store.uid(), name, drawing: d };
+  sheets.splice(sheets.indexOf(from) + 1, 0, sh);
+  switchSheet(sh.id);
+  toast(dup ? `Hoja duplicada: «${name}»` : `Nueva hoja: «${name}» (doble clic en la pestaña para renombrarla)`);
+}
+
+function renameSheet(id) {
+  const sh = sheets.find(s => s.id === id);
+  if (!sh) return;
+  const n = prompt('Nombre de la hoja', sh.name);
+  if (n == null || !n.trim()) return;
+  sh.name = n.trim().slice(0, 60);
+  renderSheetTabs();
+  if (is2D()) renderProps();
+  scheduleSave();
+}
+
+function deleteSheet(id) {
+  const sh = sheets.find(s => s.id === id);
+  if (!sh || sheetBusy()) return;
+  if (sheets.length === 1) { toast('El proyecto necesita al menos una hoja', true); return; }
+  const n = (sh === activeSheet() ? editor.cad.drawing : sh.drawing)?.entities?.length || 0;
+  if (n && !confirm(`¿Eliminar la hoja «${sh.name}» y sus ${n} objeto${n > 1 ? 's' : ''}? No se puede deshacer.`)) return;
+  const i = sheets.indexOf(sh);
+  if (sh === activeSheet()) switchSheet(sheets[i + 1]?.id || sheets[i - 1].id);
+  sheets.splice(sheets.indexOf(sh), 1);
+  sheetStates.delete(sh.id);
+  afterSheetChange();
+  toast(`Hoja «${sh.name}» eliminada`);
+}
+
+function moveSheet(id, d) {
+  const i = sheets.findIndex(s => s.id === id), j = i + d;
+  if (i < 0 || j < 0 || j >= sheets.length) return;
+  [sheets[i], sheets[j]] = [sheets[j], sheets[i]];
+  afterSheetChange();
+}
+
+function renderSheetTabs() {
+  const el = $('#sheet-tabs');
+  if (!el || !editor) return;
+  const cur = activeSheet();
+  el.replaceChildren(
+    h('span', { class: 'sheet-list', role: 'tablist', 'aria-label': 'Hojas del plano' }, sheets.map(s => h('button', {
+      class: `sheet-tab${s === cur ? ' active' : ''}`, role: 'tab', 'aria-selected': String(s === cur),
+      title: `${s.name} · doble clic: renombrar · clic derecho: más opciones`,
+      onclick: () => switchSheet(s.id),
+      ondblclick: () => renameSheet(s.id),
+      oncontextmenu: e => { e.preventDefault(); switchSheet(s.id); sheetMenu(s.id, e.currentTarget); },
+    }, s.name))),
+    h('button', { class: 'sheet-add', title: 'Nueva hoja (vacía, con el mismo papel y capas)', 'aria-label': 'Nueva hoja', onclick: () => addSheet() }, '+'),
+    h('button', { class: 'sheet-more', title: 'Opciones de la hoja: renombrar, duplicar, mover, eliminar', 'aria-label': 'Opciones de la hoja', onclick: e => sheetMenu(cur.id, e.currentTarget) }, '⋯'));
+  el.querySelector('.sheet-tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+function sheetMenu(id, anchor) {
+  document.querySelector('.sheet-menu')?.remove();
+  const i = sheets.findIndex(s => s.id === id);
+  const item = (label, fn, off = false, cls = '') => h('button', { class: cls, disabled: off, onclick: () => { close(); fn(); } }, label);
+  const menu = h('div', { class: 'sheet-menu', role: 'menu' },
+    item('Renombrar…', () => renameSheet(id)),
+    item('Duplicar', () => addSheet(true)),
+    item('Nueva hoja vacía', () => addSheet()),
+    item('Mover a la izquierda', () => moveSheet(id, -1), i <= 0),
+    item('Mover a la derecha', () => moveSheet(id, 1), i >= sheets.length - 1),
+    item('Exportar todas a PDF', () => exportCad('pdf-all'), !sheets.some(s => sheetOf(s === activeSheet() ? editor.cad.drawing : s.drawing || {}))),
+    item('Eliminar hoja', () => deleteSheet(id), sheets.length < 2, 'danger'));
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.min(r.left, innerWidth - menu.offsetWidth - 8)}px`;
+  menu.style.top = `${r.top - menu.offsetHeight - 4}px`;
+  const onDown = e => { if (!menu.contains(e.target)) close(); };
+  const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  function close() { menu.remove(); document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('keydown', onKey, true); }
+  setTimeout(() => { document.addEventListener('pointerdown', onDown, true); document.addEventListener('keydown', onKey, true); }, 0);
+  menu.querySelector('button:not(:disabled)')?.focus();
+}
+
 // ============================================================ editor: guardado
 function snapshotProject() {
   project.objects = editor.serialize();
   project.camera = editor.getCamera();
   project.settings = { view: editor.viewMode, grid: $('#chk-grid').checked, snap: $('#chk-snap').checked, snapSizes: editor.snapSizes, viewports: editor.getViewState() };
-  project.drawing = editor.cad.getDrawing();
+  const D = editor.cad.getDrawing();
+  if (activeSheet()) activeSheet().drawing = D;
+  project.sheets = sheets.map(s => ({ id: s.id, name: s.name, drawing: s.drawing }));
+  project.drawing = D;      // la hoja activa, también aquí por compatibilidad con proyectos antiguos
 }
 
 function scheduleSave() {
@@ -1248,7 +1409,14 @@ function renderCadProps(box) {
       sketchSession ? sketchSection() : null,
       h('div', { class: 'prop-section' },
         h('h3', {}, sketchSession ? 'Ajustes del croquis' : 'Plano 2D'),
-        info([['Objetos', String(D.entities.length)], ['Capa actual', D.current]]),
+        sketchSession ? null : (() => {
+          const inp = h('input', { type: 'text', class: 'text-input', maxlength: 60, 'aria-label': 'Nombre de la hoja' });
+          inp.value = activeSheet()?.name || '';
+          inp.onchange = () => { const v = inp.value.trim(); if (!v) { inp.value = activeSheet().name; return; } activeSheet().name = v.slice(0, 60); renderSheetTabs(); scheduleSave(); };
+          inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
+          return row('Hoja', inp);
+        })(),
+        info([['Objetos', String(D.entities.length)], ['Capa actual', D.current], ...(sheets.length > 1 && !sketchSession ? [['Hojas', `${sheets.indexOf(activeSheet()) + 1} de ${sheets.length}`]] : [])]),
         row('Unidades', select(Object.entries(UNITS).map(([k, u]) => [k, u.label]), D.units, v => cad.setSetting('units', v))),
         row('Decimales', select([0, 1, 2, 3, 4].map(n => [n, n]), D.precision, v => cad.setSetting('precision', +v))),
         row('Separador', select([[',', 'Coma (12,50)'], ['.', 'Punto (12.50)']], D.decimal, v => cad.setSetting('decimal', v))),
@@ -1446,11 +1614,20 @@ function renderCadProps(box) {
 
 function exportCad(kind) {
   const D = editor.cad.drawing;
+  if (kind === 'pdf-all') {
+    snapshotProject();
+    const list = sheets.map((s, i) => ({ drawing: s.drawing, title: project.name, sheetNo: sheets.length > 1 ? `${i + 1} / ${sheets.length}` : '' }));
+    const n = list.filter(s => sheetOf(s.drawing)).length;
+    if (!n) { toast('Ninguna hoja tiene formato de papel (Propiedades del plano → Hoja)', true); return; }
+    downloadBlob(new Blob([toPDFMulti(list, { title: project.name })], { type: 'application/pdf' }), `${store.slug(project.name)}-hojas.pdf`);
+    toast(`${n} hoja${n > 1 ? 's' : ''} exportada${n > 1 ? 's' : ''} a PDF, una por página${n < sheets.length ? ` (${sheets.length - n} sin formato de papel no se incluyen)` : ''}`, 5000);
+    return;
+  }
   if (editor.cad.isEmpty() && kind !== 'pdf') { toast('El plano 2D está vacío', true); return; }
-  const base = `${store.slug(project.name)}-plano`;
+  const base = `${store.slug(project.name)}-${sheets.length > 1 ? store.slug(activeSheet().name) : 'plano'}`;
   if (kind === 'pdf') {
     if (!sheetOf(D)) { toast('Elige primero un formato de hoja (Propiedades del plano → Hoja)', true); return; }
-    downloadBlob(new Blob([toPDF(D, { title: project.name })], { type: 'application/pdf' }), `${base}-${D.paper.size}.pdf`);
+    downloadBlob(new Blob([toPDF(D, { title: project.name, sheetNo: editor.cad.sheetNo })], { type: 'application/pdf' }), `${base}-${D.paper.size}.pdf`);
     toast(`Hoja ${D.paper.size} exportada a PDF a escala ${D.paper.scale || '1:1'} (imprímela al 100 %, sin «ajustar a la página»)`, 5000);
     return;
   }
@@ -1871,6 +2048,14 @@ function paletteActions() {
   add({ id: 'cad-step', ws: '2d', label: 'Paso del forzado (tamaño del snap)', group: 'Ayudas al dibujo 2D', words: 'snap rejilla paso', run: () => { $('#snap-step').focus(); $('#snap-step').showPicker?.(); } });
   add({ id: 'cad-layer', ws: '2d', label: 'Nueva capa', group: 'Capas y hoja 2D', run: click('#btn-layer-add') });
   add({ id: 'cad-paper', ws: '2d', label: 'Elegir tamaño de hoja (A5 … A0)', group: 'Capas y hoja 2D', words: 'papel formato a4 a3 recuadro cajetin', run: () => { cad.setSel([]); setTimeout(() => { const s = $('#props .prop-row:has(label) select'); const f = [...document.querySelectorAll('#props .prop-row')].find(r => r.textContent.startsWith('Formato'))?.querySelector('select'); (f || s)?.focus(); f?.scrollIntoView({ block: 'center' }); }, 60); } });
+  add({ id: 'sh-new', ws: '2d', label: 'Nueva hoja', group: 'Hojas del plano', words: 'hoja pagina plano presentacion añadir', run: () => addSheet() });
+  add({ id: 'sh-dup', ws: '2d', label: 'Duplicar la hoja', group: 'Hojas del plano', words: 'copiar hoja', run: () => addSheet(true) });
+  add({ id: 'sh-ren', ws: '2d', label: 'Renombrar la hoja', group: 'Hojas del plano', words: 'nombre hoja', run: () => renameSheet(activeSheet().id) });
+  add({ id: 'sh-next', ws: '2d', label: 'Hoja siguiente', group: 'Hojas del plano', keys: ['Alt+AvPág'], words: 'cambiar hoja', run: () => stepSheet(1), enabled: () => sheets.length > 1 });
+  add({ id: 'sh-prev', ws: '2d', label: 'Hoja anterior', group: 'Hojas del plano', keys: ['Alt+RePág'], words: 'cambiar hoja', run: () => stepSheet(-1), enabled: () => sheets.length > 1 });
+  add({ id: 'sh-del', ws: '2d', label: 'Eliminar la hoja', group: 'Hojas del plano', words: 'borrar hoja', run: () => deleteSheet(activeSheet().id), enabled: () => sheets.length > 1 });
+  add({ id: 'sh-pdf', ws: '2d', label: 'PDF de todas las hojas', group: 'Hojas del plano', words: 'imprimir planos paginas', run: () => exportCad('pdf-all') });
+  sheets.forEach((sh, i) => { if (sh !== activeSheet()) add({ id: `sh-go-${sh.id}`, ws: '2d', label: `Ir a la hoja «${sh.name}»`, group: 'Hojas del plano', words: `hoja ${i + 1}`, run: () => switchSheet(sh.id) }); });
   add({ id: 'cad-pdf', ws: '2d', label: 'PDF de la hoja a escala', group: 'Capas y hoja 2D', words: 'imprimir plano', run: () => exportCad('pdf'), enabled: () => !!sheetOf(cad.drawing) });
   add({ id: 'cad-dxf', ws: '2d', label: 'Exportar el plano a DXF', group: 'Capas y hoja 2D', words: 'autocad', run: () => exportCad('dxf') });
   add({ id: 'cad-svg', ws: '2d', label: 'Exportar el plano a SVG', group: 'Capas y hoja 2D', words: 'vectorial laser', run: () => exportCad('svg') });
@@ -1907,6 +2092,7 @@ function onKey(e) {
   if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openCommandPalette(); return; }
   if (sketchSession && mod && e.key === 'Enter') { e.preventDefault(); finishSketch(true); return; }
   if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); captureDialog('print'); return; }
+  if (is2D() && e.altKey && !mod && (e.key === 'PageDown' || e.key === 'PageUp')) { e.preventDefault(); stepSheet(e.key === 'PageDown' ? 1 : -1); return; }
   if (is2D()) {
     if (e.target.id === 'cmd-input' || !e.target.closest('input, textarea, select')) editor.cad.handleKey(e, $('#cmd-input'));
     return;

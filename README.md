@@ -22,6 +22,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Editor 2D de planos** al estilo AutoCAD: línea de órdenes con alias (`L`, `PL`, `REC`, `C`, `A`, `T`, `M`, `CO`, `RO`, `SC`, `MI`, `O`, `TR`, `F` empalme, `CHA` chaflán…), coordenadas absolutas, relativas (`@dx,dy`), polares (`d<ángulo`) y distancia directa; referencias a objetos (final, medio, centro, cuadrante, intersección), Orto, forzar a rejilla, pinzamientos, selección por ventana/captura, rótulos junto al cursor que explican cada acción, copiar/pegar/duplicar y desplazamiento con flechas.
   - **Cotas** lineales, alineadas, de radio, diámetro y ángulo, y herramienta **Medir** (distancia, ΔX, ΔY, ángulo); longitudes, perímetros y áreas en Propiedades.
   - **Hoja** A5, A4, A3, A2, A1 o A0, horizontal o vertical, a escala (10:1 … 1:1000), con recuadro y cajetín independientes; cajetín editable (título, descripción libre, autor, empresa o centro, nº de plano y fecha con calendario; escala automática); **PDF vectorial a escala real** para imprimir.
+  - **Varias hojas por proyecto**: pestañas bajo el dibujo para crear, renombrar, duplicar, ordenar y eliminar hojas (`Alt+AvPág` / `Alt+RePág` para cambiar). Cada hoja tiene su dibujo, capas, papel, cajetín (con «Hoja n / total») y deshacer; **PDF de todas las hojas**, una por página.
   - **Modo isométrico** en el plano: rejilla a 30°/90°/150°, forzado a sus nodos y orto isométrico; caras superior/derecha/izquierda (`Tab` o `Ctrl+E`) en las que el círculo se dibuja como **círculo isométrico** (elipse), el rectángulo como paralelogramo y las **cotas** sobre los ejes isométricos con texto oblicuo. Cada panel 2D tiene su propio modo (normal o isométrico). **Mano** (pan) para moverse libremente por la hoja.
   - **Tipos de línea** continua, trazos, oculta, eje, puntos y **lápiz** (trazo a mano alzada con la geometría exacta, sobre la rejilla), por capa o por objeto; botón *✎ Lápiz* para dibujar en ese estilo.
   - **Capas** con color, tipo de línea y grosor; unidades (mm, cm, m, pulgadas…) y estilo de cota configurables.
@@ -82,6 +83,7 @@ El botón **?** del editor (o las teclas `?` / `F1`) y **Ayuda y ejemplos** en l
 | `Esc` | Quitar selección |
 | `F3` / `F7` / `F8` / `F9` | (Editor 2D) Referencias / Rejilla / Orto / Forzar a rejilla |
 | `Tab` / `Ctrl+E` | (Editor 2D, panel isométrico) Cambiar de cara: superior, derecha, izquierda |
+| `Alt+AvPág` / `Alt+RePág` | (Editor 2D) Hoja siguiente / anterior |
 
 En el editor 2D basta con teclear: lo escrito va a la línea de órdenes y se confirma con `Intro`, `Espacio` o clic derecho.
 
@@ -175,6 +177,7 @@ three.js se incluye en el repositorio (`lib/three`) para que el editor no depend
 - `rotation` va en **grados** (orden XYZ).
 - `type` es uno de: `box`, `sphere`, `cylinder`, `cone`, `pyramid`, `torus`, `capsule`, `plane`, `ring`, `tetrahedron`, `octahedron`, `dodecahedron`, `icosahedron`, `torusKnot`, `circle2d`, `line2d`, `extrude`, `lathe` o `boolean`.
 - `extrude`, `lathe` y `line2d` añaden `"shape": { "points": [[x, y], …], "smooth": false }`; una extrusión puede incluir además `"holes": [[[x, y], …], …]` (huecos interiores), `"shapes"` (varios contornos), `"plane"` (`top`, `front`, `side`), `"per3D"` (mm por unidad) y `"sketch"` (el dibujo del croquis, para reeditarlo).
+- `sheets`: las hojas del plano 2D, `[{ "id", "name", "drawing" }]`, y `sheet` el id de la activa. `drawing` guarda también la hoja activa (proyectos anteriores solo tenían `drawing`).
 - `boolean` guarda la operación en `params.op` (`union`, `subtract`, `intersect`) y los objetos originales en `operands` (con sus transformaciones relativas al resultado). La malla se recalcula al abrir el proyecto, así que el JSON sigue siendo pequeño y editable.
 - “Exportar todo” genera `{ "format": "forja3d-bundle", "projects": [ … ] }`, que también se puede importar.
 

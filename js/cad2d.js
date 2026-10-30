@@ -123,7 +123,7 @@ function wrapText(str, h, maxW, maxLines = 8) {
 const paperFlags = P => ({ frame: P.frame !== false, block: P.block ?? (P.frame !== false) });
 
 /** Rectángulo del cajetín en mm de papel { x, y, w, h } y su contenido, o null. */
-function blockLayout(D, S, title) {
+function blockLayout(D, S, title, sheetNo = '') {
   const P = D.paper;
   if (!paperFlags(P).block) return null;
   const F = P.fields || {};
@@ -132,7 +132,7 @@ function blockLayout(D, S, title) {
   const lab = 1.6, val = 2.5, pad = 1.5;
   const desc = F.description ? wrapText(F.description, val, bw - 2 * pad) : [];
   const rows = [
-    { h: 9, cells: [['Escala', S.scale], ['Nº de plano', F.number || '']] },
+    { h: 9, cells: [['Escala', S.scale], ['Nº de plano', F.number || ''], ...(sheetNo ? [['Hoja', sheetNo]] : [])] },
     { h: 9, cells: [['Dibujado por', F.author || ''], ['Empresa / centro', F.company || ''], ['Fecha', blockDate(F.date)]] },
   ];
   if (desc.length) rows.push({ h: 2 * pad + lab + 1.2 + val + (desc.length - 1) * val * 1.55 + 1.2, cells: [['Descripción', desc]] });
@@ -149,7 +149,7 @@ export function sheetBlockRect(D) {
 }
 
 /** Recuadro y cajetín de la hoja como objetos del plano (sin id: no se seleccionan ni se exportan a DXF). */
-export function sheetDecor(D, title = '') {
+export function sheetDecor(D, title = '', sheetNo = '') {
   const S = sheetOf(D);
   if (!S) return [];
   const { k } = S;
@@ -158,7 +158,7 @@ export function sheetDecor(D, title = '') {
   const rect = (x, y, w, h, lw) => ({ type: 'pline', closed: true, pts: [at(x, y), at(x + w, y), at(x + w, y + h), at(x, y + h)], lw });
   const out = [];
   if (paperFlags(D.paper).frame) out.push(rect(m, m, W - 2 * m, H - 2 * m, 'thick'));
-  const L = blockLayout(D, S, title);
+  const L = blockLayout(D, S, title, sheetNo);
   if (!L) return out;
   const txt = (mx, my, text, hmm) => ({ type: 'text', p: at(mx, my), text, h: hmm * k });
   out.push(rect(L.x, L.y, L.w, L.h, 'thick'));
@@ -1433,7 +1433,8 @@ const hexRGB = hex => {
  * La hoja en PDF vectorial a escala real: imprimiéndolo al 100 % las medidas en papel
  * son las del dibujo multiplicadas por la escala de la hoja.
  */
-export function toPDF(D, { title = '' } = {}) {
+/** Página PDF de la hoja: { width, height, content } en puntos. */
+function pdfPage(D, title, sheetNo) {
   const S = sheetOf(D);
   if (!S) throw new Error('el plano no tiene hoja');
   const PT = 72 / 25.4;                                   // puntos por mm
@@ -1499,14 +1500,26 @@ export function toPDF(D, { title = '' } = {}) {
     }
   };
   const layers = new Map(D.layers.map(l => [l.name, l]));
-  for (const e of sheetDecor(D, title)) entity(e, '#000000', e.lw === 'thick' ? 0.5 : 0.25, LINETYPES.continuous);
+  for (const e of sheetDecor(D, title, sheetNo)) entity(e, '#000000', e.lw === 'thick' ? 0.5 : 0.25, LINETYPES.continuous);
   for (const e of D.entities) {
     const L = layers.get(e.layer) || {};
     if (L.visible === false) continue;
     const col = !L.color || L.color === 'auto' ? '#000000' : L.color;
     entity(e, col, L.lw === 'thick' ? 0.5 : 0.25, LINETYPES[ltOf(e, L)]);
   }
-  return makeVectorPdf({ width: S.w * PT, height: S.h * PT, content: out.join('\n'), title });
+  return { width: S.w * PT, height: S.h * PT, content: out.join('\n') };
+}
+
+/** PDF vectorial de la hoja, a escala real. */
+export function toPDF(D, { title = '', sheetNo = '' } = {}) {
+  return makeVectorPdf({ ...pdfPage(D, title, sheetNo), title });
+}
+
+/** PDF de varias hojas, una por página (cada una con su tamaño de papel). sheets: [{ drawing, title, sheetNo }] */
+export function toPDFMulti(sheets, { title = '' } = {}) {
+  const pages = sheets.filter(s => sheetOf(s.drawing)).map(s => pdfPage(normalizeDrawing(s.drawing), s.title, s.sheetNo));
+  if (!pages.length) throw new Error('ninguna hoja tiene formato de papel');
+  return makeVectorPdf({ pages, title });
 }
 
 // =================================================================== órdenes y herramientas
@@ -2201,6 +2214,34 @@ export class Cad extends EventTarget {
     this.emit('select');
     this.emitPrompt();
     for (const v of this.views) v.fitted = false;
+    this.redraw();
+  }
+
+  /**
+   * Estado de trabajo del plano actual (dibujo, deshacer/rehacer, selección y encuadre de cada panel),
+   * para cambiar de hoja y volver a ella tal como estaba.
+   */
+  stash() {
+    this.cancel(true);
+    return {
+      drawing: this.drawing, hist: this.hist, hi: this.hi, sel: [...this.sel],
+      views: new Map([...this.views].map(v => [v, { cx: v.cx, cy: v.cy, zoom: v.zoom, fitted: v.fitted }])),
+    };
+  }
+
+  unstash(S) {
+    this.cancel(true);
+    this.drawing = S.drawing;
+    this.hist = S.hist; this.hi = S.hi;
+    this.sel = new Set(S.sel.filter(id => this.byId(id)));
+    this.measure = null;
+    for (const v of this.views) {
+      const st = S.views?.get(v);
+      if (st) Object.assign(v, st); else v.fitted = false;
+    }
+    this.emitHistory();
+    this.emit('select');
+    this.emitPrompt();
     this.redraw();
   }
 
@@ -3041,7 +3082,7 @@ export class Cad extends EventTarget {
     if (sheet) {
       ctx.strokeStyle = C.major; ctx.lineWidth = 1; ctx.setLineDash([]);
       ctx.strokeRect(Math.round(sr[0]) + 0.5, Math.round(sr[1]) + 0.5, Math.round(sr[2]), Math.round(sr[3]));
-      for (const e of sheetDecor(D, this.title)) {
+      for (const e of sheetDecor(D, this.title, this.sheetNo)) {
         ctx.globalAlpha = 0.8;
         drawEnt(ctx, view, e, D, { color: C.fg, dash: [], lw: e.lw === 'thick' ? 1.6 : 0.8 });
         ctx.globalAlpha = 1;

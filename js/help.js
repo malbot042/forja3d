@@ -635,6 +635,14 @@ const SECTIONS = [
         <li><b>PDF a escala</b> (también en Exportar) genera un PDF vectorial del tamaño exacto del papel. Imprímelo al <b>100 %</b> (sin «ajustar a la página») y las medidas en papel serán las del dibujo por la escala.</li>
         <li>La altura de textos y cotas está en unidades del dibujo: a escala 1:2 se imprimen a la mitad, así que conviene subir la <b>Altura texto</b>.</li>
       </ul>
+      <h4>Varias hojas en un proyecto</h4>
+      <ul>
+        <li>Debajo del dibujo están las <b>pestañas de hojas</b>, como las presentaciones de AutoCAD: el conjunto en una hoja, los detalles en otra, el despiece en una tercera… Clic en una pestaña para cambiar de hoja (o ${k('Alt', 'AvPág')} / ${k('Alt', 'RePág')}).</li>
+        <li><b>+</b> crea una hoja <b>vacía</b> con el mismo papel, escala, capas y datos del cajetín (sin título, descripción ni nº de plano). <b>Doble clic</b> en la pestaña la renombra; también puedes cambiar el nombre en Propiedades → <b>Hoja</b>.</li>
+        <li>El botón <b>⋯</b> (o clic derecho en la pestaña) permite <b>duplicar</b>, <b>mover</b> a izquierda o derecha, <b>eliminar</b> y <b>exportar todas a PDF</b>.</li>
+        <li>Cada hoja tiene su propio dibujo, capas, papel, cajetín, deshacer/rehacer y encuadre. Con más de una hoja, el cajetín muestra <b>Hoja n / total</b>.</li>
+        <li><b>Todas las hojas · PDF</b> (en Exportar o en el menú ⋯) genera un solo PDF con una página por hoja, cada una a su tamaño y escala. DXF, SVG y el PDF de una hoja exportan la hoja activa.</li>
+      </ul>
       <h4>Tipos de línea y modo lápiz</h4>
       <ul>
         <li>Tipos disponibles: <b>Continua</b>, <b>Trazos</b>, <b>Oculta</b>, <b>Eje</b>, <b>Puntos</b> y <b>Lápiz (a mano alzada)</b>.</li>
@@ -711,6 +719,7 @@ const SECTIONS = [
         <tr><td>${k('Esc')}</td><td>Cancelar la orden · quitar la selección</td></tr>
         <tr><td>${k('F3')} · ${k('F7')} · ${k('F8')} · ${k('F9')}</td><td>Referencias · Rejilla · Orto · Forzar a rejilla</td></tr>
         <tr><td>${k('Tab')} · ${k('Ctrl', 'E')}</td><td>Cara isométrica del panel (superior → derecha → izquierda)</td></tr>
+        <tr><td>${k('Alt', 'AvPág')} · ${k('Alt', 'RePág')}</td><td>Hoja siguiente / anterior del plano</td></tr>
         <tr><td>Doble clic central</td><td>Encuadrar todo el plano</td></tr>
         <tr><td>Flechas · ${k('Mayús')}+flechas</td><td>Desplazar la selección un paso de rejilla · ×10</td></tr>
         <tr><td>${k('Ctrl', 'C')} · ${k('Ctrl', 'X')} · ${k('Ctrl', 'V')} · ${k('Ctrl', 'D')}</td><td>Copiar · Cortar · Pegar · Duplicar (en el plano)</td></tr>

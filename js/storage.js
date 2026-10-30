@@ -208,6 +208,8 @@ export function importProjectData(data) {
     camera: data.camera ?? base.camera,
     settings: { ...base.settings, ...(data.settings || {}) },
     objects: data.objects,
+    ...(data.drawing ? { drawing: data.drawing } : {}),
+    ...(Array.isArray(data.sheets) ? { sheets: data.sheets, sheet: data.sheet } : {}),
     created: Date.now(),
   };
   saveProject(p);

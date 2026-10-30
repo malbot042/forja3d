@@ -90,14 +90,16 @@ export function makePdf({ jpeg, width, height, orientation = 'auto', title = '',
 }
 
 /**
- * PDF vectorial de una página (para imprimir la hoja del plano a escala real).
+ * PDF vectorial de una o varias páginas (para imprimir las hojas del plano a escala real).
  * @param {object} o
- * @param {number} o.width   ancho de la página en puntos
- * @param {number} o.height  alto de la página en puntos
- * @param {string} o.content flujo de contenido PDF (operadores de trazado; /F1 = Helvetica)
+ * @param {number} [o.width]   ancho de la página en puntos (una sola página)
+ * @param {number} [o.height]  alto de la página en puntos
+ * @param {string} [o.content] flujo de contenido PDF (operadores de trazado; /F1 = Helvetica)
+ * @param {{width:number,height:number,content:string}[]} [o.pages] varias páginas, cada una con su tamaño
  * @param {string} [o.title]
  */
-export function makeVectorPdf({ width, height, content, title = '' }) {
+export function makeVectorPdf({ width, height, content, pages, title = '' }) {
+  pages = pages?.length ? pages : [{ width, height, content }];
   const chunks = [];
   const offsets = [];
   let pos = 0;
@@ -108,19 +110,23 @@ export function makeVectorPdf({ width, height, content, title = '' }) {
     if (stream) { push(enc('stream\n')); push(stream); push(enc('\nendstream\n')); }
     push(enc('endobj\n'));
   };
+  // 1 catálogo · 2 páginas · 3 fuente · 4 info · 5.. página y contenido por parejas
+  const n = pages.length, pageObj = i => 5 + 2 * i;
   push(enc('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'));
   obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
-  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width.toFixed(2)} ${height.toFixed(2)}] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>`);
-  const cbytes = enc(content);
-  obj(4, `<< /Length ${cbytes.length} >>`, cbytes);
-  obj(5, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
-  offsets[6] = pos;
-  push(enc(`6 0 obj\n<< /Title (${pdfText(title)}) /Producer (Forja 3D) >>\nendobj\n`));
+  obj(2, `<< /Type /Pages /Kids [${pages.map((_, i) => `${pageObj(i)} 0 R`).join(' ')}] /Count ${n} >>`);
+  obj(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  obj(4, `<< /Title (${pdfText(title)}) /Producer (Forja 3D) >>`);
+  pages.forEach((pg, i) => {
+    obj(pageObj(i), `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pg.width.toFixed(2)} ${pg.height.toFixed(2)}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${pageObj(i) + 1} 0 R >>`);
+    const cbytes = enc(pg.content);
+    obj(pageObj(i) + 1, `<< /Length ${cbytes.length} >>`, cbytes);
+  });
+  const total = 5 + 2 * n;
   const xref = pos;
-  let x = 'xref\n0 7\n0000000000 65535 f \n';
-  for (let i = 1; i <= 6; i++) x += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
-  x += `trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  let x = `xref\n0 ${total}\n0000000000 65535 f \n`;
+  for (let i = 1; i < total; i++) x += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  x += `trailer\n<< /Size ${total} /Root 1 0 R /Info 4 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   push(enc(x));
   const out = new Uint8Array(pos);
   let o = 0;
