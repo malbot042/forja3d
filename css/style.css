@@ -840,3 +840,27 @@ kbd {
 .sheet-menu button:hover:not(:disabled), .sheet-menu button:focus-visible { background: var(--sel); outline: none; }
 .sheet-menu button:disabled { color: var(--muted); opacity: .55; cursor: default; }
 .sheet-menu button.danger { color: var(--danger-text); }
+
+/* grupos plegables de Propiedades */
+.prop-section.fold { margin: 0; border-top: 1px solid var(--line); }
+.prop-section.fold:first-child { border-top: 0; }
+.prop-section.fold > summary {
+  list-style: none; display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+  padding: 9px 0 7px; margin: 0 -4px; padding-inline: 4px; border-radius: 5px;
+}
+.prop-section.fold > summary::-webkit-details-marker { display: none; }
+.prop-section.fold > summary::before {
+  content: ''; flex: none; width: 6px; height: 6px; margin: 0 3px 0 1px;
+  border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg); transition: transform .12s;
+}
+.prop-section.fold[open] > summary::before { transform: rotate(45deg) translate(-1px, -1px); }
+.prop-section.fold > summary:hover h3, .prop-section.fold > summary:hover::before { color: var(--text); border-color: var(--text); }
+.prop-section.fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.prop-section.fold > summary h3 { margin: 0; flex: none; }
+.prop-section.fold > summary .fold-note { margin-left: auto; min-width: 0; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .8; }
+.prop-section.fold[open] { padding-bottom: 10px; }
+.prop-section.fold[open] > summary { margin-bottom: 2px; }
+.prop-section.fold .fold-sub { margin: 8px 0 4px; font-size: 11px; color: var(--muted); font-weight: 600; }
+.prop-section.fold .block-fields { margin-top: 0; padding-top: 0; border-top: 0; }
+.props > .prop-section:not(.fold) + .prop-section.fold { border-top: 1px solid var(--line); }

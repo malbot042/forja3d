@@ -1305,16 +1305,35 @@ function renderLayers() {
 
 const DEGR = 180 / Math.PI;
 
+// ---------------------------------------------------------------- secciones plegables de Propiedades
+// Cada grupo recuerda si lo dejaste abierto o cerrado (por su clave), en todos los proyectos.
+const PROPS_FOLD_KEY = 'forja3d:props-fold';
+let propsFold = {};
+try { propsFold = JSON.parse(localStorage.getItem(PROPS_FOLD_KEY)) || {}; } catch { /* sin almacenamiento */ }
+
+/** Grupo de propiedades con título que se pliega y despliega. */
+function sec(key, title, children, { open = true, note = '' } = {}) {
+  const d = h('details', { class: 'prop-section fold', 'data-fold': key });
+  d.open = propsFold[key] ?? open;
+  d.append(h('summary', {}, h('h3', {}, title), note ? h('span', { class: 'fold-note' }, note) : null));
+  for (const c of [children].flat(Infinity)) if (c) d.append(c);
+  d.addEventListener('toggle', () => {
+    propsFold[key] = d.open;
+    try { localStorage.setItem(PROPS_FOLD_KEY, JSON.stringify(propsFold)); } catch { /* nada */ }
+  });
+  return d;
+}
+const kbdList = items => { const ul = h('ul', { class: 'kbd-list' }); ul.innerHTML = items.map(t => `<li>${t}</li>`).join(''); return ul; };
+
 /** Propiedades en modo 2D: ajustes del plano, una entidad o varias. */
 /** Sección «Hoja»: formato A5-A0, orientación, escala, recuadro y PDF a escala. */
 function paperSection(cad, D, { select, btn, info }) {
   const P = D.paper, S = sheetOf(D);
-  const sec = h('div', { class: 'prop-section' }, h('h3', {}, 'Hoja (papel)'),
-    row('Formato', select([['', 'Sin hoja'], ...Object.entries(PAPERS).map(([k, [w, hh]]) => [k, `${k} · ${w} × ${hh} mm`])], P?.size || '',
-      v => cad.setPaper(v ? { size: v } : null))));
+  const fmt = row('Formato', select([['', 'Sin hoja'], ...Object.entries(PAPERS).map(([k, [w, hh]]) => [k, `${k} · ${w} × ${hh} mm`])], P?.size || '',
+    v => cad.setPaper(v ? { size: v } : null)));
   if (!S) {
-    sec.append(h('p', { class: 'muted small cad-hint' }, 'Elige un formato para ver la hoja con su recuadro y cajetín, dibujar dentro de ella y sacar un PDF a escala real.'));
-    return sec;
+    return [sec('paper', 'Papel e impresión', [fmt,
+      h('p', { class: 'muted small cad-hint' }, 'Elige un formato para ver la hoja con su recuadro y cajetín, dibujar dentro de ella y sacar un PDF a escala real.')], { note: 'sin hoja' })];
   }
   const flags = { frame: P.frame !== false, block: P.block ?? (P.frame !== false) };
   const toggle = (key, label) => {
@@ -1325,7 +1344,7 @@ function paperSection(cad, D, { select, btn, info }) {
   };
   const u = D.units === 'u' ? 'unidades' : D.units;
   const F = v => fmtNum(v, D);
-  sec.append(
+  const paper = sec('paper', 'Papel e impresión', [fmt,
     row('Orientación', select([['h', 'Horizontal'], ['v', 'Vertical']], S.landscape ? 'h' : 'v', v => cad.setPaper({ landscape: v === 'h' }))),
     row('Escala', select(PAPER_SCALES.map(k => [k, k === '1:1' ? '1:1 (tamaño real)' : k]), S.scale, v => cad.setPaper({ scale: v }))),
     h('div', { class: 'paper-toggles' }, toggle('frame', 'Recuadro'), toggle('block', 'Cajetín')),
@@ -1333,9 +1352,8 @@ function paperSection(cad, D, { select, btn, info }) {
     h('div', { class: 'btn-row' },
       btn('Ver la hoja', () => cad.zoomExtents()),
       btn('Centrar en el dibujo', () => cad.centerPaper()),
-      btn('PDF a escala', () => exportCad('pdf'), 'btn-primary')));
-  if (flags.block) sec.append(blockFields(cad, D));
-  return sec;
+      btn('PDF a escala', () => exportCad('pdf'), 'btn-primary'))], { note: `${S.size} · ${S.scale}` });
+  return flags.block ? [paper, blockFields(cad, D)] : [paper];
 }
 
 /** Campos del cajetín: título, descripción (texto libre), autor, empresa, nº de plano y fecha. */
@@ -1347,7 +1365,7 @@ function blockFields(cad, D) {
     cad.setPaper({ fields });
   };
   const ph = { title: project?.name || 'Sin título', description: 'Texto libre: qué es la pieza, material, acabado, notas… (Intro = nueva línea)' };
-  const box = h('div', { class: 'block-fields' }, h('h4', {}, 'Cajetín'));
+  const box = h('div', { class: 'block-fields' });
   for (const [key, label] of BLOCK_FIELDS) {
     if (key === 'date') {
       // selector de fecha; vacío = la fecha de hoy (se actualiza sola)
@@ -1367,7 +1385,7 @@ function blockFields(cad, D) {
     box.append(multi ? h('label', { class: 'field block-desc' }, h('span', {}, label), inp) : row(label, inp));
   }
   box.append(h('p', { class: 'muted small cad-hint' }, 'La escala se rellena sola. Si dejas el título vacío se usa el nombre del proyecto; los demás campos vacíos se quedan en blanco. Doble clic en el cajetín del plano para editarlo.'));
-  return box;
+  return sec('block', 'Cajetín', box, { note: F.title || '' });
 }
 
 function renderCadProps(box) {
@@ -1422,71 +1440,66 @@ function renderCadProps(box) {
       c.onchange = () => { cad.osnap[k] = c.checked; cad.savePrefs(); };
       return h('label', { class: 'toggle' }, c, h('span', {}, l));
     });
+    const sheetName = (() => {
+      const inp = h('input', { type: 'text', class: 'text-input', maxlength: 60, 'aria-label': 'Nombre de la hoja' });
+      inp.value = activeSheet()?.name || '';
+      inp.onchange = () => { const v = inp.value.trim(); if (!v) { inp.value = activeSheet().name; return; } activeSheet().name = v.slice(0, 60); renderSheetTabs(); scheduleSave(); };
+      inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
+      return row('Nombre', inp);
+    })();
+    const snapStep = (() => {
+      const inp = h('input', { type: 'number', class: 'text-input', min: 0, step: 'any', placeholder: 'Automático (según el zoom)' });
+      inp.value = D.snapStep || '';
+      inp.onchange = () => cad.setSnapStep(parseFloat(String(inp.value).replace(',', '.')) || 0);
+      inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
+      return row('Paso forzado', inp);
+    })();
     box.replaceChildren(...[
       sketchSession ? sketchSection() : null,
-      h('div', { class: 'prop-section' },
-        h('h3', {}, sketchSession ? 'Ajustes del croquis' : 'Plano 2D'),
-        sketchSession ? null : (() => {
-          const inp = h('input', { type: 'text', class: 'text-input', maxlength: 60, 'aria-label': 'Nombre de la hoja' });
-          inp.value = activeSheet()?.name || '';
-          inp.onchange = () => { const v = inp.value.trim(); if (!v) { inp.value = activeSheet().name; return; } activeSheet().name = v.slice(0, 60); renderSheetTabs(); scheduleSave(); };
-          inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
-          return row('Hoja', inp);
-        })(),
-        info([['Objetos', String(D.entities.length)], ['Capa actual', D.current], ...(sheets.length > 1 && !sketchSession ? [['Hojas', `${sheets.indexOf(activeSheet()) + 1} de ${sheets.length}`]] : [])]),
+      sketchSession
+        ? h('div', { class: 'prop-section' }, h('h3', {}, 'Croquis'), info([['Objetos', String(D.entities.length)], ['Capa actual', D.current]]))
+        : sec('sheet', 'Hoja', [sheetName,
+          info([['Objetos', String(D.entities.length)], ['Capa actual', D.current], ...(sheets.length > 1 ? [['Posición', `${sheets.indexOf(activeSheet()) + 1} de ${sheets.length}`]] : [])])]),
+      sec('units', 'Unidades y números', [
         row('Unidades', select(Object.entries(UNITS).map(([k, u]) => [k, u.label]), D.units, v => cad.setSetting('units', v))),
         row('Decimales', select([0, 1, 2, 3, 4].map(n => [n, n]), D.precision, v => cad.setSetting('precision', +v))),
-        row('Separador', select([[',', 'Coma (12,50)'], ['.', 'Punto (12.50)']], D.decimal, v => cad.setSetting('decimal', v))),
+        row('Separador', select([[',', 'Coma (12,50)'], ['.', 'Punto (12.50)']], D.decimal, v => cad.setSetting('decimal', v)))],
+      { note: `${D.units} · ${fmtNum(12.5, D)}` }),
+      sec('dimstyle', 'Texto y cotas', [
         num('Altura texto', D.textH, v => { if (v > 0) cad.setSetting('textH', v); }, { min: 0.01 }),
-        num('Flechas', D.arrow, v => { if (v > 0) cad.setSetting('arrow', v); }, { min: 0.01, step: 0.25 }),
-        ...Object.entries(DIM_OPTS).map(([k, o]) => row(`Cotas · ${o.label.toLowerCase()}`, select(o.opts, D[dimDefaultKey(k)] || o.def, v => cad.setSetting(dimDefaultKey(k), v === o.def ? undefined : v)))),
-        (() => {
-          const inp = h('input', { type: 'number', class: 'text-input', min: 0, step: 'any', placeholder: 'Automático (según el zoom)' });
-          inp.value = D.snapStep || '';
-          inp.onchange = () => cad.setSnapStep(parseFloat(String(inp.value).replace(',', '.')) || 0);
-          inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); };
-          return row('Paso forzado', inp);
-        })()),
-      sketchSession ? null : paperSection(cad, D, { select, btn, info }),
-      h('div', { class: 'prop-section' },
-        h('h3', {}, 'Referencias a objetos'),
-        h('div', { class: 'cap-checks-list' }, osnaps)),
-      h('div', { class: 'prop-section' },
-        h('h3', {}, 'Acciones'),
+        num('Tam. flecha', D.arrow, v => { if (v > 0) cad.setSetting('arrow', v); }, { min: 0.01, step: 0.25 }),
+        h('p', { class: 'muted small cad-hint' }, 'Colocación de las cotas nuevas y de las que están «como el plano»:'),
+        ...Object.entries(DIM_OPTS).map(([k, o]) => row(o.label, select(o.opts, D[dimDefaultKey(k)] || o.def, v => cad.setSetting(dimDefaultKey(k), v === o.def ? undefined : v))))]),
+      sec('aids', 'Ayudas al dibujo', [snapStep,
+        h('p', { class: 'muted small cad-hint' }, 'Referencias a objetos (F3 las activa o desactiva todas):'),
+        h('div', { class: 'cap-checks-list' }, osnaps)]),
+      ...(sketchSession ? [] : paperSection(cad, D, { select, btn, info })),
+      sec('actions2d', 'Acciones', [
         h('div', { class: 'btn-row' },
           btn('Encuadrar todo', () => cad.zoomExtents()),
           btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d')),
         h('div', { class: 'btn-row', style: 'margin-top:4px' },
           btn('Exportar DXF', () => exportCad('dxf')),
           btn('Exportar SVG', () => exportCad('svg')),
-          btn('Importar DXF', () => $('#model-input').click()))),
-      h('div', { class: 'prop-section' },
-        h('h3', {}, 'Cómo dibujar'),
-        (() => {
-          const ul = h('ul', { class: 'kbd-list' });
-          ul.innerHTML = [
-            '<b>L</b> línea · <b>PL</b> polilínea · <b>REC</b> rectángulo · <b>C</b> círculo · <b>A</b> arco · <b>T</b> texto',
-            '<b>DLI</b> cota · <b>DAL</b> alineada · <b>DRA</b>/<b>DDI</b> radio/diámetro · <b>DAN</b> ángulo · <b>DI</b> medir',
-            '<b>M</b> desplazar · <b>CO</b> copiar · <b>RO</b> girar · <b>SC</b> escala · <b>MI</b> simetría · <b>O</b> desfase · <b>TR</b> recortar',
-            'Coordenadas: <b>x,y</b> · <b>@dx,dy</b> · <b>dist&lt;ángulo</b> · o una distancia',
-            '<b>Intro</b>, <b>Espacio</b> o clic derecho: terminar / repetir · <b>Esc</b>: cancelar',
-            'Rueda: zoom · botón central o derecho: desplazar · doble clic central: encuadrar',
-          ].map(t => `<li>${t}</li>`).join('');
-          return ul;
-        })()),
-      h('div', { class: 'prop-section' },
-        h('h3', {}, 'Seleccionar y editar'),
-        (() => {
-          const ul = h('ul', { class: 'kbd-list' });
-          ul.innerHTML = [
-            '<b>Clic</b> en un objeto: seleccionarlo · <b>Mayús+clic</b>: añadir o quitar · <b>Esc</b>: deseleccionar',
-            'Arrastrar en vacío <b>→</b> (azul): solo lo que queda dentro · <b>←</b> (verde): todo lo que toca',
-            'Seleccionado: arrastra un <b>pinzamiento ■</b> para estirar, cambiar el radio o mover un vértice; arrastra la línea para mover el objeto',
-            'Valores exactos: edítalos aquí, en Propiedades (doble clic en el objeto)',
-            '<b>Flechas</b>: desplazar (Mayús ×10) · <b>Ctrl+C / Ctrl+V</b>: copiar y pegar · <b>Ctrl+D</b>: duplicar · <b>Supr</b>: borrar',
-          ].map(t => `<li>${t}</li>`).join('');
-          return ul;
-        })()),
+          btn('Importar DXF', () => $('#model-input').click()))]),
+      sec('help2d', 'Ayuda rápida', [
+        h('h4', { class: 'fold-sub' }, 'Dibujar'),
+        kbdList([
+          '<b>L</b> línea · <b>PL</b> polilínea · <b>REC</b> rectángulo · <b>C</b> círculo · <b>A</b> arco · <b>T</b> texto',
+          '<b>DLI</b> cota · <b>DAL</b> alineada · <b>DRA</b>/<b>DDI</b> radio/diámetro · <b>DAN</b> ángulo · <b>DI</b> medir',
+          '<b>M</b> desplazar · <b>CO</b> copiar · <b>RO</b> girar · <b>SC</b> escala · <b>MI</b> simetría · <b>O</b> desfase · <b>TR</b> recortar · <b>F</b> empalme · <b>CHA</b> chaflán',
+          'Coordenadas: <b>x,y</b> · <b>@dx,dy</b> · <b>dist&lt;ángulo</b> · o una distancia',
+          '<b>Intro</b>, <b>Espacio</b> o clic derecho: terminar / repetir · <b>Esc</b>: cancelar',
+          'Rueda: zoom · botón central o derecho: desplazar · doble clic central: encuadrar',
+        ]),
+        h('h4', { class: 'fold-sub' }, 'Seleccionar y editar'),
+        kbdList([
+          '<b>Clic</b> en un objeto: seleccionarlo · <b>Mayús+clic</b>: añadir o quitar · <b>Esc</b>: deseleccionar',
+          'Arrastrar en vacío <b>→</b> (azul): solo lo que queda dentro · <b>←</b> (verde): todo lo que toca',
+          'Seleccionado: arrastra un <b>pinzamiento ■</b> para estirar, cambiar el radio o mover un vértice; arrastra la línea para mover el objeto',
+          'Valores exactos: edítalos aquí, en Propiedades (doble clic en el objeto)',
+          '<b>Flechas</b>: desplazar (Mayús ×10) · <b>Ctrl+C / Ctrl+V</b>: copiar y pegar · <b>Ctrl+D</b>: duplicar · <b>Supr</b>: borrar',
+        ])], { open: false }),
     ].filter(Boolean));
     return;
   }
@@ -1499,11 +1512,13 @@ function renderCadProps(box) {
       byType[k] = (byType[k] || 0) + 1;
       length += entityInfo(e, D).length || 0;
     }
-    box.replaceChildren(
+    const dims = ents.filter(e => e.type === 'dim');
+    box.replaceChildren(...[
       h('div', { class: 'prop-section' },
         h('h3', {}, `${ents.length} objetos seleccionados`),
         h('p', { class: 'muted small cad-hint' }, 'Arrastra cualquiera de ellos para mover el grupo · flechas: desplazar · Ctrl+D: duplicar · Supr: borrar · Esc: deseleccionar'),
-        info([...Object.entries(byType).map(([k, n]) => [k, String(n)]), length ? ['Longitud total', `${F(length)}${U}`] : null]),
+        info([...Object.entries(byType).map(([k, n]) => [k, String(n)]), length ? ['Longitud total', `${F(length)}${U}`] : null])),
+      sec('look2d', 'Capa y línea', [
         row('Capa', layerSel(ents.every(e => e.layer === ents[0].layer) ? ents[0].layer : '', v => {
           for (const e of ents) e.layer = v;
           cad.commit();
@@ -1511,15 +1526,14 @@ function renderCadProps(box) {
         row('Tipo de línea', ltSel(ents.every(e => (e.lt || '') === (ents[0].lt || '')) ? ents[0].lt || '' : '-', null, v => {
           for (const e of ents) if (v) e.lt = v; else delete e.lt;
           cad.commit();
-        })),
-        ...(ents.some(e => e.type === 'dim') ? [h('h3', { style: 'margin-top:10px' }, 'Cotas seleccionadas'), ...dimStyleRows(ents.filter(e => e.type === 'dim'))] : [])),
-      h('div', { class: 'prop-section' },
-        h('h3', {}, 'Acciones'),
+        }))]),
+      dims.length ? sec('dimplace', `Colocación de las cotas (${dims.length})`, dimStyleRows(dims)) : null,
+      sec('actions2d-sel', 'Acciones', [
         h('div', { class: 'btn-row' },
           btn('Desplazar', () => cad.runOp('move')), btn('Copiar', () => cad.runOp('copy')), btn('Girar', () => cad.runOp('rotate'))),
         h('div', { class: 'btn-row', style: 'margin-top:4px' },
-          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d'), btn('Borrar', () => cad.eraseSel(), 'danger'))),
-    );
+          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d'), btn('Borrar', () => cad.eraseSel(), 'danger'))]),
+    ].filter(Boolean));
     return;
   }
 
@@ -1527,6 +1541,8 @@ function renderCadProps(box) {
   const upd = (patch, commit = true) => cad.updateEntity(id, patch, commit);
   const inf = entityInfo(e, D);
   const geo = [];
+  const extra = [];   // grupos propios de cada tipo, después de la geometría
+  let geoTitle = 'Geometría';
   switch (e.type) {
     case 'line': {
       const setLen = v => upd(x => { const dx = x.b[0] - x.a[0], dy = x.b[1] - x.a[1], L = Math.hypot(dx, dy) || 1; x.b = [x.a[0] + dx / L * v, x.a[1] + dy / L * v]; return x; });
@@ -1592,9 +1608,11 @@ function renderCadProps(box) {
       const t = h('input', { class: 'text-input cad-text', value: e.text, spellcheck: 'false' });
       t.onchange = () => { if (t.value.trim()) upd({ text: t.value }); };
       t.onkeydown = ev => { if (ev.key === 'Enter') t.blur(); };
-      geo.push(row('Texto', t), xy('Posición', e.p, (q, c) => upd({ p: q }, c)),
+      geoTitle = 'Posición y tamaño';
+      geo.push(xy('Posición', e.p, (q, c) => upd({ p: q }, c)),
         num('Altura', e.h, v => { if (v > 0) upd({ h: v }); }, { min: 0.01 }),
         num('Rotación °', (e.rot || 0) * DEGR, v => upd({ rot: v / DEGR }), { step: 1 }));
+      extra.unshift(['text-content', 'Contenido', [row('Texto', t)]]);
       break;
     }
     case 'dim': {
@@ -1602,33 +1620,38 @@ function renderCadProps(box) {
       t.onchange = () => upd({ text: t.value.trim() || undefined });
       t.onkeydown = ev => { if (ev.key === 'Enter') t.blur(); };
       const val = e.kind === 'angle' ? `${fmtNum(inf.value, D, 2)}°` : `${F(inf.value)}${U}`;
-      geo.push(info([['Medida', val]]), row('Texto', t),
-        h('p', { class: 'note' }, 'Deja el texto vacío para mostrar la medida. Usa <> para añadir algo a la medida, p. ej. «2x <>» o «<> h7».'));
-      if (e.a) geo.push(xy('Origen 1', e.a, (q, c) => upd({ a: q }, c)), xy('Origen 2', e.b, (q, c) => upd({ b: q }, c)));
-      geo.push(xy('Posición', e.p, (q, c) => upd({ p: q }, c)));
-      if (e.a) geo.push(row('Tipo', select([['horizontal', 'Horizontal'], ['vertical', 'Vertical'], ['aligned', 'Alineada']], e.kind, v => upd({ kind: v }))));
-      geo.push(...dimStyleRows([e]));
+      geoTitle = 'Medida y puntos';
+      geo.push(info([['Medida', val]]));
+      if (e.a) geo.push(row('Tipo', select([['horizontal', 'Horizontal'], ['vertical', 'Vertical'], ['aligned', 'Alineada']], e.kind, v => upd({ kind: v }))),
+        xy('Origen 1', e.a, (q, c) => upd({ a: q }, c)), xy('Origen 2', e.b, (q, c) => upd({ b: q }, c)));
+      geo.push(xy('Línea de cota', e.p, (q, c) => upd({ p: q }, c)));
+      extra.push(['dimtext', 'Texto de la cota', [row('Texto', t),
+        h('p', { class: 'note' }, 'Vacío = la medida. Usa <> para añadir algo a la medida, p. ej. «2x <>» o «<> h7».')]],
+      ['dimplace', 'Colocación', dimStyleRows([e])]);
       break;
     }
   }
+  const geoFirst = extra.length && extra[0][0] === 'text-content' ? [extra.shift()] : [];
   box.replaceChildren(
     h('div', { class: 'prop-section' },
       h('h3', {}, e.type === 'dim' ? DIM_LABELS[e.kind] : isRect(e) ? 'Rectángulo' : isIsoCircle(e) ? 'Círculo isométrico' : TYPE_LABELS[e.type]),
-      h('p', { class: 'muted small cad-hint' }, 'Escribe aquí valores exactos (Intro aplica) o, en el plano, arrastra los pinzamientos ■ azules. Esc: deseleccionar.'),
+      h('p', { class: 'muted small cad-hint' }, 'Escribe aquí valores exactos (Intro aplica) o, en el plano, arrastra los pinzamientos ■ azules. Esc: deseleccionar.')),
+    ...geoFirst.map(([k, t, c]) => sec(k, t, c)),
+    sec('look2d', ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type) ? 'Capa y línea' : 'Capa', [
       row('Capa', layerSel(e.layer, v => upd({ layer: v }))),
       ['line', 'pline', 'circle', 'arc', 'ellipse'].includes(e.type)
         ? row('Tipo de línea', ltSel(e.lt || '', cad.layer(e.layer)?.lt, v => cad.updateEntity(id, n => { if (v) n.lt = v; else delete n.lt; return n; })))
-        : null),
-    h('div', { class: 'prop-section' }, h('h3', {}, 'Geometría'), geo),
-    h('div', { class: 'prop-section' },
-      h('h3', {}, 'Acciones'),
+        : null]),
+    sec(`geo2d-${e.type}`, geoTitle, geo),
+    ...extra.map(([k, t, c]) => sec(k, t, c)),
+    sec('actions2d-sel', 'Acciones', [
       h('div', { class: 'btn-row' },
         btn('Desplazar', () => cad.runOp('move')), btn('Copiar', () => cad.runOp('copy')),
         ['line', 'pline', 'circle', 'arc'].includes(e.type) ? btn('Desfase', () => cad.setTool('offset')) : null),
       h('div', { class: 'btn-row', style: 'margin-top:4px' },
         ['pline', 'circle'].includes(e.type) && (e.type === 'circle' || e.closed) ? btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d') : null,
         e.type === 'pline' ? btn('Descomponer', () => cad.explodeSel()) : null,
-        btn('Borrar', () => cad.eraseSel(), 'danger'))),
+        btn('Borrar', () => cad.eraseSel(), 'danger'))]),
   );
 }
 
@@ -2067,7 +2090,7 @@ function paletteActions() {
   }
   add({ id: 'cad-step', ws: '2d', label: 'Paso del forzado (tamaño del snap)', group: 'Ayudas al dibujo 2D', words: 'snap rejilla paso', run: () => { $('#snap-step').focus(); $('#snap-step').showPicker?.(); } });
   add({ id: 'cad-layer', ws: '2d', label: 'Nueva capa', group: 'Capas y hoja 2D', run: click('#btn-layer-add') });
-  add({ id: 'cad-paper', ws: '2d', label: 'Elegir tamaño de hoja (A5 … A0)', group: 'Capas y hoja 2D', words: 'papel formato a4 a3 recuadro cajetin', run: () => { cad.setSel([]); setTimeout(() => { const s = $('#props .prop-row:has(label) select'); const f = [...document.querySelectorAll('#props .prop-row')].find(r => r.textContent.startsWith('Formato'))?.querySelector('select'); (f || s)?.focus(); f?.scrollIntoView({ block: 'center' }); }, 60); } });
+  add({ id: 'cad-paper', ws: '2d', label: 'Elegir tamaño de hoja (A5 … A0)', group: 'Capas y hoja 2D', words: 'papel formato a4 a3 recuadro cajetin', run: () => { cad.setSel([]); setTimeout(() => { const d = $('#props details[data-fold="paper"]'); if (d) d.open = true; const s = $('#props .prop-row:has(label) select'); const f = [...document.querySelectorAll('#props .prop-row')].find(r => r.textContent.startsWith('Formato'))?.querySelector('select'); (f || s)?.focus(); f?.scrollIntoView({ block: 'center' }); }, 60); } });
   add({ id: 'sh-new', ws: '2d', label: 'Nueva hoja', group: 'Hojas del plano', words: 'hoja pagina plano presentacion añadir', run: () => addSheet() });
   add({ id: 'sh-dup', ws: '2d', label: 'Duplicar la hoja', group: 'Hojas del plano', words: 'copiar hoja', run: () => addSheet(true) });
   add({ id: 'sh-ren', ws: '2d', label: 'Renombrar la hoja', group: 'Hojas del plano', words: 'nombre hoja', run: () => renameSheet(activeSheet().id) });
@@ -2375,8 +2398,10 @@ function renderProps() {
   name.addEventListener('change', () => upd({ name: name.value.trim() || typeLabel(sel) }, true));
   name.addEventListener('keydown', e => { if (e.key === 'Enter') name.blur(); });
 
-  // geometría
+  // geometría (más grupos propios: perfil, suavidad de la malla, convertir…)
   let geo;
+  let geoTitle = 'Medidas';
+  const groups = [];   // [clave, título, contenido, opciones]
   if (sel.type === 'sculpt') {
     const s = sel.sculpt || {};
     const g = editor.objects.get(id)?.geometry;
@@ -2418,7 +2443,7 @@ function renderProps() {
         h('button', { class: 'btn sm', onclick: () => editor.explode([id]) }, 'Separar piezas')),
     ];
   } else {
-    geo = def.params.map(p => {
+    const field = p => {
       if (p.bool) {
         const chk = h('input', { type: 'checkbox' });
         chk.checked = !!(sel.params[p.key] ?? p.def);
@@ -2430,25 +2455,34 @@ function renderProps() {
         onInput: v => upd({ params: { [p.key]: v } }, false),
         onCommit: v => upd({ params: { [p.key]: v } }, true),
       }));
-    });
+    };
+    // medidas (y opciones de forma) primero; segmentos y detalle, que solo cambian la suavidad, aparte
+    const smooth = p => p.int && !p.bool && p.key !== 'sides';
+    geo = def.params.filter(p => !smooth(p)).map(field);
+    const seg = def.params.filter(smooth);
     if (def.usesShape) {
-      const n = sel.shape?.points?.length || 0;
-      geo.unshift(
-        h('p', { class: 'note' }, `${def.usesShape === 'path' ? 'Trazado' : 'Perfil'} de ${n} puntos${sel.shape?.smooth ? ', curva suave' : ''}.`),
-        h('div', { class: 'btn-row', style: 'margin-bottom:8px' },
-          h('button', { class: 'btn sm', onclick: () => editProfile(id) }, def.usesShape === 'path' ? 'Editar trazado…' : 'Editar perfil…')));
-    }
-    if (sel.type === 'extrude' && sel.shape?.holes?.length) {
-      geo.push(h('p', { class: 'note' }, `Con ${sel.shape.holes.length} hueco${sel.shape.holes.length > 1 ? 's' : ''} interior${sel.shape.holes.length > 1 ? 'es' : ''}.`));
-    }
-    if (sel.type === 'line2d' || sel.type === 'circle2d') {
-      geo.push(
-        h('p', { class: 'note', style: 'margin-top:10px' }, 'Convertir en 3D:'),
+      const sh = sel.shape || {};
+      const n = sh.shapes?.length ? sh.shapes.reduce((a, c) => a + (c.points?.length || 0), 0) : sh.points?.length || 0;
+      const holes = sh.shapes?.length ? sh.shapes.reduce((a, c) => a + (c.holes?.length || 0), 0) : sh.holes?.length || 0;
+      const isPath = def.usesShape === 'path';
+      groups.push(['shape', isPath ? 'Trazado' : 'Perfil', [
+        info3([[isPath ? 'Puntos' : 'Puntos del perfil', String(n)],
+          sh.shapes?.length > 1 ? ['Contornos', String(sh.shapes.length)] : null,
+          holes ? ['Huecos', String(holes)] : null,
+          sh.plane && sh.plane !== 'top' ? ['Plano', { front: 'Alzado', side: 'Perfil' }[sh.plane]] : null,
+          sh.smooth ? ['Curva', 'suave'] : null]),
         h('div', { class: 'btn-row' },
-          h('button', { class: 'btn sm', onclick: () => convert2DDialog('extrude') }, 'Extruir…'),
-          h('button', { class: 'btn sm', onclick: () => convert2DDialog('lathe') }, 'Revolución…')));
+          h('button', { class: 'btn sm btn-primary', onclick: () => editProfile(id) }, isPath ? 'Editar trazado…' : 'Editar perfil…'))]]);
+    }
+    if (seg.length) groups.push(['smooth', 'Suavidad de la malla', seg.map(field), { open: false, note: seg.map(p => sel.params[p.key] ?? p.def).join(' · ') }]);
+    if (sel.type === 'line2d' || sel.type === 'circle2d') {
+      groups.push(['to3d', 'Convertir en 3D', [h('div', { class: 'btn-row' },
+        h('button', { class: 'btn sm', onclick: () => convert2DDialog('extrude') }, 'Extruir…'),
+        h('button', { class: 'btn sm', onclick: () => convert2DDialog('lathe') }, 'Revolución…'))]]);
     }
   }
+  if (sel.type === 'boolean') geoTitle = 'Operación booleana';
+  else if (sel.type === 'sculpt' || sel.type === 'mesh') geoTitle = 'Malla';
 
   // material
   const m = sel.material;
@@ -2465,28 +2499,35 @@ function renderProps() {
   flat.checked = !!m.flatShading;
   flat.onchange = () => upd({ material: { flatShading: flat.checked } }, true);
 
-  box.replaceChildren(
+  const shapeGroups = groups.filter(g => g[0] === 'shape');
+  box.replaceChildren(...[
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Objeto'),
       row('Nombre', name),
       row('Tipo', h('span', {}, typeLabel(sel)))),
-    h('div', { class: 'prop-section' },
-      h('h3', {}, 'Transformación'),
+    ...shapeGroups.map(([k, t, c, o]) => sec(k, t, c, o)),
+    geo.length ? sec(`geo-${sel.type === 'boolean' ? 'bool' : 'params'}`, geoTitle, geo) : null,
+    ...groups.filter(g => g[0] !== 'shape').map(([k, t, c, o]) => sec(k, t, c, o)),
+    sec('transform', 'Posición, giro y escala', [
       vec3Row('Posición', 'position', sel.position, 0.05),
       vec3Row('Rotación °', 'rotation', sel.rotation, 1),
       vec3Row('Escala', 'scale', sel.scale, 0.05),
       row('Reflejar', mirrorButtons()),
-      row('', h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', onclick: () => editor.dropToFloor() }, 'Apoyar en el suelo')))),
-    h('div', { class: 'prop-section' }, h('h3', {}, sel.type === 'boolean' ? 'Operación booleana' : 'Geometría'), geo),
-    h('div', { class: 'prop-section' },
-      h('h3', {}, 'Material'),
+      row('', h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', onclick: () => editor.dropToFloor() }, 'Apoyar en el suelo')))]),
+    sec('color', 'Color', [
       row('Color', h('div', { class: 'color-input' }, color, code)),
-      h('div', { class: 'prop-row' }, h('span'), palette),
+      h('div', { class: 'prop-row' }, h('span'), palette)]),
+    sec('finish', 'Acabado', [
       rangeRow('Metalizado', m.metalness, v => upd({ material: { metalness: v } }, false), v => upd({ material: { metalness: v } }, true)),
       rangeRow('Rugosidad', m.roughness, v => upd({ material: { roughness: v } }, false), v => upd({ material: { roughness: v } }, true)),
       rangeRow('Opacidad', m.opacity, v => upd({ material: { opacity: v } }, false), v => upd({ material: { opacity: v } }, true)),
-      row('Facetado', h('label', { class: 'toggle' }, flat, h('span', {}, 'Sombreado plano')))),
-  );
+      row('Facetado', h('label', { class: 'toggle' }, flat, h('span', {}, 'Sombreado plano')))], { open: false }),
+  ].filter(Boolean));
+}
+
+/** Pares etiqueta-valor (en el panel 3D). */
+function info3(pairs) {
+  return h('div', { class: 'info-grid' }, pairs.filter(Boolean).flatMap(([k, v]) => [h('span', {}, k), h('span', {}, v)]));
 }
 
 /** Propiedades de una pieza dentro de una operación (edición no destructiva). */
@@ -2553,12 +2594,11 @@ function renderOperandProps(box) {
       row('Tipo', h('span', {}, op.helper ? 'Plano de corte' : typeLabel(op))),
       row('Papel', h('span', {}, roleTitle)),
       h('p', { class: 'note' }, 'Se resalta en azul en el visor. Los cambios recalculan la operación al soltar el gizmo o confirmar el valor.')),
-    h('div', { class: 'prop-section' },
-      h('h3', {}, 'Transformación (dentro de la operación)'),
+    geo.length ? sec('geo-params', 'Medidas', geo) : null,
+    sec('transform', 'Posición, giro y escala (dentro de la operación)', [
       vec3Row('Posición', 'position', op.position, 0.05),
       vec3Row('Rotación °', 'rotation', op.rotation, 1),
-      vec3Row('Escala', 'scale', op.scale, 0.05)),
-    geo.length ? h('div', { class: 'prop-section' }, h('h3', {}, 'Geometría'), geo) : null,
+      vec3Row('Escala', 'scale', op.scale, 0.05)]),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Acciones'),
       h('div', { class: 'btn-row' },
@@ -2591,7 +2631,7 @@ function renderMultiProps(box) {
         op('∪ Unir', 'union', 'A ∪ B'), op('− Restar', 'subtract', 'A − B'), op('∩ Intersecar', 'intersect', 'A ∩ B')),
       hasPlane ? h('div', { class: 'btn-row', style: 'margin-top:4px' }, op('Partir con el plano', 'split', 'Corta el objeto con el plano seleccionado')) : null),
     h('div', { class: 'prop-section' },
-      h('h3', {}, 'Transformación'),
+      h('h3', {}, 'Posición'),
       row('Reflejar', mirrorButtons()),
       row('', h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', onclick: () => editor.dropToFloor() }, 'Apoyar en el suelo')))),
     h('div', { class: 'prop-section' },
