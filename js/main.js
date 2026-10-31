@@ -1094,6 +1094,7 @@ function renderToolbar() {
   }
 }
 
+const EXTRUDE3D_TITLE = 'Extruir a 3D: convierte los contornos cerrados (o la selección) en piezas 3D';
 function renderCadBar() {
   const cad = editor.cad;
   const mk = (key, def, onclick) => {
@@ -1105,7 +1106,7 @@ function renderCadBar() {
   $('#cad-bar').replaceChildren(
     ...Object.entries(CAD_OPS).map(([k, d]) => mk(k, d, () => cad.runOp(k))),
     h('span', { class: 'ops-sep' }),
-    mk('extrude3d', { label: 'Extruir a 3D', title: 'Convierte los contornos cerrados (o la selección) en piezas 3D', icon: '<path d="M4 19h12l4-3.5H8z" class="fill"/><path d="M4 19h12l4-3.5H8zM12 13V4M9 7l3-3 3 3"/>' }, () => extrude2DDialog()));
+    mk('extrude3d', { label: 'Extruir a 3D', title: EXTRUDE3D_TITLE, icon: ICONS.extrude3d }, () => extrude2DDialog()));
 }
 
 function refreshCadTool() {
@@ -1305,6 +1306,44 @@ function renderLayers() {
 
 const DEGR = 180 / Math.PI;
 
+// ---------------------------------------------------------------- botones de acción del panel lateral
+// Mismo aspecto que las barras de órdenes: icono + texto. Los iconos y nombres son los de esas barras
+// (operaciones 3D, órdenes de edición 2D…), para reconocer cada acción esté donde esté.
+const ICONS = {
+  extrude3d: '<path d="M4 19h12l4-3.5H8z" class="fill"/><path d="M4 19h12l4-3.5H8zM12 13V4M9 7l3-3 3 3"/>',
+  frame: '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/><rect x="9" y="9" width="6" height="6" rx="1" class="fill"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+  center: '<rect x="3" y="5" width="18" height="14" rx="1"/><circle cx="12" cy="12" r="2.5" class="fill"/><path d="M12 7v2.5M12 14.5V17M7 12h2.5M14.5 12H17"/>',
+  pdf: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 16.5h4"/>',
+  export: '<path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/>',
+  import: '<path d="M12 4v11M8 11l4 4 4-4"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/>',
+  edit: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',
+  mirror: '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L4 17h5zM15 7l5 10h-5z"/>',
+  extract: '<rect x="3" y="9" width="12" height="12" rx="1"/><path d="M11 13l9-9M14 4h6v6"/>',
+  remove: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  select: '<path d="M5 3l14 8-6 2-2 6z" class="fill"/><path d="M5 3l14 8-6 2-2 6z"/>',
+  layer: '<path d="M12 4l9 5-9 5-9-5z"/><path d="M3 14l9 5 9-5"/><path d="M19 3v4M17 5h4"/>',
+};
+const icon = name => ICONS[name] || CAD_OPS[name]?.icon || '';
+/** Icono y nombre de un botón de la barra de operaciones 3D (para no repetirlos). */
+const opDef = op => {
+  const b = document.querySelector(`#ops-bar [data-op="${op}"]`);
+  return { svg: b?.querySelector('svg')?.innerHTML || '', label: b?.textContent.trim() || op, title: b?.title || '' };
+};
+
+/** Botón de acción: { icon (nombre o SVG), label, title, onclick, kind: 'primary' | 'danger', cls }. */
+function actBtn({ icon: ic = '', svg = '', label, title = '', onclick, kind = '', cls = '', disabled = false }) {
+  const b = h('button', { class: `act-btn${kind ? ` ${kind}` : ''}${cls ? ` ${cls}` : ''}`, title: title || label, onclick, disabled });
+  const paths = svg || icon(ic);
+  if (paths) b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+  b.append(h('span', {}, label));
+  return b;
+}
+/** Botón con el icono, el nombre y la descripción de una operación de la barra 3D. */
+const opBtn = (op, onclick, extra = {}) => { const d = opDef(op); return actBtn({ svg: d.svg, label: d.label, title: d.title, onclick, ...extra }); };
+/** Botón con el icono y el nombre de una orden de edición 2D. */
+const cadBtn = (k, onclick, extra = {}) => actBtn({ icon: k, label: CAD_OPS[k].label, title: `${CAD_OPS[k].label} · escribe ${CAD_OPS[k].alias[0].toUpperCase()} e Intro`, onclick, ...extra });
+const actGrid = (...btns) => h('div', { class: 'act-grid' }, btns.flat().filter(Boolean));
+
 // ---------------------------------------------------------------- secciones plegables de Propiedades
 // Cada grupo recuerda si lo dejaste abierto o cerrado (por su clave), en todos los proyectos.
 const PROPS_FOLD_KEY = 'forja3d:props-fold';
@@ -1348,10 +1387,10 @@ function paperSection(cad, D, { select, btn, info }) {
     row('Escala', select(PAPER_SCALES.map(k => [k, k === '1:1' ? '1:1 (tamaño real)' : k]), S.scale, v => cad.setPaper({ scale: v }))),
     h('div', { class: 'paper-toggles' }, toggle('frame', 'Recuadro'), toggle('block', 'Cajetín')),
     info([['Área útil', `${F((S.w - 20) * S.k)} × ${F((S.h - 20) * S.k)} ${u} del dibujo`]]),
-    h('div', { class: 'btn-row' },
-      btn('Ver la hoja', () => cad.zoomExtents()),
-      btn('Centrar en el dibujo', () => cad.centerPaper()),
-      btn('PDF a escala', () => exportCad('pdf'), 'btn-primary'))], { note: `${S.size} · ${S.scale}` });
+    actGrid(
+      actBtn({ icon: 'frame', label: 'Ver la hoja', title: 'Encuadrar la hoja entera', onclick: () => cad.zoomExtents() }),
+      actBtn({ icon: 'center', label: 'Centrar hoja', title: 'Coloca la hoja centrada sobre lo que ya has dibujado', onclick: () => cad.centerPaper() }),
+      actBtn({ icon: 'pdf', label: 'PDF a escala', title: 'PDF vectorial del tamaño del papel (imprímelo al 100 %)', onclick: () => exportCad('pdf') }))], { note: `${S.size} · ${S.scale}` });
   return flags.block ? [paper, blockFields(cad, D)] : [paper];
 }
 
@@ -1474,13 +1513,11 @@ function renderCadProps(box) {
         h('div', { class: 'cap-checks-list' }, osnaps)]),
       ...(sketchSession ? [] : paperSection(cad, D, { select, btn, info })),
       sec('actions2d', 'Acciones', [
-        h('div', { class: 'btn-row' },
-          btn('Encuadrar todo', () => cad.zoomExtents()),
-          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d')),
-        h('div', { class: 'btn-row', style: 'margin-top:4px' },
-          btn('Exportar DXF', () => exportCad('dxf')),
-          btn('Exportar SVG', () => exportCad('svg')),
-          btn('Importar DXF', () => $('#model-input').click()))]),
+        actGrid(
+          actBtn({ icon: 'frame', label: 'Encuadrar', title: 'Encuadrar todo el plano (Z + Intro o doble clic central)', onclick: () => cad.zoomExtents() }),
+          actBtn({ icon: 'export', label: 'Exportar DXF', title: 'Para AutoCAD, LibreCAD, FreeCAD o corte láser/CNC', onclick: () => exportCad('dxf') }),
+          actBtn({ icon: 'export', label: 'Exportar SVG', title: 'Dibujo vectorial a escala real', onclick: () => exportCad('svg') }),
+          actBtn({ icon: 'import', label: 'Importar DXF', title: 'Añade al plano los objetos de un archivo DXF', onclick: () => $('#model-input').click() }))]),
     ].filter(Boolean));
     return;
   }
@@ -1510,10 +1547,9 @@ function renderCadProps(box) {
         }))]),
       dims.length ? sec('dimplace', `Colocación de las cotas (${dims.length})`, dimStyleRows(dims)) : null,
       sec('actions2d-sel', 'Acciones', [
-        h('div', { class: 'btn-row' },
-          btn('Desplazar', () => cad.runOp('move')), btn('Copiar', () => cad.runOp('copy')), btn('Girar', () => cad.runOp('rotate'))),
-        h('div', { class: 'btn-row', style: 'margin-top:4px' },
-          btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d'), btn('Borrar', () => cad.eraseSel(), 'danger'))]),
+        actGrid(
+          ['move', 'copy', 'rotate', 'scale', 'mirror'].map(k => cadBtn(k, () => cad.runOp(k))),
+          cadBtn('erase', () => cad.eraseSel(), { kind: 'danger' }))]),
     ].filter(Boolean));
     return;
   }
@@ -1626,13 +1662,11 @@ function renderCadProps(box) {
     sec(`geo2d-${e.type}`, geoTitle, geo),
     ...extra.map(([k, t, c]) => sec(k, t, c)),
     sec('actions2d-sel', 'Acciones', [
-      h('div', { class: 'btn-row' },
-        btn('Desplazar', () => cad.runOp('move')), btn('Copiar', () => cad.runOp('copy')),
-        ['line', 'pline', 'circle', 'arc'].includes(e.type) ? btn('Desfase', () => cad.setTool('offset')) : null),
-      h('div', { class: 'btn-row', style: 'margin-top:4px' },
-        ['pline', 'circle'].includes(e.type) && (e.type === 'circle' || e.closed) ? btn('Extruir a 3D…', () => extrude2DDialog(), 'btn-primary x3d') : null,
-        e.type === 'pline' ? btn('Descomponer', () => cad.explodeSel()) : null,
-        btn('Borrar', () => cad.eraseSel(), 'danger'))]),
+      actGrid(
+        ['move', 'copy', 'rotate', 'mirror'].map(k => cadBtn(k, () => cad.runOp(k))),
+        ['line', 'pline', 'circle', 'arc'].includes(e.type) ? cadBtn('offset', () => cad.setTool('offset')) : null,
+        e.type === 'pline' ? cadBtn('explode', () => cad.explodeSel()) : null,
+        cadBtn('erase', () => cad.eraseSel(), { kind: 'danger' }))]),
   );
 }
 
@@ -2233,7 +2267,7 @@ function refreshOutliner() {
   const hasSel = editor.selection.length > 0;
   $('#btn-duplicate').disabled = !hasSel;
   $('#btn-delete').disabled = !hasSel;
-  $('#btn-delete').textContent = sub ? 'Quitar pieza' : 'Eliminar';
+  $('#btn-delete span').textContent = sub ? 'Quitar pieza' : 'Eliminar';
   ul.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
 }
 
@@ -2392,10 +2426,10 @@ function renderProps() {
       h('p', { class: 'note' }, `${voxel ? 'Escultura por volumen' : 'Escultura por malla'} · detalle ${LEVEL_LABELS[s.level] || '—'}` +
         (voxel ? ` · rejilla ${s.dims?.join(' × ')}` : '') + ` · ${n.toLocaleString('es-ES')} triángulos.`),
       editor.sculpt
-        ? h('div', { class: 'btn-row' }, h('button', { class: 'btn sm btn-primary', onclick: () => editor.endSculpt() }, 'Terminar de esculpir'))
-        : h('div', { class: 'btn-row' },
-          h('button', { class: 'btn sm btn-primary', onclick: () => editor.startSculpt(id) }, 'Esculpir'),
-          h('button', { class: 'btn sm', title: 'Probar el otro método sobre la forma actual', onclick: () => sculptDialog(voxel ? 'mesh' : 'voxel') }, voxel ? 'Pasar a malla…' : 'Pasar a volumen…')),
+        ? actGrid(actBtn({ svg: opDef('sculpt').svg, label: 'Terminar de esculpir', onclick: () => editor.endSculpt(), kind: 'primary' }))
+        : h('div', { class: 'act-grid' },
+          opBtn('sculpt', () => editor.startSculpt(id)),
+          actBtn({ svg: opDef('sculpt').svg, title: 'Probar el otro método sobre la forma actual', onclick: () => sculptDialog(voxel ? 'mesh' : 'voxel'), label: voxel ? 'Pasar a malla…' : 'Pasar a volumen…' })),
     ];
   } else if (sel.type === 'mesh') {
     const tris = editor.objects.get(id)?.geometry;
@@ -2420,8 +2454,7 @@ function renderProps() {
       h('p', { class: 'note' }, 'Operandos (el primero es la base):'),
       h('ul', { class: 'operand-list' }, sel.operands.filter(o => !o.helper).map((o, i) =>
         h('li', {}, `${i + 1}. `, h('b', {}, o.name || typeLabel(o)), ` · ${typeLabel(o)}`))),
-      h('div', { class: 'btn-row' },
-        h('button', { class: 'btn sm', onclick: () => editor.explode([id]) }, 'Separar piezas')),
+      actGrid(opBtn('explode', () => editor.explode([id]))),
     ];
   } else {
     const field = p => {
@@ -2452,14 +2485,11 @@ function renderProps() {
           holes ? ['Huecos', String(holes)] : null,
           sh.plane && sh.plane !== 'top' ? ['Plano', { front: 'Alzado', side: 'Perfil' }[sh.plane]] : null,
           sh.smooth ? ['Curva', 'suave'] : null]),
-        h('div', { class: 'btn-row' },
-          h('button', { class: 'btn sm btn-primary', onclick: () => editProfile(id) }, isPath ? 'Editar trazado…' : 'Editar perfil…'))]]);
+        actGrid(actBtn({ icon: 'edit', label: isPath ? 'Editar trazado…' : 'Editar perfil…', title: isPath ? 'Editar el trazado' : 'Abrir el croquis del perfil (o doble clic en la pieza)', onclick: () => editProfile(id) }))]]);
     }
     if (seg.length) groups.push(['smooth', 'Suavidad de la malla', seg.map(field), { open: false, note: seg.map(p => sel.params[p.key] ?? p.def).join(' · ') }]);
     if (sel.type === 'line2d' || sel.type === 'circle2d') {
-      groups.push(['to3d', 'Convertir en 3D', [h('div', { class: 'btn-row' },
-        h('button', { class: 'btn sm', onclick: () => convert2DDialog('extrude') }, 'Extruir…'),
-        h('button', { class: 'btn sm', onclick: () => convert2DDialog('lathe') }, 'Revolución…'))]]);
+      groups.push(['to3d', 'Convertir en 3D', [actGrid(opBtn('extrude2d', () => convert2DDialog('extrude')), opBtn('lathe2d', () => convert2DDialog('lathe')))]]);
     }
   }
   if (sel.type === 'boolean') geoTitle = 'Operación booleana';
@@ -2493,8 +2523,7 @@ function renderProps() {
       vec3Row('Posición', 'position', sel.position, 0.05),
       vec3Row('Rotación °', 'rotation', sel.rotation, 1),
       vec3Row('Escala', 'scale', sel.scale, 0.05),
-      row('Reflejar', mirrorButtons()),
-      row('', h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', onclick: () => editor.dropToFloor() }, 'Apoyar en el suelo')))]),
+      actGrid(mirrorButtons(), opBtn('drop', () => editor.dropToFloor()))]),
     sec('color', 'Color', [
       row('Color', h('div', { class: 'color-input' }, color, code)),
       h('div', { class: 'prop-row' }, h('span'), palette)]),
@@ -2582,22 +2611,20 @@ function renderOperandProps(box) {
       vec3Row('Escala', 'scale', op.scale, 0.05)]),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Acciones'),
-      h('div', { class: 'btn-row' },
-        op.helper ? null : h('button', { class: 'btn sm', title: 'La saca de la operación y la deja como objeto independiente', onclick: () => editor.removeOperand(rootId, path, { extract: true }) }, 'Extraer como objeto'),
-        h('button', { class: 'btn sm danger', title: 'La quita de la operación (Supr)', onclick: () => editor.removeOperand(rootId, path) }, 'Quitar de la operación')),
-      h('div', { class: 'btn-row', style: 'margin-top:4px' },
-        h('button', { class: 'btn sm', onclick: () => frameOperand() }, 'Encuadrar pieza'),
-        h('button', { class: 'btn sm', onclick: () => editor.select(rootId) }, 'Seleccionar la operación'))),
+      actGrid(
+        actBtn({ icon: 'frame', label: 'Encuadrar', title: 'Encuadrar esta pieza', onclick: () => frameOperand() }),
+        actBtn({ icon: 'select', label: 'Ir a la operación', title: 'Seleccionar la operación completa', onclick: () => editor.select(rootId) }),
+        op.helper ? null : actBtn({ icon: 'extract', label: 'Extraer', title: 'La saca de la operación y la deja como objeto independiente', onclick: () => editor.removeOperand(rootId, path, { extract: true }) }),
+        actBtn({ icon: 'remove', label: 'Quitar', title: 'La quita de la operación (Supr)', onclick: () => editor.removeOperand(rootId, path), kind: 'danger' }))),
   );
 }
 
-const mirrorButtons = () => h('div', { class: 'btn-row' },
-  ['x', 'y', 'z'].map(a => h('button', { class: 'btn sm', title: `Reflejar en el eje ${a.toUpperCase()}`, onclick: () => editor.mirror(a) }, a.toUpperCase())));
+const mirrorButtons = () => ['x', 'y', 'z'].map(a => actBtn({ icon: 'mirror', label: `Reflejar ${a.toUpperCase()}`, title: `Reflejar en el eje ${a.toUpperCase()} (simetría)`, onclick: () => editor.mirror(a) }));
 
 /** Panel para varios objetos seleccionados: orden, operaciones y color común. */
 function renderMultiProps(box) {
   const sel = editor.selection.map(id => editor.objects.get(id)?.userData).filter(Boolean);
-  const op = (label, key, title) => h('button', { class: 'btn sm', title, onclick: () => runOp(key) }, label);
+  const op = key => opBtn(key, () => runOp(key));
   const hasPlane = sel.length === 2 && sel.filter(u => u.type === 'plane').length === 1;
   box.replaceChildren(
     h('div', { class: 'prop-section' },
@@ -2608,13 +2635,10 @@ function renderMultiProps(box) {
       h('p', { class: 'note' }, 'El primero seleccionado (A) es la base: en «Restar» se le quitan los demás. El gizmo mueve todo el grupo.')),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Operaciones'),
-      h('div', { class: 'btn-row' },
-        op('∪ Unir', 'union', 'A ∪ B'), op('− Restar', 'subtract', 'A − B'), op('∩ Intersecar', 'intersect', 'A ∩ B')),
-      hasPlane ? h('div', { class: 'btn-row', style: 'margin-top:4px' }, op('Partir con el plano', 'split', 'Corta el objeto con el plano seleccionado')) : null),
+      actGrid(op('union'), op('subtract'), op('intersect'), hasPlane ? op('split') : null)),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Posición'),
-      row('Reflejar', mirrorButtons()),
-      row('', h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', onclick: () => editor.dropToFloor() }, 'Apoyar en el suelo')))),
+      actGrid(mirrorButtons(), opBtn('drop', () => editor.dropToFloor()))),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Color para todos'),
       h('div', { class: 'palette', style: 'grid-column:auto' }, PALETTE.map(c => {

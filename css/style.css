@@ -864,3 +864,23 @@ kbd {
 .prop-section.fold .fold-sub { margin: 8px 0 4px; font-size: 11px; color: var(--muted); font-weight: 600; }
 .prop-section.fold .block-fields { margin-top: 0; padding-top: 0; border-top: 0; }
 .props > .prop-section:not(.fold) + .prop-section.fold { border-top: 1px solid var(--line); }
+
+/* botones de acción del panel lateral: como los de las barras de órdenes (icono + texto) */
+.act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px; margin-top: 4px; }
+.act-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: 5px 8px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; text-align: left;
+}
+.act-btn span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-btn svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.act-btn svg .fill { fill: currentColor; stroke: none; opacity: .4; }
+:root[data-theme="light"] .act-btn svg .fill { opacity: .3; }
+.act-btn:hover:not(:disabled) { color: var(--text); border-color: var(--line-2); background: var(--sel); }
+.act-btn:hover:not(:disabled) svg .fill { fill: var(--accent); opacity: .6; }
+.act-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.act-btn:disabled { opacity: .4; cursor: default; }
+.act-btn.primary { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.act-btn.danger { color: var(--danger-text); }
+.act-btn.danger:hover:not(:disabled) { border-color: color-mix(in srgb, var(--danger-text) 50%, var(--line)); background: color-mix(in srgb, var(--danger-text) 10%, var(--panel-2)); }
+.panel-actions .act-btn { flex: 1 1 0; justify-content: center; }
