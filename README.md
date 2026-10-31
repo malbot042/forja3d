@@ -39,6 +39,7 @@ Editor 3D que funciona directamente en el navegador, hecho con **three.js** y **
 - **Escena**: lista de objetos, selección, ocultar/mostrar, duplicar, eliminar, renombrar.
 - **Deshacer / rehacer** (hasta 100 pasos).
 - **Snap** ajustable al mover (0,25 u por defecto), girar (15°) y escalar (0,1); en el plano 2D, el mismo control **Snap** de la barra superior con su ventanita: **paso de forzado** fijo (0,1 … 100 mm o cualquier valor) o automático según el zoom, referencias a objetos y orto.
+- **Rejilla configurable**: en 2D, paso fijo o automático según el zoom (con densidad), líneas principales, ejes y extensión (hoja, área rectangular o sin límite), guardada con cada hoja; en 3D, tamaño, paso y líneas principales.
 - **Modo claro y oscuro**: sigue al sistema por defecto y se puede cambiar con el botón de luna/sol; la elección se recuerda.
 - **Gestor de proyectos**: crear, abrir, renombrar, duplicar, eliminar; miniatura automática de cada proyecto.
 - **Guardado automático** en **IndexedDB** (cientos de MB o más según el disco; se pide almacenamiento persistente). Los proyectos antiguos de `localStorage` se migran solos.

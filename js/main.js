@@ -11,7 +11,7 @@ import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from '.
 import { makePdf } from './pdf.js';
 import { openPalette } from './palette.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { profileFromSketch, emptyDrawing, DIM_OPTS, dimOptsFor, dimDefaultKey, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, toPDFMulti, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { GRID_DENSITIES, GRID_LIMITS, gridMajorOf, defaultGridArea, profileFromSketch, emptyDrawing, DIM_OPTS, dimOptsFor, dimDefaultKey, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, toPDFMulti, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -310,6 +310,7 @@ async function openProject(id) {
   setView(s.view || 'solid');
   $('#chk-grid').checked = s.grid !== false;
   editor.setGrid(s.grid !== false);
+  editor.setGridOpts(s.gridOpts);
   $('#chk-snap').checked = !!s.snap;
   editor.setSnapSizes(s.snapSizes);
   editor.setSnap(!!s.snap);
@@ -488,7 +489,7 @@ function sheetMenu(id, anchor) {
 function snapshotProject() {
   project.objects = editor.serialize();
   project.camera = editor.getCamera();
-  project.settings = { view: editor.viewMode, grid: $('#chk-grid').checked, snap: $('#chk-snap').checked, snapSizes: editor.snapSizes, viewports: editor.getViewState() };
+  project.settings = { view: editor.viewMode, grid: editor.helpers.visible, snap: $('#chk-snap').checked, snapSizes: editor.snapSizes, gridOpts: editor.gridOpts, viewports: editor.getViewState() };
   const D = editor.cad.getDrawing();
   if (activeSheet()) activeSheet().drawing = D;
   project.sheets = sheets.map(s => ({ id: s.id, name: s.name, drawing: s.drawing }));
@@ -595,8 +596,12 @@ function initEditor() {
     if (is2D()) { if (!!editor.cad.gridSnap !== e.target.checked) editor.cad.toggle('gridSnap'); refreshSnapSizeBtn(); return; }
     editor.setSnap(e.target.checked); scheduleSave(); refreshStatus(); refreshSnapSizeBtn();
   };
-  $('#btn-snap-size').onclick = e => { e.stopPropagation(); if (document.querySelector('.snap-pop')) { document.querySelector('.snap-pop').remove(); return; } is2D() ? cadSnapPopover() : snapSizePopover(); };
-  $('#chk-grid').onchange = e => { editor.setGrid(e.target.checked); scheduleSave(); };
+  $('#btn-snap-size').onclick = e => { e.stopPropagation(); if (document.querySelector('.snap-pop')?.dataset.k === 'snap') { document.querySelector('.snap-pop').remove(); return; } is2D() ? cadSnapPopover() : snapSizePopover(); };
+  $('#chk-grid').onchange = e => {
+    if (is2D()) { if (!!editor.cad.drawing.grid !== e.target.checked) editor.cad.toggle('grid'); refreshSnapSizeBtn(); return; }
+    editor.setGrid(e.target.checked); scheduleSave(); refreshSnapSizeBtn();
+  };
+  $('#btn-grid-size').onclick = e => { e.stopPropagation(); if (document.querySelector('.snap-pop')?.dataset.k === 'grid') { document.querySelector('.snap-pop').remove(); return; } gridPopover(); };
 
   // vistas y operaciones
   $('#view-bar').onclick = e => {
@@ -1131,7 +1136,28 @@ function refreshSnapSelect() {
 }
 
 const fmtN = v => String(+(+v).toFixed(4)).replace('.', ',');
+function refreshGridBtn() {
+  const b = $('#btn-grid-size'), chk = $('#chk-grid');
+  if (!b) return;
+  if (is2D()) {
+    const D = editor.cad.drawing, st = +D.gridStep || 0, u = D.units === 'u' ? '' : ` ${D.units}`;
+    b.textContent = st ? `${fmtN(st)}${u}` : (+D.snapStep ? `${fmtN(+D.snapStep)}${u}` : 'auto');
+    b.classList.toggle('on', !!D.grid);
+    chk.checked = !!D.grid;
+    b.title = 'Rejilla 2D: paso (fijo o según el zoom), líneas principales y extensión (hoja, área o sin límite)';
+    $('#lbl-grid').title = 'Mostrar la rejilla del plano (F7)';
+    return;
+  }
+  const o = editor.gridOpts;
+  b.replaceChildren(fmtN(o.size), h('span', { class: 'xs' }, ` · ${fmtN(o.step)}`));
+  chk.checked = editor.helpers.visible;
+  b.classList.toggle('on', chk.checked);
+  b.title = 'Rejilla 3D: tamaño, paso y líneas principales';
+  $('#lbl-grid').title = 'Mostrar rejilla';
+}
+
 function refreshSnapSizeBtn() {
+  refreshGridBtn();
   const b = $('#btn-snap-size'), chk = $('#chk-snap');
   if (is2D()) {
     const c = editor.cad, D = c.drawing, st = +D.snapStep || 0;
@@ -1144,7 +1170,7 @@ function refreshSnapSizeBtn() {
     return;
   }
   const s = editor.snapSizes;
-  b.textContent = `${fmtN(s.move)} · ${fmtN(s.rot)}° · ×${fmtN(s.scale)}`;
+  b.replaceChildren(fmtN(s.move), h('span', { class: 'xs' }, ` · ${fmtN(s.rot)}° · ×${fmtN(s.scale)}`));
   b.title = 'Tamaño del snap: paso al mover, girar y escalar';
   b.classList.toggle('on', !!editor.snap);
   chk.checked = !!editor.snap;
@@ -1158,7 +1184,7 @@ function cadSnapPopover() {
   document.querySelector('.snap-pop')?.remove();
   const cad = editor.cad, D = cad.drawing;
   const btn = $('#btn-snap-size'), r = btn.getBoundingClientRect();
-  const pop = h('div', { class: 'snap-pop wide', role: 'dialog', 'aria-label': 'Snap 2D' });
+  const pop = h('div', { class: 'snap-pop wide', role: 'dialog', 'aria-label': 'Snap 2D', 'data-k': 'snap' });
   const check = (label, get, set, title) => {
     const c = h('input', { type: 'checkbox' });
     c.checked = !!get();
@@ -1202,7 +1228,7 @@ function snapSizePopover() {
   document.querySelector('.snap-pop')?.remove();
   const btn = $('#btn-snap-size'), r = btn.getBoundingClientRect();
   const s = editor.snapSizes;
-  const pop = h('div', { class: 'snap-pop', role: 'dialog', 'aria-label': 'Tamaño del snap' });
+  const pop = h('div', { class: 'snap-pop', role: 'dialog', 'aria-label': 'Tamaño del snap', 'data-k': 'snap' });
   const field = (key, label, unit, presets) => {
     const inp = h('input', { type: 'number', class: 'text-input', min: 0, step: 'any' });
     inp.value = s[key];
@@ -1228,9 +1254,89 @@ function snapSizePopover() {
   document.body.append(pop);
   pop.style.top = `${r.bottom + 6}px`;
   pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth))}px`;
-  const close = ev => { if (!pop.contains(ev.target) && ev.target !== btn) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
+  const close = ev => { if (!pop.isConnected) { document.removeEventListener('pointerdown', close, true); return; } if (!pop.contains(ev.target) && !btn.contains(ev.target)) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
   document.addEventListener('pointerdown', close, true);
   pop.querySelector('input').focus();
+}
+
+/** Pequeñas piezas comunes de las ventanitas de la barra superior. */
+function popAt(pop, btn) {
+  const r = btn.getBoundingClientRect();
+  document.body.append(pop);
+  pop.style.top = `${r.bottom + 6}px`;
+  pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth))}px`;
+  const close = ev => { if (!pop.isConnected) { document.removeEventListener('pointerdown', close, true); return; } if (!pop.contains(ev.target) && !btn.contains(ev.target)) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
+  document.addEventListener('pointerdown', close, true);
+}
+function popNum(value, onset, { placeholder = '', min = 0, onEsc } = {}) {
+  const inp = h('input', { type: 'number', class: 'text-input', min, step: 'any', placeholder });
+  inp.value = value ?? '';
+  inp.onchange = () => onset(String(inp.value).trim() === '' ? null : parseFloat(String(inp.value).replace(',', '.')));
+  inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') onEsc?.(); ev.stopPropagation(); };
+  return inp;
+}
+
+/** Ventanita de la rejilla: en 2D paso fijo o según el zoom, principales, ejes y extensión; en 3D tamaño y paso. */
+function gridPopover() {
+  document.querySelector('.snap-pop')?.remove();
+  const btn = $('#btn-grid-size');
+  const pop = h('div', { class: 'snap-pop wide', role: 'dialog', 'aria-label': 'Rejilla', 'data-k': 'grid' });
+  const close = () => pop.remove();
+  const presetRow = (vals, cur, apply, auto) => h('div', { class: 'snap-pop-presets' },
+    [...(auto ? [h('button', { class: `btn sm${cur ? '' : ' primary'}`, title: auto, onclick: () => apply(null) }, 'Auto')] : []),
+      ...vals.map(v => h('button', { class: `btn sm${cur === v ? ' primary' : ''}`, onclick: () => apply(v) }, fmtN(v)))]);
+  const rowOf = (label, ...kids) => h('div', { class: 'snap-pop-row' }, h('label', {}, label), ...kids);
+  const sel = (opts, cur, onset) => { const s = h('select', { class: 'text-input' }, opts.map(([v, l]) => h('option', { value: String(v) }, l))); s.value = String(cur); s.onchange = () => onset(s.value); return s; };
+
+  if (!is2D()) {
+    const render = () => {
+      const o = editor.gridOpts;
+      const set = patch => { editor.setGridOpts({ ...editor.gridOpts, ...patch }); if (!editor.helpers.visible) editor.setGrid(true); scheduleSave(); refreshGridBtn(); render(); };
+      pop.replaceChildren(
+        h('h4', {}, 'Rejilla 3D'),
+        rowOf('Tamaño', h('div', { class: 'snap-pop-in' }, popNum(o.size, v => v > 0 && set({ size: v }), { onEsc: close }), h('span', { class: 'muted' }, 'u de lado')),
+          presetRow([10, 20, 40, 100, 200], o.size, v => set({ size: v }))),
+        rowOf('Paso', h('div', { class: 'snap-pop-in' }, popNum(o.step, v => v > 0 && set({ step: v }), { onEsc: close }), h('span', { class: 'muted' }, 'u')),
+          presetRow([0.1, 0.25, 0.5, 1], o.step, v => set({ step: v }))),
+        rowOf('Principal', h('div', { class: 'snap-pop-in' }, sel([[1, 'Todas iguales'], [2, 'Cada 2'], [4, 'Cada 4'], [5, 'Cada 5'], [10, 'Cada 10']], o.major, v => set({ major: +v })))),
+        h('p', { class: 'muted small' }, `La rejilla es un cuadrado de ${fmtN(o.size)} u centrado en el origen. Un paso igual al del snap al mover (${fmtN(editor.snapSizes.move)} u) hace que las piezas caigan justo en sus líneas.`));
+    };
+    render(); popAt(pop, btn); return;
+  }
+
+  const cad = editor.cad, D = cad.drawing;
+  const unit = D.units === 'u' ? 'u' : D.units;
+  const render = () => {
+    const set = patch => { cad.setGridOpts(patch); refreshGridBtn(); render(); };
+    const fixed = +D.gridStep || 0, mode = D.gridLimit || 'auto';
+    const kids = [
+      h('h4', {}, 'Rejilla 2D'),
+      h('div', { class: 'snap-pop-checks one' }, (() => { const c = h('input', { type: 'checkbox' }); c.checked = !!D.grid; c.onchange = () => { if (!!D.grid !== c.checked) cad.toggle('grid'); refreshGridBtn(); }; return h('label', { class: 'toggle' }, c, h('span', {}, 'Mostrar la rejilla (F7)')); })()),
+      rowOf('Paso', h('div', { class: 'snap-pop-in' }, popNum(fixed || '', v => set({ gridStep: v > 0 ? v : null }), { placeholder: 'auto', onEsc: close }), h('span', { class: 'muted' }, unit)),
+        presetRow(CAD_SNAP_PRESETS[D.units] || CAD_SNAP_PRESETS.u, fixed, v => set({ gridStep: v > 0 ? v : null }), 'Según el zoom (o el paso de forzado, si lo has fijado)')),
+    ];
+    if (!fixed) kids.push(rowOf('Densidad', h('div', { class: 'snap-pop-in' }, sel(GRID_DENSITIES, +D.gridDensity || 12, v => set({ gridDensity: +v === 12 ? null : +v })))));
+    kids.push(
+      rowOf('Principal', h('div', { class: 'snap-pop-in' }, sel([[0, 'Ninguna'], [2, 'Cada 2'], [4, 'Cada 4'], [5, 'Cada 5'], [10, 'Cada 10']], gridMajorOf(D), v => set({ gridMajor: +v === 5 ? null : +v })))),
+      rowOf('Extensión', h('div', { class: 'snap-pop-in' }, sel(GRID_LIMITS, mode, v => set({ gridLimit: v === 'auto' ? null : v })))));
+    if (mode === 'area') {
+      const a = D.gridArea || defaultGridArea(D, cad.extents());
+      const setA = (i, v) => { if (!Number.isFinite(v)) return; const n = [...a]; n[i] = v; set({ gridArea: n }); };
+      const f = (i, ph) => { const inp = popNum(a[i], v => setA(i, v), { min: null, onEsc: close }); inp.removeAttribute('min'); inp.placeholder = ph; inp.style.width = '70px'; return inp; };
+      kids.push(
+        rowOf('Desde', h('div', { class: 'snap-pop-in' }, f(0, 'X'), f(1, 'Y'))),
+        rowOf('Hasta', h('div', { class: 'snap-pop-in' }, f(2, 'X'), f(3, 'Y'))),
+        h('div', { class: 'snap-pop-presets', style: 'margin:-4px 0 10px 66px' },
+          h('button', { class: 'btn sm', title: 'Ajustar el área a lo dibujado (con un margen)', onclick: () => set({ gridArea: defaultGridArea(D, cad.extents()) }) }, 'Ajustar a lo dibujado')));
+    }
+    kids.push(
+      h('div', { class: 'snap-pop-checks one' }, (() => { const c = h('input', { type: 'checkbox' }); c.checked = D.gridAxes !== false; c.onchange = () => set({ gridAxes: c.checked ? null : false }); return h('label', { class: 'toggle' }, c, h('span', {}, 'Ejes X/Y (líneas del origen)')); })()),
+      h('p', { class: 'muted small' }, fixed
+        ? 'Paso fijo: si te alejas tanto que las líneas quedarían pegadas, se dibuja un múltiplo. Con «Forzar» en Auto, el cursor salta a este paso.'
+        : 'Paso automático: la rejilla se adapta al zoom con la densidad elegida. Los ajustes se guardan con cada hoja.'));
+    pop.replaceChildren(...kids);
+  };
+  render(); popAt(pop, btn);
 }
 
 function refreshCadToggles() {
@@ -2169,6 +2275,8 @@ function paletteActions() {
     ['pencil', 'Modo lápiz (a mano alzada)', '', 'boceto dibujo mano estilo linea']]) {
     add({ id: `cadt-${k}`, ws: '2d', label, group: 'Ayudas al dibujo 2D', keys: key ? [key] : [], words, run: () => cad.toggle(k) });
   }
+  add({ id: 'cad-grid', ws: '2d', label: 'Rejilla 2D: paso, principales y extensión', group: 'Ayudas al dibujo 2D', words: 'grid cuadricula limite area infinita zoom', run: () => gridPopover() });
+  add({ id: 'grid3opts', ws: '3d', label: 'Rejilla 3D: tamaño y paso', group: 'Vistas 3D', words: 'grid cuadricula', run: () => gridPopover() });
   add({ id: 'cad-step', ws: '2d', label: 'Snap 2D: paso del forzado y referencias', group: 'Ayudas al dibujo 2D', words: 'snap rejilla paso tamaño', run: () => cadSnapPopover() });
   add({ id: 'cad-layer', ws: '2d', label: 'Nueva capa', group: 'Capas y hoja 2D', run: click('#btn-layer-add') });
   add({ id: 'cad-paper', ws: '2d', label: 'Elegir tamaño de hoja (A5 … A0)', group: 'Capas y hoja 2D', words: 'papel formato a4 a3 recuadro cajetin', run: () => { cad.setSel([]); setTimeout(() => { const d = $('#props details[data-fold="paper"]'); if (d) d.open = true; const s = $('#props .prop-row:has(label) select'); const f = [...document.querySelectorAll('#props .prop-row')].find(r => r.textContent.startsWith('Formato'))?.querySelector('select'); (f || s)?.focus(); f?.scrollIntoView({ block: 'center' }); }, 60); } });

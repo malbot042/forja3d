@@ -89,6 +89,41 @@ export function sheetOf(D) {
   return { x0, y0, x1: x0 + w * k, y1: y0 + h * k, w, h, k, size: P.size, landscape: P.landscape !== false, scale: P.scale || '1:1' };
 }
 
+/**
+ * Rejilla del plano 2D. Ajustes guardados en el dibujo:
+ *   gridStep   paso fijo (vacío = automático según el zoom o el paso de forzado)
+ *   gridDensity separación en pantalla del paso automático (px, 12 por defecto)
+ *   gridMajor  una línea principal cada N (5 por defecto, 0 = ninguna)
+ *   gridLimit  'auto' (la hoja si hay, si no sin límite) | 'none' | 'sheet' | 'area'
+ *   gridArea   [x0, y0, x1, y1] para 'area'
+ *   gridAxes   false para ocultar los ejes X/Y
+ */
+export const GRID_DENSITIES = [[6, 'Muy fina'], [12, 'Normal'], [20, 'Amplia'], [36, 'Muy amplia']];
+export const GRID_LIMITS = [['auto', 'Hoja si la hay; si no, sin límite'], ['sheet', 'Solo dentro de la hoja'], ['area', 'Área rectangular'], ['none', 'Sin límite (infinita)']];
+export function gridMajorOf(D) { const m = D.gridMajor; return m == null ? 5 : Math.max(0, Math.round(+m) || 0); }
+/** Rectángulo (mundo) al que se limita la rejilla, o null si no tiene límite. */
+export function gridRect(D) {
+  const mode = D.gridLimit || 'auto';
+  if (mode === 'none') return null;
+  if (mode === 'area') {
+    const a = D.gridArea;
+    if (Array.isArray(a) && a.length === 4 && a.every(Number.isFinite)) return { x0: Math.min(a[0], a[2]), y0: Math.min(a[1], a[3]), x1: Math.max(a[0], a[2]), y1: Math.max(a[1], a[3]) };
+    return null;
+  }
+  const S = sheetOf(D);
+  return S ? { x0: S.x0, y0: S.y0, x1: S.x1, y1: S.y1 } : null;
+}
+/** Área inicial razonable para la rejilla limitada: lo dibujado, o un A4 apaisado en las unidades del plano. */
+export function defaultGridArea(D, extents) {
+  if (extents) {
+    const pad = Math.max(extents[2] - extents[0], extents[3] - extents[1]) * 0.1 || 10;
+    const r = v => +v.toPrecision(3);
+    return [r(extents[0] - pad), r(extents[1] - pad), r(extents[2] + pad), r(extents[3] + pad)];
+  }
+  const k = 1 / (UNITS[D.units]?.mm || 1);
+  return [0, 0, +(297 * k).toPrecision(3), +(210 * k).toPrecision(3)];
+}
+
 /** Campos editables del cajetín (los que quedan vacíos usan un valor automático o no se muestran). */
 export const BLOCK_FIELDS = [
   ['title', 'Título'], ['description', 'Descripción'], ['author', 'Dibujado por'],
@@ -3094,6 +3129,15 @@ export class Cad extends EventTarget {
     return [Math.min(bb[0], S.x0), Math.min(bb[1], S.y0), Math.max(bb[2], S.x1), Math.max(bb[3], S.y1)];
   }
 
+  /** Cambia ajustes de la rejilla (gridStep, gridDensity, gridMajor, gridLimit, gridArea, gridAxes); undefined = valor por defecto. */
+  setGridOpts(patch) {
+    for (const [k, v] of Object.entries(patch)) { if (v === undefined || v === null || v === '') delete this.drawing[k]; else this.drawing[k] = v; }
+    if (this.drawing.gridLimit === 'area' && !gridRect(this.drawing)) this.drawing.gridArea = defaultGridArea(this.drawing, this.extents());
+    if (!this.drawing.grid) this.drawing.grid = true;
+    this.commit();
+    this.emit('settings');
+  }
+
   /** Paso de forzado a la rejilla (unidades del dibujo); 0 o vacío = automático según el zoom. */
   setSnapStep(v) {
     v = +v;
@@ -3175,9 +3219,17 @@ export class Cad extends EventTarget {
     }
     if (D.grid && opts.grid !== false) {
       ctx.save();
-      if (sr) { ctx.beginPath(); ctx.rect(...sr); ctx.clip(); }
+      const gr = gridRect(D);
+      let cr = null;
+      if (gr) { const a = view.toScreen([gr.x0, gr.y1]), b = view.toScreen([gr.x1, gr.y0]); cr = [a[0], a[1], b[0] - a[0], b[1] - a[1]]; }
+      if (cr) { ctx.beginPath(); ctx.rect(...cr); ctx.clip(); }
       this._grid(view, ctx, W, H, C);
       ctx.restore();
+      if (cr && D.gridLimit === 'area' && !opts.print) {
+        ctx.strokeStyle = C.major; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+        ctx.strokeRect(Math.round(cr[0]) + 0.5, Math.round(cr[1]) + 0.5, Math.round(cr[2]), Math.round(cr[3]));
+        ctx.setLineDash([]);
+      }
     }
     if (sheet) {
       ctx.strokeStyle = C.major; ctx.lineWidth = 1; ctx.setLineDash([]);
@@ -3310,25 +3362,29 @@ export class Cad extends EventTarget {
 
   _grid(v, ctx, W, H, C) {
     if (v.iso) { this._isoGrid(v, ctx, W, H, C); return; }
-    const st = v.gridStep();
-    const [x0, y1] = v.toWorld(0, 0), [x1, y0] = v.toWorld(W, H);
+    const st = v.gridStep(), M = gridMajorOf(this.drawing);
+    const isMajor = i => M > 0 && i % M === 0;
+    let [x0, y1] = v.toWorld(0, 0), [x1, y0] = v.toWorld(W, H);
+    const gr = gridRect(this.drawing);
+    if (gr) { x0 = Math.max(x0, gr.x0); x1 = Math.min(x1, gr.x1); y0 = Math.max(y0, gr.y0); y1 = Math.min(y1, gr.y1); if (x0 > x1 || y0 > y1) return; }
     if ((x1 - x0) / st > 700 || (y1 - y0) / st > 700) return;
     ctx.lineWidth = 1; ctx.setLineDash([]);
     for (const major of [false, true]) {
       ctx.strokeStyle = major ? C.major : C.grid;
       ctx.beginPath();
       for (let i = Math.ceil(x0 / st); i <= Math.floor(x1 / st); i++) {
-        if ((i % 5 === 0) !== major) continue;
+        if (isMajor(i) !== major) continue;
         const x = Math.round(v.toScreen([i * st, 0])[0]) + 0.5;
         ctx.moveTo(x, 0); ctx.lineTo(x, H);
       }
       for (let j = Math.ceil(y0 / st); j <= Math.floor(y1 / st); j++) {
-        if ((j % 5 === 0) !== major) continue;
+        if (isMajor(j) !== major) continue;
         const y = Math.round(v.toScreen([0, j * st])[1]) + 0.5;
         ctx.moveTo(0, y); ctx.lineTo(W, y);
       }
       ctx.stroke();
     }
+    if (this.drawing.gridAxes === false) return;
     const o = v.toScreen([0, 0]);
     ctx.strokeStyle = C.axisX; ctx.beginPath(); ctx.moveTo(0, Math.round(o[1]) + 0.5); ctx.lineTo(W, Math.round(o[1]) + 0.5); ctx.stroke();
     ctx.strokeStyle = C.axisY; ctx.beginPath(); ctx.moveTo(Math.round(o[0]) + 0.5, 0); ctx.lineTo(Math.round(o[0]) + 0.5, H); ctx.stroke();
@@ -3336,7 +3392,8 @@ export class Cad extends EventTarget {
 
   /** Rejilla isométrica: líneas verticales y a ±30° (los tres ejes de la perspectiva isométrica). */
   _isoGrid(v, ctx, W, H, C) {
-    const st = v.gridStep(), w = st * COS30, t = Math.tan(Math.PI / 6);
+    const st = v.gridStep(), w = st * COS30, t = Math.tan(Math.PI / 6), M = gridMajorOf(this.drawing);
+    const isMajor = i => M > 0 && i % M === 0;
     const [x0, y1] = v.toWorld(0, 0), [x1, y0] = v.toWorld(W, H);
     if ((x1 - x0) / w > 500 || (y1 - y0) / st > 500) return;
     ctx.lineWidth = 1; ctx.setLineDash([]);
@@ -3344,18 +3401,19 @@ export class Cad extends EventTarget {
     for (const major of [false, true]) {
       ctx.strokeStyle = major ? C.major : C.grid;
       ctx.beginPath();
-      for (let i = Math.ceil(x0 / w); i <= Math.floor(x1 / w); i++) if ((i % 5 === 0) === major) seg([i * w, y0], [i * w, y1]);
+      for (let i = Math.ceil(x0 / w); i <= Math.floor(x1 / w); i++) if (isMajor(i) === major) seg([i * w, y0], [i * w, y1]);
       // y = ±t·x + c, con c múltiplo del paso
       for (const sgn of [1, -1]) {
         const cs = [y0 - sgn * t * x0, y0 - sgn * t * x1, y1 - sgn * t * x0, y1 - sgn * t * x1];
         for (let j = Math.ceil(Math.min(...cs) / st); j <= Math.floor(Math.max(...cs) / st); j++) {
-          if ((j % 5 === 0) !== major) continue;
+          if (isMajor(j) !== major) continue;
           const c = j * st;
           seg([x0, sgn * t * x0 + c], [x1, sgn * t * x1 + c]);
         }
       }
       ctx.stroke();
     }
+    if (this.drawing.gridAxes === false) return;
     const o = v.toScreen([0, 0]);
     ctx.strokeStyle = C.axisY; ctx.beginPath(); ctx.moveTo(Math.round(o[0]) + 0.5, 0); ctx.lineTo(Math.round(o[0]) + 0.5, H); ctx.stroke();
   }
@@ -3569,18 +3627,23 @@ export class CadView {
 
   /** Paso automático: el que da unos 12 px en pantalla (1, 2, 5 × 10ⁿ). */
   autoStep() {
-    const target = 12 / this.zoom;
+    const target = (+this.cad.drawing.gridDensity || 12) / this.zoom;
     const p = 10 ** Math.floor(Math.log10(target));
     for (const m of [1, 2, 5, 10]) if (p * m >= target) return p * m;
     return p * 10;
   }
 
   /** Paso de forzado: el fijado en el plano o, si no hay, el automático. */
-  snapStep() { const v = +this.cad.drawing.snapStep; return v > 0 ? v : this.autoStep(); }
+  snapStep() {
+    const D = this.cad.drawing, v = +D.snapStep;
+    if (v > 0) return v;
+    return +D.gridStep > 0 ? +D.gridStep : this.autoStep();
+  }
 
-  /** Paso con el que se dibuja la rejilla: el de forzado, o un múltiplo suyo si quedaría demasiado denso. */
+  /** Paso con el que se dibuja la rejilla: el fijo de la rejilla, si no el de forzado, o un múltiplo suyo si quedaría demasiado denso. */
   gridStep() {
-    const v = +this.cad.drawing.snapStep;
+    const D = this.cad.drawing;
+    const v = +D.gridStep > 0 ? +D.gridStep : +D.snapStep;
     if (!(v > 0)) return this.autoStep();
     for (const m of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]) if (v * m * this.zoom >= 7) return v * m;
     return v * 10000;

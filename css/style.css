@@ -778,6 +778,18 @@ kbd {
 .snap-size { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font: 11px var(--mono); padding: 3px 7px; margin-left: -4px; cursor: pointer; white-space: nowrap; }
 .snap-size:hover { color: var(--text); border-color: var(--line-2); }
 .snap-size.on { color: var(--accent); border-color: var(--accent); }
+.io-btn { display: inline-flex; align-items: center; gap: 6px; }
+.io-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.topbar { scrollbar-width: none; }
+.topbar::-webkit-scrollbar { display: none; }
+@media (max-width: 1500px) {
+  .topbar { overflow-x: auto; }
+  .topbar-group.right { gap: 8px; }
+  .io-btn span { display: none; }
+  .io-btn { padding-left: 8px; padding-right: 8px; }
+}
+@media (max-width: 1360px) { .snap-size .xs { display: none; } }
+@media (max-width: 1200px) { .save-state { display: none; } #lbl-snap span, #lbl-grid span { display: none; } }
 .snap-pop { position: fixed; z-index: 60; width: 270px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 10px 30px var(--shadow); }
 .snap-pop h4 { margin: 0 0 10px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .snap-pop-row { display: grid; grid-template-columns: 58px 1fr; gap: 4px 8px; align-items: center; margin-bottom: 10px; font-size: 12px; }
@@ -787,6 +799,7 @@ kbd {
 .snap-pop-presets .btn { padding: 2px 6px; font-size: 11px; }
 .snap-pop p { margin: 4px 0 0; line-height: 1.4; }
 .snap-pop.wide { width: 320px; }
+.snap-pop-in select { width: 200px; }
 .snap-pop-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin: 0 0 10px; }
 .snap-pop-checks.one { grid-template-columns: 1fr; }
 .snap-pop .toggle { font-size: 12px; }
@@ -797,7 +810,7 @@ kbd {
 .palette-btn:hover { color: var(--text); border-color: var(--line-2); }
 .palette-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .palette-btn kbd { font-size: 10px; padding: 1px 4px; }
-@media (max-width: 1100px) { .palette-btn span, .palette-btn kbd { display: none; } .palette-btn { padding: 0 7px; } }
+@media (max-width: 1560px) { .palette-btn span, .palette-btn kbd { display: none; } .palette-btn { padding: 0 7px; } }
 .palette-backdrop { align-items: flex-start; padding-top: 10vh; }
 .cmdk { width: min(640px, calc(100vw - 24px)); max-height: 72vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 20px 60px var(--shadow); overflow: hidden; }
 .palette-search { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }

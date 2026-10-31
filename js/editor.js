@@ -341,14 +341,7 @@ export class Editor extends EventTarget {
     this._sepColor = null;
     const light = theme === 'light';
     this.scene.background = new THREE.Color(light ? 0xe7e6e2 : 0x0f1114);
-    for (const g of this.grids || []) { this.helpers.remove(g); g.geometry.dispose(); g.material.dispose(); }
-    const grid = new THREE.GridHelper(40, 40, light ? 0xa9a59c : 0x3a4049, light ? 0xc9c6bf : 0x23272d);
-    grid.material.transparent = true;
-    grid.material.opacity = 0.9;
-    const fine = new THREE.GridHelper(40, 160, light ? 0xdcdad5 : 0x1c1f24, light ? 0xdcdad5 : 0x1c1f24);
-    fine.position.y = -0.0005;
-    this.grids = [fine, grid];
-    this.helpers.add(fine, grid);
+    this._buildGrid();
     const sel = light ? 0xc8740c : 0xf2a541;
     this.selectionColor = sel;
     for (const box of this.selectionBoxes?.values() || []) box.material.color.setHex(sel);
@@ -1206,6 +1199,33 @@ export class Editor extends EventTarget {
   }
 
   setGrid(on) { this.helpers.visible = on; }
+
+  /** Rejilla 3D: lado total (u), paso de las líneas finas (u) y una principal cada N finas. */
+  setGridOpts(p = {}) {
+    const ok = (v, d, min = 0) => (+v > min ? +v : d);
+    this.gridOpts = { size: ok(p.size, 40), step: ok(p.step, 0.25), major: Math.round(ok(p.major, 4, 0.5)) };
+    this._buildGrid();
+  }
+
+  _buildGrid() {
+    const light = this.theme === 'light';
+    const o = this.gridOpts || (this.gridOpts = { size: 40, step: 0.25, major: 4 });
+    for (const g of this.grids || []) { this.helpers.remove(g); g.geometry.dispose(); g.material.dispose(); }
+    const majStep = o.step * o.major;
+    // número entero de divisiones principales (el lado se ajusta a un múltiplo del paso principal)
+    const nMaj = Math.max(1, Math.min(1000, Math.round(o.size / majStep)));
+    const size = nMaj * majStep, nFine = Math.min(4000, nMaj * o.major);
+    const grid = new THREE.GridHelper(size, nMaj, light ? 0xa9a59c : 0x3a4049, light ? 0xc9c6bf : 0x23272d);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.9;
+    this.grids = [grid];
+    if (o.major > 1) {
+      const fine = new THREE.GridHelper(size, nFine, light ? 0xdcdad5 : 0x1c1f24, light ? 0xdcdad5 : 0x1c1f24);
+      fine.position.y = -0.0005;
+      this.grids.unshift(fine);
+    }
+    this.helpers.add(...this.grids);
+  }
 
   /** Proyección del panel activo. */
   setProjection(mode) { this.active.setProjection(mode); }
