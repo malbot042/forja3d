@@ -344,6 +344,7 @@ const SECTIONS = [
         <li>${k('W')} Mover · ${k('E')} Rotar · ${k('R')} Escalar. Arrastra una flecha/anillo/cubo del gizmo para un solo eje, o un cuadrado para un plano.</li>
         <li>Con varios objetos seleccionados el gizmo actúa sobre <b>todo el grupo</b> (gira alrededor del último seleccionado).</li>
         <li><b>Snap</b> (${k('G')}): mueve en pasos de 0,25, gira de 15° en 15° y escala de 0,1 en 0,1.</li>
+        <li><b>Escalar por un factor</b>: en Propiedades, fila <b>Multiplicar</b>: escribe el factor (<code>1,5</code>, <code>0,5</code>, <code>150%</code> o <code>3/2</code>) y pulsa <b>Escalar</b> o ${k('Intro')}, o usa los botones ×0,5 · ×1,5 · ×2 · ×10. También con ${k('*')}. Multiplica la escala actual en los tres ejes; con varios objetos, escala el grupo desde su centro.</li>
         <li><b>Reflejar X/Y/Z</b>: crea la imagen en espejo (escala negativa). Combinado con <kbd>Ctrl</kbd>+<kbd>D</kbd> sirve para piezas simétricas.</li>
         <li><b>Al suelo</b>: apoya los objetos sobre la rejilla (Y = 0).</li>
         <li>${k('Ctrl', 'D')} duplica · ${k('Supr')} elimina.</li>
@@ -580,7 +581,7 @@ const SECTIONS = [
         <tr><td>Propiedades</td><td><b>Colocación de la cota</b>: flechas <b>dentro</b> o <b>fuera</b>; texto <b>dentro</b> o <b>fuera</b> (por el inicio o por el final); texto <b>alineado</b>, <b>horizontal</b> o <b>vertical</b> (atravesado, la línea de cota se interrumpe). <i>Automático</i> saca flechas y texto fuera cuando no caben. Se aplica a una cota, a varias seleccionadas o a todo el plano (sin nada seleccionado → <i>Cotas · …</i>)</td></tr>
         <tr><th colspan="2">Modificar</th></tr>
         <tr><td><code>M</code> · <code>CO</code></td><td>Desplazar · Copiar (punto base y destino)</td></tr>
-        <tr><td><code>RO</code> · <code>SC</code> · <code>MI</code></td><td>Girar · Escalar · Simetría</td></tr>
+        <tr><td><code>RO</code> · <code>SC</code> · <code>MI</code></td><td>Girar · Escalar (punto base y factor o referencia; o escribe el factor nada más empezar, p. ej. <code>1,5</code>, para escalar desde el centro) · Simetría. En Propiedades, la fila <b>Multiplicar</b> escala lo seleccionado por un factor desde su centro.</td></tr>
         <tr><td><code>O</code></td><td>Desfase (equidistancia): distancia, objeto y lado</td></tr>
         <tr><td><code>TR</code></td><td>Recortar: clic en la parte que sobra; corta en las intersecciones con el resto</td></tr>
         <tr><td><code>F</code> · <code>CHA</code></td><td><b>Empalme</b> (radio) · <b>Chaflán</b> (distancia): clic en dos líneas, o en una esquina de polilínea; <code>T</code> para todas las esquinas; radio 0 = recortar o alargar hasta la esquina</td></tr>

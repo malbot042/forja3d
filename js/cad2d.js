@@ -50,6 +50,19 @@ export function parseNum(s) {
   return parseFloat(t.replace(',', '.'));
 }
 
+/** Factor de escala escrito por el usuario: 1,5 · x1.5 · ×2 · 150% · 3/2. Devuelve null si no es válido o no es > 0. */
+export function parseFactor(s) {
+  let t = String(s).trim().replace(/^[x×*]\s*/i, '');
+  let v;
+  const pct = /%$/.test(t); if (pct) t = t.slice(0, -1).trim();
+  const fr = t.match(/^(.+?)\s*[/:]\s*(.+)$/);
+  if (fr) { const a = parseNum(fr[1]), b = parseNum(fr[2]); v = a !== null && b ? a / b : null; }
+  else v = parseNum(t);
+  if (v === null || !Number.isFinite(v)) return null;
+  if (pct) v /= 100;
+  return v > 0 ? v : null;
+}
+
 // =================================================================== documento
 export const UNITS = {
   mm: { label: 'Milímetros (mm)', mm: 1, dxf: 4, per3D: 100 },
@@ -2198,14 +2211,19 @@ const TOOLS = {
       cad.setTool('select');
     };
     return {
-      prompt: () => (!base ? 'ESCALA · Punto base' : !ref ? 'ESCALA · Factor (número, p. ej. 2 o 0,5) o señala un punto de referencia' : 'ESCALA · Nuevo punto (factor = nueva distancia ÷ distancia de referencia)'),
+      prompt: () => (!base ? 'ESCALA · Punto base, o escribe ya un factor (p. ej. 1,5) para escalar desde el centro' : !ref ? 'ESCALA · Factor (número, p. ej. 2 o 0,5) o señala un punto de referencia' : 'ESCALA · Nuevo punto (factor = nueva distancia ÷ distancia de referencia)'),
       last: () => base,
       point(p) {
         if (!base) { base = p; return; }
         if (!ref) { if (dist(p, base) > 1e-9) ref = p; return; }
         apply(dist(base, p) / dist(base, ref));
       },
-      input(s) { if (!base) return false; const v = parseNum(s); if (v === null) return false; apply(v); return true; },
+      input(s) {
+        const v = parseFactor(s);
+        if (v === null) return false;
+        if (!base) { if (cad.scaleSel(v)) cad.setTool('select'); return true; }
+        apply(v); return true;
+      },
       preview() {
         if (!base || !ref || !cad.cur) return null;
         const f = dist(base, cad.cur) / dist(base, ref);
@@ -2544,6 +2562,17 @@ export class Cad extends EventTarget {
       if (copy) this.add({ ...n, layer: e.layer });
       else this.drawing.entities[this.drawing.entities.indexOf(e)] = n;
     }
+  }
+
+  /** Escala la selección por un factor alrededor de `base` (por defecto, el centro de lo seleccionado). */
+  scaleSel(f, base = null) {
+    f = +f;
+    if (!(f > 0) || !this.sel.size) { if (!(f > 0)) this.message('El factor de escala debe ser mayor que 0'); return false; }
+    if (!base) { const bb = this.extents(this.selEnts()); if (!bb) return false; base = [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2]; }
+    this.transformSel(q => add(base, mul(sub(q, base), f)), { scale: f });
+    this.commit();
+    this.message(`Escalado ×${+f.toPrecision(6)} desde ${fmtNum(base[0], this.drawing)}, ${fmtNum(base[1], this.drawing)}`);
+    return true;
   }
 
   eraseSel() {

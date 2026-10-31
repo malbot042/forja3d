@@ -901,3 +901,11 @@ kbd {
 .act-btn.danger { color: var(--danger-text); }
 .act-btn.danger:hover:not(:disabled) { border-color: color-mix(in srgb, var(--danger-text) 50%, var(--line)); background: color-mix(in srgb, var(--danger-text) 10%, var(--panel-2)); }
 .panel-actions .act-btn { flex: 1 1 0; justify-content: center; }
+
+/* fila «Multiplicar por» (escalar por un factor) */
+.factor-row { align-items: start; }
+.factor-ctl { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.factor-main { display: flex; align-items: center; gap: 6px; }
+.factor-main .factor-in { flex: 1; min-width: 0; width: auto; font-family: var(--mono); }
+.factor-quick { display: flex; gap: 3px; flex-wrap: wrap; }
+.factor-quick .btn { padding: 2px 6px; font-size: 11px; font-family: var(--mono); }

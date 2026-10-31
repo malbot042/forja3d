@@ -11,7 +11,7 @@ import { EXPORT_FORMATS, IMPORT_EXTENSIONS, exportModel, loadModelFile } from '.
 import { makePdf } from './pdf.js';
 import { openPalette } from './palette.js';
 import { SCULPT_METHODS, LEVEL_LABELS } from './sculpt.js';
-import { GRID_DENSITIES, GRID_LIMITS, gridMajorOf, defaultGridArea, profileFromSketch, emptyDrawing, DIM_OPTS, dimOptsFor, dimDefaultKey, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, toPDFMulti, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
+import { parseFactor, GRID_DENSITIES, GRID_LIMITS, gridMajorOf, defaultGridArea, profileFromSketch, emptyDrawing, DIM_OPTS, dimOptsFor, dimDefaultKey, blockDate, BLOCK_FIELDS, ISO_PLANES, isIsoCircle, PAPERS, PAPER_SCALES, sheetOf, toPDF, toPDFMulti, CAD_TOOLS, CAD_OPS, UNITS, LINETYPES, TYPE_LABELS, DIM_LABELS, OSNAP_LABELS, fmtNum, entityInfo, isRect, buildShapes, toDXF, toSVG } from './cad2d.js';
 
 const $ = sel => document.querySelector(sel);
 const h = (tag, attrs = {}, ...children) => {
@@ -1718,6 +1718,7 @@ function renderCadProps(box) {
           cad.commit();
         }))]),
       dims.length ? sec('dimplace', `Colocación de las cotas (${dims.length})`, dimStyleRows(dims)) : null,
+      sec('scale2d', 'Escalar', [factorRow(f => cad.scaleSel(f), { title: 'Escala lo seleccionado por este factor desde su centro (p. ej. 1,5 · 0,5 · 150% · 3/2). Para elegir otro punto base, usa la orden Escala.' })]),
       sec('actions2d-sel', 'Acciones', [
         actGrid(
           ['move', 'copy', 'rotate', 'scale', 'mirror'].map(k => cadBtn(k, () => cad.runOp(k))),
@@ -1833,9 +1834,10 @@ function renderCadProps(box) {
         : null]),
     sec(`geo2d-${e.type}`, geoTitle, geo),
     ...extra.map(([k, t, c]) => sec(k, t, c)),
+    sec('scale2d', 'Escalar', [factorRow(f => cad.scaleSel(f), { title: 'Escala el objeto por este factor desde su centro (p. ej. 1,5 · 0,5 · 150% · 3/2). Para elegir otro punto base, usa la orden Escala.' })]),
     sec('actions2d-sel', 'Acciones', [
       actGrid(
-        ['move', 'copy', 'rotate', 'mirror'].map(k => cadBtn(k, () => cad.runOp(k))),
+        ['move', 'copy', 'rotate', 'scale', 'mirror'].map(k => cadBtn(k, () => cad.runOp(k))),
         ['line', 'pline', 'circle', 'arc'].includes(e.type) ? cadBtn('offset', () => cad.setTool('offset')) : null,
         e.type === 'pline' ? cadBtn('explode', () => cad.explodeSel()) : null,
         cadBtn('erase', () => cad.eraseSel(), { kind: 'danger' }))]),
@@ -2275,6 +2277,8 @@ function paletteActions() {
     ['pencil', 'Modo lápiz (a mano alzada)', '', 'boceto dibujo mano estilo linea']]) {
     add({ id: `cadt-${k}`, ws: '2d', label, group: 'Ayudas al dibujo 2D', keys: key ? [key] : [], words, run: () => cad.toggle(k) });
   }
+  add({ id: 'scale-factor3', ws: '3d', label: 'Escalar por un factor… (p. ej. ×1,5)', group: 'Transformar 3D', keys: ['*'], words: 'multiplicar escala factor agrandar reducir porcentaje', run: () => scaleByFactorPrompt() });
+  add({ id: 'scale-factor2', ws: '2d', label: 'Escalar por un factor… (p. ej. ×1,5, desde el centro)', group: 'Modificar 2D', words: 'multiplicar escala factor agrandar reducir porcentaje', run: () => scaleByFactorPrompt() });
   add({ id: 'cad-grid', ws: '2d', label: 'Rejilla 2D: paso, principales y extensión', group: 'Ayudas al dibujo 2D', words: 'grid cuadricula limite area infinita zoom', run: () => gridPopover() });
   add({ id: 'grid3opts', ws: '3d', label: 'Rejilla 3D: tamaño y paso', group: 'Vistas 3D', words: 'grid cuadricula', run: () => gridPopover() });
   add({ id: 'cad-step', ws: '2d', label: 'Snap 2D: paso del forzado y referencias', group: 'Ayudas al dibujo 2D', words: 'snap rejilla paso tamaño', run: () => cadSnapPopover() });
@@ -2349,6 +2353,7 @@ function onKey(e) {
   else if (k === 'e') setTransform('rotate');
   else if (k === 'r') setTransform('scale');
   else if (k === 'z') { setView({ solid: 'wire', wire: 'sketch', sketch: 'solid' }[editor.viewMode] || 'solid'); scheduleSave(); }
+  else if (e.key === '*') { e.preventDefault(); scaleByFactorPrompt(); }
   else if (k === 'g') { const c = $('#chk-snap'); c.checked = !c.checked; c.dispatchEvent(new Event('change')); refreshSnapSizeBtn(); }
   else if (k === 'delete' || k === 'backspace') { e.preventDefault(); editor.remove(); }
   else if (k === 'escape') editor.select(null);
@@ -2697,6 +2702,7 @@ function renderProps() {
       vec3Row('Posición', 'position', sel.position, 0.05),
       vec3Row('Rotación °', 'rotation', sel.rotation, 1),
       vec3Row('Escala', 'scale', sel.scale, 0.05),
+      factorRow(scale3D),
       actGrid(mirrorButtons(), opBtn('drop', () => editor.dropToFloor()))]),
     sec('color', 'Color', [
       row('Color', h('div', { class: 'color-input' }, color, code)),
@@ -2782,7 +2788,8 @@ function renderOperandProps(box) {
     sec('transform', 'Posición, giro y escala (dentro de la operación)', [
       vec3Row('Posición', 'position', op.position, 0.05),
       vec3Row('Rotación °', 'rotation', op.rotation, 1),
-      vec3Row('Escala', 'scale', op.scale, 0.05)]),
+      vec3Row('Escala', 'scale', op.scale, 0.05),
+      factorRow(scale3D)]),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Acciones'),
       actGrid(
@@ -2791,6 +2798,37 @@ function renderOperandProps(box) {
         op.helper ? null : actBtn({ icon: 'extract', label: 'Extraer', title: 'La saca de la operación y la deja como objeto independiente', onclick: () => editor.removeOperand(rootId, path, { extract: true }) }),
         actBtn({ icon: 'remove', label: 'Quitar', title: 'La quita de la operación (Supr)', onclick: () => editor.removeOperand(rootId, path), kind: 'danger' }))),
   );
+}
+
+/** Fila «Multiplicar por»: escala lo seleccionado por un factor (1,5 · 150% · 3/2) o con un botón rápido. */
+let lastFactor = 1.5;
+function factorRow(apply, { label = 'Multiplicar', title = 'Escala lo seleccionado por este factor (p. ej. 1,5 · 0,5 · 150% · 3/2)' } = {}) {
+  const inp = h('input', { type: 'text', class: 'text-input factor-in', inputmode: 'decimal', title, 'aria-label': 'Factor de escala', spellcheck: 'false' });
+  inp.value = fmtN(lastFactor);
+  const go = v => {
+    const f = parseFactor(v);
+    if (f === null) { toast('Escribe un factor mayor que 0, p. ej. 1,5 · 0,5 · 150% · 3/2', true); inp.focus(); return; }
+    if (Math.abs(f - 1) < 1e-12) return;
+    lastFactor = f; inp.value = fmtN(f);
+    apply(f);
+  };
+  inp.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); go(inp.value); } ev.stopPropagation(); };
+  const quick = v => h('button', { class: 'btn sm', title: `Escalar ×${fmtN(v)}`, onclick: () => go(String(v)) }, `×${fmtN(v)}`);
+  return h('div', { class: 'prop-row factor-row' }, h('label', { title }, label),
+    h('div', { class: 'factor-ctl' },
+      h('div', { class: 'factor-main' }, h('span', { class: 'muted' }, '×'), inp, h('button', { class: 'btn sm primary', title, onclick: () => go(inp.value) }, 'Escalar')),
+      h('div', { class: 'factor-quick' }, quick(0.5), quick(1.5), quick(2), quick(10))));
+}
+const scale3D = f => { if (editor.nudge('scale', null, f)) toast(`Escalado ×${fmtN(f)}`); };
+/** Pide un factor y escala lo seleccionado (2D o 3D). */
+function scaleByFactorPrompt() {
+  if (is2D() ? !editor.cad.sel.size : !editor.selection.length) { toast('Selecciona primero lo que quieras escalar', true); return; }
+  const r = prompt('Escalar por un factor (p. ej. 1,5 · 0,5 · 150% · 3/2):', fmtN(lastFactor));
+  if (r == null) return;
+  const f = parseFactor(r);
+  if (f === null) { toast('Factor no válido: debe ser un número mayor que 0', true); return; }
+  lastFactor = f;
+  if (is2D()) editor.cad.scaleSel(f); else scale3D(f);
 }
 
 const mirrorButtons = () => ['x', 'y', 'z'].map(a => actBtn({ icon: 'mirror', label: `Reflejar ${a.toUpperCase()}`, title: `Reflejar en el eje ${a.toUpperCase()} (simetría)`, onclick: () => editor.mirror(a) }));
@@ -2811,7 +2849,8 @@ function renderMultiProps(box) {
       h('h3', {}, 'Operaciones'),
       actGrid(op('union'), op('subtract'), op('intersect'), hasPlane ? op('split') : null)),
     h('div', { class: 'prop-section' },
-      h('h3', {}, 'Posición'),
+      h('h3', {}, 'Posición y escala'),
+      factorRow(scale3D, { title: 'Escala todo el grupo por este factor, desde su centro (p. ej. 1,5 · 0,5 · 150% · 3/2)' }),
       actGrid(mirrorButtons(), opBtn('drop', () => editor.dropToFloor()))),
     h('div', { class: 'prop-section' },
       h('h3', {}, 'Color para todos'),
