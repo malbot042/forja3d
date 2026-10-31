@@ -1323,7 +1323,6 @@ function sec(key, title, children, { open = true, note = '' } = {}) {
   });
   return d;
 }
-const kbdList = items => { const ul = h('ul', { class: 'kbd-list' }); ul.innerHTML = items.map(t => `<li>${t}</li>`).join(''); return ul; };
 
 /** Propiedades en modo 2D: ajustes del plano, una entidad o varias. */
 /** Sección «Hoja»: formato A5-A0, orientación, escala, recuadro y PDF a escala. */
@@ -1482,24 +1481,6 @@ function renderCadProps(box) {
           btn('Exportar DXF', () => exportCad('dxf')),
           btn('Exportar SVG', () => exportCad('svg')),
           btn('Importar DXF', () => $('#model-input').click()))]),
-      sec('help2d', 'Ayuda rápida', [
-        h('h4', { class: 'fold-sub' }, 'Dibujar'),
-        kbdList([
-          '<b>L</b> línea · <b>PL</b> polilínea · <b>REC</b> rectángulo · <b>C</b> círculo · <b>A</b> arco · <b>T</b> texto',
-          '<b>DLI</b> cota · <b>DAL</b> alineada · <b>DRA</b>/<b>DDI</b> radio/diámetro · <b>DAN</b> ángulo · <b>DI</b> medir',
-          '<b>M</b> desplazar · <b>CO</b> copiar · <b>RO</b> girar · <b>SC</b> escala · <b>MI</b> simetría · <b>O</b> desfase · <b>TR</b> recortar · <b>F</b> empalme · <b>CHA</b> chaflán',
-          'Coordenadas: <b>x,y</b> · <b>@dx,dy</b> · <b>dist&lt;ángulo</b> · o una distancia',
-          '<b>Intro</b>, <b>Espacio</b> o clic derecho: terminar / repetir · <b>Esc</b>: cancelar',
-          'Rueda: zoom · botón central o derecho: desplazar · doble clic central: encuadrar',
-        ]),
-        h('h4', { class: 'fold-sub' }, 'Seleccionar y editar'),
-        kbdList([
-          '<b>Clic</b> en un objeto: seleccionarlo · <b>Mayús+clic</b>: añadir o quitar · <b>Esc</b>: deseleccionar',
-          'Arrastrar en vacío <b>→</b> (azul): solo lo que queda dentro · <b>←</b> (verde): todo lo que toca',
-          'Seleccionado: arrastra un <b>pinzamiento ■</b> para estirar, cambiar el radio o mover un vértice; arrastra la línea para mover el objeto',
-          'Valores exactos: edítalos aquí, en Propiedades (doble clic en el objeto)',
-          '<b>Flechas</b>: desplazar (Mayús ×10) · <b>Ctrl+C / Ctrl+V</b>: copiar y pegar · <b>Ctrl+D</b>: duplicar · <b>Supr</b>: borrar',
-        ])], { open: false }),
     ].filter(Boolean));
     return;
   }
