@@ -591,8 +591,11 @@ function initEditor() {
 
   $('#transform-mode').onclick = e => { const b = e.target.closest('button'); if (b) setTransform(b.dataset.mode); };
   $('#view-mode').onclick = e => { const b = e.target.closest('button'); if (b) { setView(b.dataset.view); scheduleSave(); } };
-  $('#chk-snap').onchange = e => { editor.setSnap(e.target.checked); scheduleSave(); refreshStatus(); refreshSnapSizeBtn(); };
-  $('#btn-snap-size').onclick = e => { e.stopPropagation(); snapSizePopover(); };
+  $('#chk-snap').onchange = e => {
+    if (is2D()) { if (!!editor.cad.gridSnap !== e.target.checked) editor.cad.toggle('gridSnap'); refreshSnapSizeBtn(); return; }
+    editor.setSnap(e.target.checked); scheduleSave(); refreshStatus(); refreshSnapSizeBtn();
+  };
+  $('#btn-snap-size').onclick = e => { e.stopPropagation(); if (document.querySelector('.snap-pop')) { document.querySelector('.snap-pop').remove(); return; } is2D() ? cadSnapPopover() : snapSizePopover(); };
   $('#chk-grid').onchange = e => { editor.setGrid(e.target.checked); scheduleSave(); };
 
   // vistas y operaciones
@@ -1129,9 +1132,69 @@ function refreshSnapSelect() {
 
 const fmtN = v => String(+(+v).toFixed(4)).replace('.', ',');
 function refreshSnapSizeBtn() {
-  const s = editor.snapSizes, b = $('#btn-snap-size');
+  const b = $('#btn-snap-size'), chk = $('#chk-snap');
+  if (is2D()) {
+    const c = editor.cad, D = c.drawing, st = +D.snapStep || 0;
+    const u = D.units === 'u' ? '' : ` ${D.units}`;
+    b.textContent = st ? `${fmtN(st)}${u}` : 'auto';
+    b.title = 'Snap 2D: paso del forzado a la rejilla y referencias a objetos';
+    b.classList.toggle('on', !!c.gridSnap);
+    chk.checked = !!c.gridSnap;
+    $('#lbl-snap').title = 'Forzar el cursor a la rejilla (F9)';
+    return;
+  }
+  const s = editor.snapSizes;
   b.textContent = `${fmtN(s.move)} · ${fmtN(s.rot)}° · ×${fmtN(s.scale)}`;
+  b.title = 'Tamaño del snap: paso al mover, girar y escalar';
   b.classList.toggle('on', !!editor.snap);
+  chk.checked = !!editor.snap;
+  $('#lbl-snap').title = 'Ajuste a rejilla (G)';
+}
+
+const CAD_SNAP_PRESETS = { mm: [0.5, 1, 2, 5, 10], cm: [0.1, 0.5, 1, 5, 10], m: [0.01, 0.05, 0.1, 0.5, 1], in: [0.0625, 0.125, 0.25, 0.5, 1], u: [0.25, 0.5, 1, 5, 10] };
+
+/** Ventanita del snap 2D: forzado a la rejilla y su paso, referencias a objetos y orto. */
+function cadSnapPopover() {
+  document.querySelector('.snap-pop')?.remove();
+  const cad = editor.cad, D = cad.drawing;
+  const btn = $('#btn-snap-size'), r = btn.getBoundingClientRect();
+  const pop = h('div', { class: 'snap-pop wide', role: 'dialog', 'aria-label': 'Snap 2D' });
+  const check = (label, get, set, title) => {
+    const c = h('input', { type: 'checkbox' });
+    c.checked = !!get();
+    c.onchange = () => set(c.checked);
+    return h('label', { class: 'toggle', title: title || '' }, c, h('span', {}, label));
+  };
+  const flag = k => check({ gridSnap: 'Forzar a la rejilla (F9)', osnapOn: 'Referencias a objetos (F3)', ortho: 'Orto (F8)' }[k],
+    () => cad[k], v => { if (!!cad[k] !== v) cad.toggle(k); render(); });
+  const unit = D.units === 'u' ? 'unidades' : D.units;
+  const render = () => {
+    const inp = h('input', { type: 'number', class: 'text-input', min: 0, step: 'any', placeholder: 'auto' });
+    inp.value = +D.snapStep || '';
+    const apply = v => { cad.setSnapStep(v); refreshSnapSizeBtn(); render(); };
+    inp.onchange = () => apply(parseFloat(String(inp.value).replace(',', '.')) || 0);
+    inp.onkeydown = ev => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') pop.remove(); ev.stopPropagation(); };
+    const cur = +D.snapStep || 0;
+    const presets = [h('button', { class: `btn sm${cur ? '' : ' primary'}`, title: 'Paso automático: sigue al zoom', onclick: () => apply(0) }, 'Auto'),
+      ...(CAD_SNAP_PRESETS[D.units] || CAD_SNAP_PRESETS.u).map(v => h('button', { class: `btn sm${cur === v ? ' primary' : ''}`, onclick: () => apply(v) }, fmtN(v)))];
+    const osnaps = Object.entries(OSNAP_LABELS).map(([k, l]) => check(l, () => cad.osnap[k] !== false, v => { cad.osnap[k] = v; cad.savePrefs(); }));
+    pop.replaceChildren(
+      h('h4', {}, 'Snap 2D'),
+      h('div', { class: 'snap-pop-checks one' }, flag('gridSnap')),
+      h('div', { class: 'snap-pop-row' }, h('label', {}, 'Paso'),
+        h('div', { class: 'snap-pop-in' }, inp, h('span', { class: 'muted' }, unit)),
+        h('div', { class: 'snap-pop-presets' }, presets)),
+      h('div', { class: 'snap-pop-checks one' }, flag('osnapOn')),
+      h('div', { class: 'snap-pop-checks' }, osnaps),
+      h('div', { class: 'snap-pop-checks one' }, flag('ortho')),
+      h('p', { class: 'muted small' }, 'Con «Forzar», el cursor salta a la rejilla al paso elegido (Auto = según el zoom). El paso se guarda con el plano.'));
+  };
+  render();
+  document.body.append(pop);
+  pop.style.top = `${r.bottom + 6}px`;
+  pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth))}px`;
+  const close = ev => { if (!pop.isConnected) { document.removeEventListener('pointerdown', close, true); return; } if (!pop.contains(ev.target) && !btn.contains(ev.target)) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
+  document.addEventListener('pointerdown', close, true);
 }
 
 /** Ventanita para elegir el paso del snap 3D (mover, girar, escalar). */
@@ -1173,6 +1236,7 @@ function snapSizePopover() {
 function refreshCadToggles() {
   const c = editor.cad;
   refreshSnapSelect();
+  refreshSnapSizeBtn();
   for (const b of document.querySelectorAll('[data-cadt]')) {
     const k = b.dataset.cadt;
     const v = editor.cadActive?.cadView;
@@ -1212,7 +1276,9 @@ function applyMode() {
     editor.cad.cancel(true);
     $('#cmd-input').value = '';
     if (document.activeElement === $('#cmd-input')) $('#cmd-input').blur();
+    refreshSnapSizeBtn();
   }
+  document.querySelector('.snap-pop')?.remove();
   renderProps();
   refreshStatus();
   refreshHistoryButtons();
@@ -2103,7 +2169,7 @@ function paletteActions() {
     ['pencil', 'Modo lápiz (a mano alzada)', '', 'boceto dibujo mano estilo linea']]) {
     add({ id: `cadt-${k}`, ws: '2d', label, group: 'Ayudas al dibujo 2D', keys: key ? [key] : [], words, run: () => cad.toggle(k) });
   }
-  add({ id: 'cad-step', ws: '2d', label: 'Paso del forzado (tamaño del snap)', group: 'Ayudas al dibujo 2D', words: 'snap rejilla paso', run: () => { $('#snap-step').focus(); $('#snap-step').showPicker?.(); } });
+  add({ id: 'cad-step', ws: '2d', label: 'Snap 2D: paso del forzado y referencias', group: 'Ayudas al dibujo 2D', words: 'snap rejilla paso tamaño', run: () => cadSnapPopover() });
   add({ id: 'cad-layer', ws: '2d', label: 'Nueva capa', group: 'Capas y hoja 2D', run: click('#btn-layer-add') });
   add({ id: 'cad-paper', ws: '2d', label: 'Elegir tamaño de hoja (A5 … A0)', group: 'Capas y hoja 2D', words: 'papel formato a4 a3 recuadro cajetin', run: () => { cad.setSel([]); setTimeout(() => { const d = $('#props details[data-fold="paper"]'); if (d) d.open = true; const s = $('#props .prop-row:has(label) select'); const f = [...document.querySelectorAll('#props .prop-row')].find(r => r.textContent.startsWith('Formato'))?.querySelector('select'); (f || s)?.focus(); f?.scrollIntoView({ block: 'center' }); }, 60); } });
   add({ id: 'sh-new', ws: '2d', label: 'Nueva hoja', group: 'Hojas del plano', words: 'hoja pagina plano presentacion añadir', run: () => addSheet() });

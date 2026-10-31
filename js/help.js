@@ -599,7 +599,8 @@ const SECTIONS = [
       <ul>
         <li><b>Referencias</b> (<kbd>F3</kbd>): el cursor se engancha a puntos finales, medios, centros, cuadrantes, intersecciones e inserción de texto. Se eligen en Propiedades (sin nada seleccionado).</li>
         <li><b>Orto</b> (<kbd>F8</kbd>): solo horizontal o vertical. <b>Forzar</b> (<kbd>F9</kbd>): el cursor salta a la rejilla. <b>Rejilla</b> (<kbd>F7</kbd>).</li>
-        <li><b>Paso del forzado</b>: el selector <b>Paso</b> junto a «Forzar» (o «Paso forzado» en Propiedades) fija cada cuánto salta el cursor: 0,5, 1, 5, 10 mm… u <b>Otro…</b> para cualquier valor. <b>Auto</b> lo adapta al zoom. Con un paso fijo la rejilla se dibuja a ese paso (o a un múltiplo si estás muy lejos), y las flechas desplazan la selección ese paso. Vale también para la rejilla isométrica.</li>
+        <li><b>Snap 2D</b>: como en 3D, la casilla <b>Snap</b> de la barra superior activa el forzado y el botón de al lado abre su ventanita: paso, referencias a objetos (punto final, medio, centro…) y orto.</li>
+        <li><b>Paso del forzado</b>: el botón junto a «Snap», el selector <b>Paso</b> junto a «Forzar» o «Paso forzado» en Propiedades fija cada cuánto salta el cursor: 0,5, 1, 5, 10 mm… u <b>Otro…</b> para cualquier valor. <b>Auto</b> lo adapta al zoom. Con un paso fijo la rejilla se dibuja a ese paso (o a un múltiplo si estás muy lejos), y las flechas desplazan la selección ese paso. Vale también para la rejilla isométrica.</li>
         <li>Los botones de la barra de estado activan y desactivan lo mismo; a la derecha se ven las coordenadas del cursor.</li>
       </ul>
       <h4>Seleccionar y editar</h4>
