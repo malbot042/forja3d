@@ -420,6 +420,7 @@ const SECTIONS = [
         <li><b>Resolución</b>: 1×, 2× o 4× el tamaño de la pantalla, para imágenes nítidas o carteles.</li>
         <li><b>Incluir</b>: la <b>rejilla y los ejes</b> (desmárcalo para una imagen limpia), el <b>nombre de cada vista</b> cuando hay varias, y para PDF/impresión un <b>título y la fecha</b>.</li>
         <li><b>Página A4</b> (PDF e impresión): orientación automática según la forma de la imagen, horizontal o vertical.</li>
+        <li><b>Plano 2D con hoja</b>: el PDF y la impresión no son la vista, sino la <b>hoja</b> entera a su formato (A5–A0), orientación y escala, con recuadro y cajetín. El formato y la orientación se cambian desde el propio diálogo (cambian la hoja del plano). Imprime al 100 %, sin «ajustar a la página».</li>
       </ul>
       <p>La vista previa del diálogo muestra exactamente lo que se va a guardar. Las opciones elegidas se recuerdan para la próxima vez.</p>
       <h4>Ejemplo: lámina de un diseño en 4 vistas</h4>

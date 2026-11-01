@@ -3188,6 +3188,22 @@ export class Cad extends EventTarget {
     this.zoomExtents();
   }
 
+  /** La hoja sola sobre blanco, a `pxmm` píxeles por mm de papel (imprimir y vista previa). null sin hoja. */
+  sheetCanvas(pxmm = 4) {
+    const S = sheetOf(this.drawing);
+    if (!S) return null;
+    pxmm = Math.min(pxmm, Math.sqrt(40e6 / (S.w * S.h)));
+    const MM = 96 / 25.4, W = S.w * MM, H = S.h * MM;   // encuadre en px CSS: los grosores de línea quedan en mm reales
+    const c = document.createElement('canvas');
+    c.width = Math.round(S.w * pxmm); c.height = Math.round(S.h * pxmm);
+    const v = Object.create(CadView.prototype);
+    Object.assign(v, { cad: this, W, H, dpr: 1, cx: (S.x0 + S.x1) / 2, cy: (S.y0 + S.y1) / 2, zoom: MM / S.k, screenCursor: null });
+    const ctx = c.getContext('2d');
+    ctx.scale(c.width / W, c.height / H);
+    this.render(v, ctx, W, H, { print: true, background: 'white', grid: false });
+    return c;
+  }
+
   /** Coloca la hoja centrada sobre lo dibujado. */
   centerPaper() {
     const S = sheetOf(this.drawing), bb = this.extents();

@@ -2028,6 +2028,10 @@ function captureDialog(initialFormat) {
       seg('scale', [[1, '1×'], [2, '2×'], [4, '4×']])),
     orientation: h('div', { class: 'cap-row' }, h('span', { class: 'cap-label' }, 'Página A4'),
       seg('orientation', [['auto', 'Automática'], ['landscape', 'Horizontal'], ['portrait', 'Vertical']])),
+    paper: h('div', { class: 'cap-row' }, h('span', { class: 'cap-label' }, 'Hoja del plano'),
+      h('div', { class: 'cap-checks-list' },
+        seg('paperSize', Object.keys(PAPERS).map(k => [k, k])),
+        seg('paperLand', [['h', 'Horizontal'], ['v', 'Vertical']]))),
     options: h('div', { class: 'cap-row cap-checks' }, h('span', { class: 'cap-label' }, 'Incluir'),
       h('div', { class: 'cap-checks-list' },
         chk('grid', 'Rejilla y ejes'),
@@ -2035,17 +2039,26 @@ function captureDialog(initialFormat) {
         chk('header', 'Título y fecha (PDF / impresión)'))),
   };
   const actionBtn = h('button', { class: 'btn btn-primary' }, 'Descargar');
+  const note = h('span', { class: 'muted' });
   let current = null;
   let timer = null;
+  // en 2D con hoja, el PDF y la impresión son la hoja a su formato y escala, no la vista
+  const sheetMode = () => is2D() && !!sheetOf(editor.cad.drawing) && (st.format === 'pdf' || st.format === 'print');
 
   function update() {
+    const S = sheetOf(editor.cad.drawing);
+    const vals = { ...st, paperSize: S?.size, paperLand: S?.landscape ? 'h' : 'v' };
     for (const segEl of wrap.querySelectorAll('.cap-seg')) {
-      for (const b of segEl.children) b.classList.toggle('active', String(st[segEl.dataset.key]) === b.dataset.v);
+      for (const b of segEl.children) b.classList.toggle('active', String(vals[segEl.dataset.key]) === b.dataset.v);
     }
-    const isDoc = st.format === 'pdf' || st.format === 'print';
+    const isDoc = st.format === 'pdf' || st.format === 'print', sm = sheetMode();
+    rowsEl.paper.hidden = !sm;
+    rowsEl.background.hidden = rowsEl.scale.hidden = rowsEl.options.hidden = sm;
+    note.textContent = sm ? `Se ${st.format === 'print' ? 'imprime' : 'exporta'} la hoja ${S.size} ${S.landscape ? 'horizontal' : 'vertical'} a escala ${S.scale}, con su recuadro y cajetín. Imprímela al 100 %, sin «ajustar a la página».`
+      : 'Se capturan las vistas tal como están en pantalla, sin el gizmo ni las cajas de selección.';
     if (st.background === 'transparent' && st.format !== 'png') st.background = 'theme';
     rowsEl.background.querySelector('[data-v="transparent"]').disabled = st.format !== 'png';
-    rowsEl.orientation.hidden = !isDoc;
+    rowsEl.orientation.hidden = !isDoc || sm;
     rowsEl.options.querySelectorAll('.toggle')[1].hidden = editor.shownPanels.length < 2;
     rowsEl.options.querySelectorAll('.toggle')[2].hidden = !isDoc;
     actionBtn.textContent = st.format === 'print' ? 'Imprimir…' : 'Descargar';
@@ -2054,12 +2067,13 @@ function captureDialog(initialFormat) {
   }
 
   function render() {
-    current = editor.capture({ scale: st.scale, grid: st.grid, labels: st.labels, background: st.background });
+    const S = sheetMode() && sheetOf(editor.cad.drawing);
+    current = S ? editor.cad.sheetCanvas(3) : editor.capture({ scale: st.scale, grid: st.grid, labels: st.labels, background: st.background });
     const pv = document.createElement('canvas');
     const k = Math.min(1, 560 / current.width);
     pv.width = Math.round(current.width * k); pv.height = Math.round(current.height * k);
     const ctx = pv.getContext('2d');
-    if (st.background === 'transparent') {
+    if (st.background === 'transparent' && !S) {
       // damero para que se vea la transparencia
       for (let y = 0; y < pv.height; y += 10) for (let x = 0; x < pv.width; x += 10) {
         ctx.fillStyle = ((x + y) / 10) % 2 ? '#d8d8d8' : '#f4f4f4'; ctx.fillRect(x, y, 10, 10);
@@ -2067,14 +2081,17 @@ function captureDialog(initialFormat) {
     }
     ctx.drawImage(current, 0, 0, pv.width, pv.height);
     preview.src = pv.toDataURL('image/png');
-    info.textContent = `${current.width} × ${current.height} px · ${editor.shownPanels.length} vista${editor.shownPanels.length > 1 ? 's' : ''}`;
+    info.textContent = S ? `Hoja ${S.size} · ${S.w} × ${S.h} mm · escala ${S.scale}`
+      : `${current.width} × ${current.height} px · ${editor.shownPanels.length} vista${editor.shownPanels.length > 1 ? 's' : ''}`;
   }
 
   wrap.addEventListener('click', e => {
     const b = e.target.closest('.cap-seg button');
     if (!b || b.disabled) return;
     const key = b.parentElement.dataset.key;
-    st[key] = key === 'scale' ? +b.dataset.v : b.dataset.v;
+    if (key === 'paperSize') editor.cad.setPaper({ size: b.dataset.v });
+    else if (key === 'paperLand') editor.cad.setPaper({ landscape: b.dataset.v === 'h' });
+    else st[key] = key === 'scale' ? +b.dataset.v : b.dataset.v;
     update();
   });
 
@@ -2086,6 +2103,13 @@ function captureDialog(initialFormat) {
   };
   const base = `${store.slug(project.name)}-${new Date().toISOString().slice(0, 10)}`;
   const go = async () => {
+    if (sheetMode()) {
+      const sheetPrint = st.format === 'print';
+      close();
+      if (sheetPrint) printImage(editor.cad.sheetCanvas(8), { paper: sheetOf(editor.cad.drawing) });
+      else exportCad('pdf');
+      return;
+    }
     if (!current) render();
     const img = current;
     const title = st.header ? project.name : '';
@@ -2120,11 +2144,10 @@ function captureDialog(initialFormat) {
   };
   document.addEventListener('keydown', onKey, true);
   wrap.append(h('div', { class: 'modal capture', role: 'dialog', 'aria-modal': 'true' },
-    h('header', { class: 'modal-head' }, h('h2', {}, 'Capturar o imprimir'),
-      h('span', { class: 'muted' }, 'Se capturan las vistas tal como están en pantalla, sin el gizmo ni las cajas de selección.')),
+    h('header', { class: 'modal-head' }, h('h2', {}, 'Capturar o imprimir'), note),
     h('div', { class: 'capture-body' },
       h('div', { class: 'cap-preview-wrap' }, preview, info),
-      h('div', { class: 'cap-opts' }, rowsEl.format, rowsEl.background, rowsEl.scale, rowsEl.orientation, rowsEl.options)),
+      h('div', { class: 'cap-opts' }, rowsEl.format, rowsEl.background, rowsEl.scale, rowsEl.orientation, rowsEl.paper, rowsEl.options)),
     h('footer', { class: 'modal-foot' },
       h('button', { class: 'btn', onclick: close }, 'Cancelar'), actionBtn)));
   wrap.addEventListener('pointerdown', e => { if (e.target === wrap) close(); });
@@ -2132,18 +2155,22 @@ function captureDialog(initialFormat) {
   update();
 }
 
-/** Imprime una imagen (el usuario puede elegir «Guardar como PDF» en el diálogo del navegador). */
-function printImage(canvas, { title, subtitle, orientation }) {
+/**
+ * Imprime una imagen (el usuario puede elegir «Guardar como PDF» en el diálogo del navegador).
+ * Con `paper` (una hoja del plano, sheetOf) la página es de ese formato y la imagen la ocupa entera, a escala.
+ */
+function printImage(canvas, { title, subtitle, orientation, paper }) {
   const sheet = $('#print-sheet');
   const landscape = orientation === 'landscape' || (orientation === 'auto' && canvas.width >= canvas.height);
   const flat = flattenOn(canvas, '#ffffff');
   sheet.replaceChildren(
     title ? h('h1', {}, title) : null,
     subtitle ? h('p', {}, subtitle) : null,
-    h('img', { src: flat.toDataURL('image/jpeg', 0.95), alt: title || 'Captura', style: `max-height:${landscape ? 165 : 235}mm` }));
+    h('img', { src: flat.toDataURL(paper ? 'image/png' : 'image/jpeg', 0.95), alt: title || 'Captura',
+      style: paper ? `width:${paper.w}mm;height:calc(${paper.h}mm - 1px);max-width:none;max-height:none` : `max-height:${landscape ? 165 : 235}mm` }));
   let style = document.getElementById('print-page-style');
   if (!style) { style = h('style', { id: 'print-page-style' }); document.head.append(style); }
-  style.textContent = `@page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 12mm; }`;
+  style.textContent = paper ? `@page { size: ${paper.w}mm ${paper.h}mm; margin: 0; }` : `@page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 12mm; }`;
   document.body.classList.add('printing');
   const done = () => { document.body.classList.remove('printing'); sheet.replaceChildren(); window.removeEventListener('afterprint', done); };
   window.addEventListener('afterprint', done);
