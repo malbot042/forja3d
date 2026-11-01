@@ -354,18 +354,31 @@ export class Editor extends EventTarget {
   }
 
   // ---------------------------------------------------------------- picking
-  _pick(view, e) {
-    if (this.sculpt || this.hand) return;
-    if (this.gizmo.dragging || this.gizmo.axis) return;
+  /** Id del objeto bajo el puntero en esa vista (o null). */
+  _hitAt(view, e) {
     const r = view.el.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, view.camera);
-    const meshes = [...this.objects.values()].filter(m => m.visible);
-    const hit = ray.intersectObjects(meshes, false)[0];
-    const id = hit ? hit.object.userData.id : null;
+    const hit = ray.intersectObjects([...this.objects.values()].filter(m => m.visible), false)[0];
+    return hit ? hit.object.userData.id : null;
+  }
+
+  _pick(view, e) {
+    if (this.sculpt || this.hand) return;
+    if (this.gizmo.dragging || this.gizmo.axis) return;
+    const id = this._hitAt(view, e);
     if (e.shiftKey || e.ctrlKey || e.metaKey) { if (id) this.toggleSelect(id); }
     else this.select(id);
+  }
+
+  /** Clic derecho sobre un objeto: lo selecciona (si no lo estaba ya) y pide su menú de propiedades. */
+  _context(view, e) {
+    if (this.sculpt || this.hand) return;
+    const id = this._hitAt(view, e);
+    if (!id) return;
+    if (!this.selection.includes(id) || this.subSel) this.select(id);
+    this.dispatchEvent(new CustomEvent('context', { detail: { x: e.clientX, y: e.clientY } }));
   }
 
   _resize() {

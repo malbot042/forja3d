@@ -82,10 +82,11 @@ export class View {
       this.editor.setActiveView(this);
     });
     this.el.addEventListener('pointerup', e => {
-      if (!down || e.button !== 0) return;
+      if (!down || (e.button !== 0 && e.button !== 2)) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
-      if (moved <= 4) this.editor._pick(this, e);
+      if (moved > 4) return;
+      if (e.button === 0) this.editor._pick(this, e); else this.editor._context(this, e);
     });
     this.el.addEventListener('pointerenter', () => this.editor._hoverView(this));
 

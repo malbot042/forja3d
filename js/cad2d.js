@@ -2667,6 +2667,12 @@ export class Cad extends EventTarget {
 
   after() { this.emitPrompt(); this.redraw(); }
 
+  /** Clic derecho sobre una entidad: la selecciona (si no lo estaba ya) y pide su menú de propiedades. */
+  contextAt(ent, x, y) {
+    if (!this.sel.has(ent.id)) this.setSel([ent.id]);
+    this.emit('context', { x, y });
+  }
+
   /** Texto escrito en la línea de órdenes. */
   input(str) {
     const s = String(str).trim();
@@ -3631,7 +3637,11 @@ export class CadView {
     c.addEventListener('pointerup', e => {
       const [sx, sy] = local(e);
       if (this.pan) {
-        if (this.pan.button === 2 && !this.pan.moved) cad.enter();
+        if (this.pan.button === 2 && !this.pan.moved) {
+          // clic derecho: sobre una entidad (sin orden en curso) abre sus propiedades; en vacío, Intro
+          const ent = !cad.T && cad.pick(this, this.toWorld(sx, sy));
+          if (ent) cad.contextAt(ent, e.clientX, e.clientY); else cad.enter();
+        }
         this.pan = null;
         host.el.closest('#viewport')?.classList.remove('panning');
         this.cad.emit('viewchange');

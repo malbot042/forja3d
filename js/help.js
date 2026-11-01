@@ -326,6 +326,7 @@ const SECTIONS = [
       <h4>Seleccionar</h4>
       <ul>
         <li><b>Clic</b> en un objeto (visor o lista) lo selecciona; clic en vacío o <kbd>Esc</kbd> quita la selección.</li>
+        <li><b>Clic derecho</b> (sin arrastrar) sobre un objeto lo selecciona y abre sus <b>propiedades</b> en una ventana junto al puntero: las propias de su tipo (medidas, perfil, operación…) y las generales (nombre, posición, giro, escala, color, acabado). Con varios seleccionados, sobre uno de ellos, muestra las comunes. Se cierra con <kbd>Esc</kbd>, con ✕ o haciendo clic fuera.</li>
         <li><kbd>Mayús</kbd>+clic o <kbd>Ctrl</kbd>+clic añade o quita objetos: <b>selección múltiple</b>. <kbd>Ctrl</kbd>+<kbd>A</kbd> selecciona todo.</li>
         <li>El <b>orden importa</b>: el primero seleccionado es la base (A) de las operaciones booleanas. El panel muestra el orden con letras A, B, C…</li>
         <li>Doble clic en la lista encuadra el objeto; el icono del ojo lo oculta o muestra.</li>
@@ -565,7 +566,7 @@ const SECTIONS = [
         <li><b>Mano</b> (botón de la barra de vistas, u orden <code>P</code> / <code>PAN</code>): arrastra con el botón izquierdo para moverte libremente por la hoja. <kbd>Esc</kbd> o el mismo botón para salir.</li>
       </ul>
       <h4>La línea de órdenes</h4>
-      <p>En la barra de estado hay una <b>línea de órdenes</b>: escribe una orden y pulsa <kbd>Intro</kbd> (no hace falta hacer clic en ella; basta con teclear). El texto de la izquierda indica qué espera cada paso. <kbd>Intro</kbd> o <kbd>Espacio</kbd> sin texto termina la orden (o repite la última); <kbd>Esc</kbd> la cancela; el clic derecho equivale a <kbd>Intro</kbd>.</p>
+      <p>En la barra de estado hay una <b>línea de órdenes</b>: escribe una orden y pulsa <kbd>Intro</kbd> (no hace falta hacer clic en ella; basta con teclear). El texto de la izquierda indica qué espera cada paso. <kbd>Intro</kbd> o <kbd>Espacio</kbd> sin texto termina la orden (o repite la última); <kbd>Esc</kbd> la cancela; el clic derecho equivale a <kbd>Intro</kbd> (salvo sobre una entidad sin orden en curso, que abre sus propiedades).</p>
       <table class="keys wide">
         <tr><th colspan="2">Dibujo</th></tr>
         <tr><td><code>L</code></td><td>Línea (segmentos encadenados; <code>C</code> cierra, <code>H</code> deshace el último)</td></tr>
@@ -611,6 +612,7 @@ const SECTIONS = [
       <ul>
         <li>Al pasar el ratón, el objeto se <b>ilumina</b> y un rótulo junto al cursor dice qué es (tipo, medida, capa) y qué pasará al hacer clic o arrastrar.</li>
         <li><b>Clic</b> para seleccionar (se dibuja discontinuo en azul), <kbd>Mayús</kbd>+clic para añadir o quitar, <kbd>Esc</kbd> o clic en vacío para deseleccionar.</li>
+        <li><b>Clic derecho</b> sobre una entidad, sin ninguna orden en curso, la selecciona y abre sus <b>propiedades</b> junto al puntero: las propias (puntos, radio, texto, tipo de cota…) y las generales (capa, tipo de línea). En vacío sigue funcionando como <kbd>Intro</kbd>.</li>
         <li>Arrastrando en vacío: de izquierda a derecha, <b>ventana</b> azul (solo lo que queda dentro del todo); de derecha a izquierda, <b>captura</b> verde (todo lo que toca). El rótulo indica cuántos objetos entrarán.</li>
         <li>Los <b>pinzamientos</b> (cuadrados azules) se ponen rojos al pasar por encima; arrástralos para estirar extremos, mover vértices o centros, o cambiar radios. Mientras arrastras se ve la medida (longitud, radio, desplazamiento).</li>
         <li>Arrastrar la <b>línea</b> de un objeto lo mueve (con todo lo seleccionado). Las <b>flechas</b> lo desplazan un paso de forzado (<kbd>Mayús</kbd>: ×10) y <kbd>&lt;</kbd> / <kbd>&gt;</kbd> lo giran 15° alrededor de su centro (con <kbd>Ctrl</kbd>: 1°).</li>
@@ -716,12 +718,13 @@ const SECTIONS = [
         <tr><td>${k('5')} · ${k('0')}</td><td>Ortográfica ⇄ perspectiva · Perspectiva</td></tr>
         <tr><td>${k('9')}</td><td>Vista isométrica</td></tr>
         <tr><td>${k('H')}</td><td>Mano: desplazar la vista con el botón izquierdo (en 2D: orden <code>P</code>)</td></tr>
+        <tr><td>Clic derecho en un objeto</td><td>Propiedades del objeto junto al puntero (2D y 3D)</td></tr>
         <tr><td>${k('F')}</td><td>Encuadrar selección</td></tr>
         <tr><td>${k('Z')}</td><td>Cambiar la vista: Sólido → Wire → Lápiz</td></tr>
         <tr><td>${k('N')}</td><td>Mostrar u ocultar el panel lateral</td></tr>
         <tr><th colspan="2">Editor 2D</th></tr>
         <tr><td>Teclear + ${k('Intro')}</td><td>Orden o valor en la línea de órdenes (L, PL, REC, C, A, T, DLI, DRA, DI, M, CO, RO, O, TR…)</td></tr>
-        <tr><td>${k('Intro')} · ${k('Espacio')} · clic derecho</td><td>Terminar la orden (sin orden activa: repetir la última)</td></tr>
+        <tr><td>${k('Intro')} · ${k('Espacio')} · clic derecho</td><td>Terminar la orden (sin orden activa: repetir la última; sobre una entidad: sus propiedades)</td></tr>
         <tr><td>${k('Esc')}</td><td>Cancelar la orden · quitar la selección</td></tr>
         <tr><td>${k('F3')} · ${k('F7')} · ${k('F8')} · ${k('F9')}</td><td>Referencias · Rejilla · Orto · Forzar a rejilla</td></tr>
         <tr><td>${k('Tab')} · ${k('Ctrl', 'E')}</td><td>Cara isométrica del panel (superior → derecha → izquierda)</td></tr>

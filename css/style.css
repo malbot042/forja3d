@@ -852,6 +852,11 @@ kbd {
 .sheet-tab:hover, .sheet-add:hover, .sheet-more:hover { color: var(--text); background: var(--panel-2); }
 .sheet-tab.active { color: var(--accent); background: var(--viewport); border-color: var(--line); margin-top: -1px; font-weight: 600; }
 .sheet-add, .sheet-more { padding: 0 9px; font-size: 15px; line-height: 1; }
+.props-pop { position: fixed; z-index: 55; display: flex; flex-direction: column; width: min(320px, calc(100vw - 16px)); max-height: min(78vh, calc(100vh - 16px)); background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 14px 36px rgba(0,0,0,.4); overflow: hidden; }
+.props-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.props-pop-head h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.props-pop-head .icon-btn { width: 24px; height: 24px; color: var(--muted); font-size: 12px; }
+.props-pop .props { min-height: 0; }
 .sheet-menu { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 190px; padding: 4px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.35); }
 .sheet-menu button { text-align: left; background: none; border: 0; color: var(--text); font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 5px; cursor: pointer; }
 .sheet-menu button:hover:not(:disabled), .sheet-menu button:focus-visible { background: var(--sel); outline: none; }

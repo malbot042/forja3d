@@ -485,6 +485,46 @@ function sheetMenu(id, anchor) {
   menu.querySelector('button:not(:disabled)')?.focus();
 }
 
+/**
+ * Propiedades del objeto en una ventana flotante junto al puntero (clic derecho en 2D o 3D).
+ * Es el mismo panel #props (específicas del tipo + generales), que se lleva ahí y vuelve al cerrar.
+ */
+function propsPopover({ x, y }) {
+  closePropsPopover();
+  const box = $('#props');
+  const stub = h('p', { class: 'props empty' }, 'Las propiedades están en la ventana flotante (Esc para cerrarla).');
+  box.replaceWith(stub);
+  const title = h('h2', {});
+  const pop = h('div', { class: 'props-pop', role: 'dialog', 'aria-label': 'Propiedades' },
+    h('div', { class: 'panel-head props-pop-head' }, title,
+      h('button', { class: 'icon-btn', title: 'Cerrar (Esc)', 'aria-label': 'Cerrar', onclick: () => closePropsPopover() }, '✕')),
+    box);
+  const empty = () => is2D() ? !editor.cad.sel.size : !editor.selection.length;
+  const refresh = () => {
+    if (empty()) { closePropsPopover(); return; }
+    const n = is2D() ? editor.cad.sel.size : editor.selection.length;
+    title.textContent = n > 1 ? `Propiedades · ${n} objetos` : `Propiedades · ${is2D() ? TYPE_LABELS[editor.cad.selEnts()[0]?.type] || 'objeto' : editor.getSelected()?.name || 'objeto'}`;
+  };
+  const onDown = e => { if (!pop.contains(e.target) && !e.target.closest?.('.modal-backdrop, .sheet-menu')) closePropsPopover(); };
+  const onKey = e => { if (e.key === 'Escape' && !e.target.closest?.('.modal-backdrop')) { e.stopPropagation(); closePropsPopover(); } };
+  const onWs = () => closePropsPopover();
+  document.body.append(pop);
+  renderProps();
+  refresh();
+  const W = pop.offsetWidth, H = pop.offsetHeight;
+  pop.style.left = `${Math.max(8, Math.min(x + 12, innerWidth - W - 8))}px`;
+  pop.style.top = `${Math.max(8, Math.min(y - 20, innerHeight - H - 8))}px`;
+  editor.addEventListener('select', refresh); editor.cad.addEventListener('select', refresh); editor.addEventListener('workspace', onWs);
+  setTimeout(() => { document.addEventListener('pointerdown', onDown, true); document.addEventListener('keydown', onKey, true); }, 0);
+  closePropsPopover.fn = () => {
+    editor.removeEventListener('select', refresh); editor.cad.removeEventListener('select', refresh); editor.removeEventListener('workspace', onWs);
+    document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('keydown', onKey, true);
+    stub.replaceWith(box);
+    pop.remove();
+  };
+}
+function closePropsPopover() { const fn = closePropsPopover.fn; closePropsPopover.fn = null; fn?.(); }
+
 // ============================================================ editor: guardado
 function snapshotProject() {
   project.objects = editor.serialize();
@@ -553,6 +593,7 @@ function initEditor() {
     $('#btn-redo').disabled = !e.detail.canRedo;
   });
   editor.addEventListener('workspace', applyMode);
+  editor.addEventListener('context', e => propsPopover(e.detail));
   editor.addEventListener('cameraend', scheduleSave);
   editor.addEventListener('layout', () => { refreshLayoutButtons(); scheduleSave(); });
 
@@ -1398,6 +1439,7 @@ function initCadUI() {
   const cad = editor.cad;
   cad.addEventListener('change', () => { scheduleSave(); if (is2D()) { renderLayers(); renderProps(); refreshCadToggles(); } if (sketchSession) updateSketchStatus(); });
   cad.addEventListener('select', () => { if (is2D()) renderProps(); });
+  cad.addEventListener('context', e => propsPopover(e.detail));
   cad.addEventListener('tool', refreshCadTool);
   cad.addEventListener('prompt', e => { $('#cmd-prompt').textContent = e.detail; $('#cmd-prompt').title = e.detail; });
   cad.addEventListener('message', e => { const m = $('#cmd-msg'); m.textContent = e.detail; m.title = e.detail; });
